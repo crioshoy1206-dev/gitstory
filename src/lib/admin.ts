@@ -6,16 +6,24 @@ import { getFirestore } from "firebase-admin/firestore";
 
 function adminApp(): App {
   if (getApps().length) return getApps()[0];
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw) throw new AdminNotConfigured();
-  return initializeApp({ credential: cert(JSON.parse(raw)) });
-}
-
-export class AdminNotConfigured extends Error {
-  constructor() {
-    super("서버 설정(FIREBASE_SERVICE_ACCOUNT)이 아직 없습니다");
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT?.trim();
+  if (!raw) throw new AdminNotConfigured("서버 키 없음");
+  let key;
+  try {
+    key = JSON.parse(raw);
+  } catch {
+    throw new AdminNotConfigured("서버 키 형식 오류(JSON 전체를 붙여넣었는지 확인)");
+  }
+  // 붙여넣는 과정에서 줄바꿈이 \\n 글자로 바뀐 경우를 되돌린다
+  if (typeof key.private_key === "string") key.private_key = key.private_key.replace(/\\n/g, "\n");
+  try {
+    return initializeApp({ credential: cert(key) });
+  } catch (e) {
+    throw new AdminNotConfigured(`서버 키를 읽지 못함(${(e as Error).message})`);
   }
 }
+
+export class AdminNotConfigured extends Error {}
 
 export const adminAuth = () => getAuth(adminApp());
 export const adminDb = () => getFirestore(adminApp());

@@ -822,7 +822,7 @@ function refreshUsage(){
     el.textContent=`오늘 남은 토큰 ${left.toLocaleString()}`;
     el.className='Label '+(left>0?'':'Label--danger');
     el.title=`하루 ${u.limit.toLocaleString()} 중 ${u.used.toLocaleString()} 사용 · 충전 잔액 ${u.credits.toLocaleString()} · 매일 한국 시간 자정 초기화`;
-  }).catch(err=>{ console.warn('토큰 사용량 확인 실패', err); const el=$('#token-meter'); el.textContent='토큰 확인 불가'; el.className='Label'; });
+  }).catch(err=>{ console.warn('토큰 사용량 확인 실패', err); const el=$('#token-meter'); el.textContent=`토큰 확인 불가 (${err.status===404?'서버 경로 없음':err.message||'연결 실패'})`; el.className='Label Label--danger'; el.title=el.textContent; });
 }
 /* 다른 기기에서 저장한 게 더 최신이면 불러옴 */
 function syncFromCloud(k){
