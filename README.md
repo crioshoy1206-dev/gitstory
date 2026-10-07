@@ -13,6 +13,10 @@
 - Firebase (Firestore, Auth), 프로젝트 `gitstory-snu-2026`
 - Vercel 배포
 
+## 빌드 참고
+- `npm run build`는 webpack으로 빌드한다(`next build --webpack`). Turbopack 빌드는 firebase-admin을 해시 붙은 이름으로 불러와 Vercel 함수에서 500 오류가 났다.
+- 서버 API(`/api/*`)는 Vercel 환경변수 `FIREBASE_SERVICE_ACCOUNT`(서비스 계정 키 JSON 전체)가 필요하다.
+
 ## 로컬 실행
 ```bash
 cp .env.example .env.local
