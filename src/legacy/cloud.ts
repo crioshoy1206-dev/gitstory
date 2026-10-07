@@ -46,8 +46,15 @@ export async function callApi<T>(path: string, init: RequestInit = {}): Promise<
     ...init,
     headers: { ...init.headers, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
   });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(body.error || res.statusText), { status: res.status, body });
+  const text = await res.text();
+  let body: Record<string, unknown> = {};
+  try {
+    body = JSON.parse(text);
+  } catch {}
+  if (!res.ok) {
+    const detail = (body.error as string) || text.slice(0, 80) || "응답 없음";
+    throw Object.assign(new Error(`HTTP ${res.status}: ${detail}`), { status: res.status, body });
+  }
   return body as T;
 }
 
