@@ -1,0 +1,1174 @@
+{
+ "meta": {
+  "id": "world_janggu",
+  "title": "짱구는 못말려 (예시)",
+  "description": "떡잎마을의 평범한 하루에서 시작해 '가스 폭발로 집이 무너짐' 사건 하나를 커밋한 상태. 자료: 나무위키 짱구는 못말려 문서. 이름은 한국판 기준.",
+  "created_at": "2026-10-07T12:00:00Z"
+ },
+ "head": "f5a20c3",
+ "state": {
+  "background": [
+   {
+    "id": "bg_village",
+    "category": "지리",
+    "title": "떡잎마을",
+    "content": "짱구네 집, 떡잎유치원, 쇼핑센터가 있는 조용한 베드타운. 원작의 사이타마현 카스카베를 한국판에서 옮긴 이름.",
+    "introduced_in": null
+   },
+   {
+    "id": "bg_action_kamen",
+    "category": "문화",
+    "title": "액션가면",
+    "content": "아이들이 열광하는 TV 특촬 히어로. 짱구는 액션가면 흉내와 '액션 빔'을 입에 달고 산다.",
+    "introduced_in": null
+   },
+   {
+    "id": "bg_loan",
+    "category": "경제",
+    "title": "35년 주택 대출",
+    "content": "신형만이 집을 사며 받은 35년 대출. 신씨네 살림이 늘 빠듯한 이유.",
+    "introduced_in": null
+   },
+   {
+    "id": "bg_chocobi",
+    "category": "문화",
+    "title": "초코비",
+    "content": "짱구가 가장 좋아하는 과자. 엄마와의 협상에서 자주 걸리는 보상.",
+    "introduced_in": null
+   },
+   {
+    "id": "bg_apartment",
+    "category": "지리",
+    "title": "임시 아파트",
+    "content": "가스 폭발 뒤 신씨네가 잠시 사는 낡은 아파트. 개성 강한 이웃들이 산다.",
+    "introduced_in": "f5a20c3"
+   }
+  ],
+  "groups": [
+   {
+    "id": "grp_family",
+    "name": "신씨네 가족",
+    "kind": "organization",
+    "parent": null,
+    "traits": [
+     {
+      "key": "family_love",
+      "label": "가족 사랑",
+      "value": 0.9
+     },
+     {
+      "key": "chaos",
+      "label": "소란스러움",
+      "value": 0.85
+     },
+     {
+      "key": "thrift",
+      "label": "알뜰함",
+      "value": 0.7
+     }
+    ],
+    "situation": {
+     "current": "집이 무너져 낡은 아파트로 잠시 이사. 좁은 방에서 다섯 식구가 부대낌.",
+     "status": "임시 거처",
+     "history": [
+      {
+       "commit": "f5a20c3",
+       "summary": "집을 잃고 낡은 아파트로 이사",
+       "source": "direct"
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_defense",
+    "name": "떡잎마을 방범대",
+    "kind": "faction",
+    "parent": null,
+    "traits": [
+     {
+      "key": "solidarity",
+      "label": "동료애",
+      "value": 0.85
+     },
+     {
+      "key": "imagination",
+      "label": "상상력",
+      "value": 0.9
+     },
+     {
+      "key": "leadership_dispute",
+      "label": "대장 자리 다툼",
+      "value": 0.6
+     }
+    ],
+    "situation": {
+     "current": "짱구가 만든 유치원생 5인조. 평소엔 놀이 모임, 위기 땐 마을을 지킨다.",
+     "status": "활동중",
+     "history": [
+      {
+       "commit": "f5a20c3",
+       "summary": "아지트였던 짱구네 집이 사라짐",
+       "source": "direct"
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_kindergarten",
+    "name": "떡잎유치원",
+    "kind": "organization",
+    "parent": null,
+    "traits": [
+     {
+      "key": "kindness",
+      "label": "다정함",
+      "value": 0.8
+     },
+     {
+      "key": "tradition",
+      "label": "행사 전통",
+      "value": 0.6
+     }
+    ],
+    "situation": {
+     "current": "무섭게 생겼지만 다정한 원장 선생님이 운영. 운동회와 학예회 준비로 바쁨.",
+     "status": "평소대로",
+     "history": []
+    }
+   },
+   {
+    "id": "grp_sunflower",
+    "name": "해바라기반",
+    "kind": "organization",
+    "parent": "grp_kindergarten",
+    "parent_bond": 0.8,
+    "traits": [
+     {
+      "key": "rivalry_rose",
+      "label": "장미반 경쟁심",
+      "value": 0.8,
+      "target": "grp_rose"
+     },
+     {
+      "key": "chaos",
+      "label": "소란스러움",
+      "value": 0.75
+     }
+    ],
+    "situation": {
+     "current": "짱구와 방범대가 모두 모인 반. 채성아 선생님이 담임.",
+     "status": "활동중",
+     "history": []
+    }
+   },
+   {
+    "id": "grp_rose",
+    "name": "장미반",
+    "kind": "organization",
+    "parent": "grp_kindergarten",
+    "parent_bond": 0.7,
+    "traits": [
+     {
+      "key": "rivalry_sunflower",
+      "label": "해바라기반 경쟁심",
+      "value": 0.8,
+      "target": "grp_sunflower"
+     },
+     {
+      "key": "pride",
+      "label": "자존심",
+      "value": 0.6
+     }
+    ],
+    "situation": {
+     "current": "나미리 선생님이 이끄는 반. 해바라기반과는 운명의 라이벌.",
+     "status": "활동중",
+     "history": []
+    }
+   },
+   {
+    "id": "grp_company",
+    "name": "쌍떡잎상사",
+    "kind": "organization",
+    "parent": null,
+    "traits": [
+     {
+      "key": "overwork",
+      "label": "야근 문화",
+      "value": 0.8
+     },
+     {
+      "key": "bureaucracy",
+      "label": "관료주의",
+      "value": 0.6
+     }
+    ],
+    "situation": {
+     "current": "신형만이 다니는 무역회사. 계장인 형만은 실적과 야근에 시달린다.",
+     "status": "평소대로",
+     "history": []
+    }
+   }
+  ],
+  "characters": [
+   {
+    "id": "chr_janggu",
+    "name": "신짱구",
+    "aliases": [
+     "짱구"
+    ],
+    "memberships": [
+     {
+      "group": "grp_family",
+      "role": "아들",
+      "bond": 1.0
+     },
+     {
+      "group": "grp_defense",
+      "role": "창설자",
+      "bond": 0.9
+     },
+     {
+      "group": "grp_sunflower",
+      "role": "원생",
+      "bond": 0.7
+     }
+    ],
+    "traits": [
+     {
+      "key": "mischief",
+      "label": "장난기",
+      "value": 0.95
+     },
+     {
+      "key": "shameless",
+      "label": "뻔뻔함",
+      "value": 0.9
+     },
+     {
+      "key": "love_pretty",
+      "label": "예쁜 누나 사랑",
+      "value": 0.85
+     },
+     {
+      "key": "protect_family",
+      "label": "숨은 가족 사랑",
+      "value": 0.7,
+      "target": "grp_family"
+     }
+    ],
+    "situation": {
+     "current": "엉덩이 춤과 액션가면 흉내로 하루를 보내는 다섯 살.",
+     "status": "평소대로",
+     "history": [
+      {
+       "commit": "f5a20c3",
+       "summary": "신씨네 가족에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_family",
+       "weight": -0.57
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_hyungman",
+    "name": "신형만",
+    "memberships": [
+     {
+      "group": "grp_family",
+      "role": "가장",
+      "bond": 0.9
+     },
+     {
+      "group": "grp_company",
+      "role": "계장",
+      "bond": 0.6
+     }
+    ],
+    "traits": [
+     {
+      "key": "family_love",
+      "label": "가족 사랑",
+      "value": 0.9
+     },
+     {
+      "key": "salaryman_fatigue",
+      "label": "직장인 피로",
+      "value": 0.8
+     },
+     {
+      "key": "pushover",
+      "label": "우유부단",
+      "value": 0.6
+     }
+    ],
+    "situation": {
+     "current": "집은 없어졌는데 35년 대출은 그대로라 회사에서도 넋이 나감.",
+     "status": "멘붕",
+     "history": [
+      {
+       "commit": "f5a20c3",
+       "summary": "집은 없어졌는데 대출은 남음",
+       "source": "direct"
+      },
+      {
+       "commit": "f5a20c3",
+       "summary": "신씨네 가족에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_family",
+       "weight": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_miseon",
+    "name": "봉미선",
+    "memberships": [
+     {
+      "group": "grp_family",
+      "role": "엄마",
+      "bond": 1.0
+     }
+    ],
+    "traits": [
+     {
+      "key": "strictness",
+      "label": "엄격함(꿀밤)",
+      "value": 0.85
+     },
+     {
+      "key": "thrift",
+      "label": "알뜰함",
+      "value": 0.9
+     },
+     {
+      "key": "temper",
+      "label": "다혈질",
+      "value": 0.8
+     }
+    ],
+    "situation": {
+     "current": "보험금과 생활비를 계산하느라 신경이 곤두서 꿀밤이 늘어남.",
+     "status": "초절약 모드",
+     "history": [
+      {
+       "commit": "f5a20c3",
+       "summary": "신씨네 가족에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_family",
+       "weight": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_jangga",
+    "name": "신짱아",
+    "memberships": [
+     {
+      "group": "grp_family",
+      "role": "딸",
+      "bond": 0.9
+     }
+    ],
+    "traits": [
+     {
+      "key": "greed_shiny",
+      "label": "반짝이는 것 집착",
+      "value": 0.9
+     },
+     {
+      "key": "chaos",
+      "label": "소란스러움",
+      "value": 0.6
+     }
+    ],
+    "situation": {
+     "current": "보석과 꽃미남을 보면 기어가는 아기.",
+     "status": "평소대로",
+     "history": [
+      {
+       "commit": "f5a20c3",
+       "summary": "신씨네 가족에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_family",
+       "weight": -0.47
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_whitey",
+    "name": "흰둥이",
+    "memberships": [
+     {
+      "group": "grp_family",
+      "role": "반려견",
+      "bond": 0.8
+     }
+    ],
+    "traits": [
+     {
+      "key": "loyalty",
+      "label": "충성심",
+      "value": 0.9
+     },
+     {
+      "key": "patience",
+      "label": "인내",
+      "value": 0.85
+     }
+    ],
+    "situation": {
+     "current": "좁은 아파트에서도 묵묵히 짱구를 기다림.",
+     "status": "적응중",
+     "history": [
+      {
+       "commit": "f5a20c3",
+       "summary": "신씨네 가족에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_family",
+       "weight": -0.69
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_cheolsu",
+    "name": "김철수",
+    "memberships": [
+     {
+      "group": "grp_defense",
+      "role": "책사",
+      "bond": 0.85
+     },
+     {
+      "group": "grp_sunflower",
+      "role": "원생",
+      "bond": 0.8
+     }
+    ],
+    "traits": [
+     {
+      "key": "elitism",
+      "label": "엘리트 의식",
+      "value": 0.85
+     },
+     {
+      "key": "diligence",
+      "label": "노력파",
+      "value": 0.9
+     },
+     {
+      "key": "image",
+      "label": "체면 중시",
+      "value": 0.8
+     }
+    ],
+    "situation": {
+     "current": "영어 학원을 다니는 모범생. 짱구에게 휘말려 체면을 구기기 일쑤.",
+     "status": "평소대로",
+     "history": [
+      {
+       "commit": "f5a20c3",
+       "summary": "떡잎마을 방범대에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_defense",
+       "weight": -0.45
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_yuri",
+    "name": "한유리",
+    "memberships": [
+     {
+      "group": "grp_defense",
+      "role": "부대장",
+      "bond": 0.85
+     },
+     {
+      "group": "grp_sunflower",
+      "role": "원생",
+      "bond": 0.8
+     }
+    ],
+    "traits": [
+     {
+      "key": "bossiness",
+      "label": "고집",
+      "value": 0.85
+     },
+     {
+      "key": "house_play",
+      "label": "소꿉놀이 집착",
+      "value": 0.9
+     },
+     {
+      "key": "temper",
+      "label": "다혈질",
+      "value": 0.6
+     }
+    ],
+    "situation": {
+     "current": "리얼한 소꿉놀이 각본으로 친구들을 끌어들이는 홍일점.",
+     "status": "평소대로",
+     "history": [
+      {
+       "commit": "f5a20c3",
+       "summary": "떡잎마을 방범대에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_defense",
+       "weight": -0.41
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_hooni",
+    "name": "이훈이",
+    "memberships": [
+     {
+      "group": "grp_defense",
+      "role": "대원",
+      "bond": 0.8
+     },
+     {
+      "group": "grp_sunflower",
+      "role": "원생",
+      "bond": 0.75
+     }
+    ],
+    "traits": [
+     {
+      "key": "timidity",
+      "label": "겁",
+      "value": 0.9
+     },
+     {
+      "key": "kindness",
+      "label": "상냥함",
+      "value": 0.7
+     }
+    ],
+    "situation": {
+     "current": "울보지만 마음이 여린 대원. 겁을 먹으면 제일 먼저 운다.",
+     "status": "평소대로",
+     "history": [
+      {
+       "commit": "f5a20c3",
+       "summary": "떡잎마을 방범대에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_defense",
+       "weight": -0.31
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_maenggu",
+    "name": "맹구",
+    "memberships": [
+     {
+      "group": "grp_defense",
+      "role": "정보원",
+      "bond": 0.9
+     },
+     {
+      "group": "grp_sunflower",
+      "role": "원생",
+      "bond": 0.7
+     }
+    ],
+    "traits": [
+     {
+      "key": "calm",
+      "label": "침착함",
+      "value": 0.95
+     },
+     {
+      "key": "stone_collect",
+      "label": "돌 수집",
+      "value": 0.9
+     }
+    ],
+    "situation": {
+     "current": "코를 훌쩍이며 돌을 모으는 조용한 천재.",
+     "status": "평소대로",
+     "history": []
+    }
+   },
+   {
+    "id": "chr_chae",
+    "name": "채성아",
+    "memberships": [
+     {
+      "group": "grp_sunflower",
+      "role": "담임",
+      "bond": 1.0
+     },
+     {
+      "group": "grp_kindergarten",
+      "role": "교사",
+      "bond": 0.8
+     }
+    ],
+    "traits": [
+     {
+      "key": "dedication",
+      "label": "교육열",
+      "value": 0.8
+     },
+     {
+      "key": "rivalry_rose",
+      "label": "장미반 경쟁심",
+      "value": 0.85,
+      "target": "grp_rose"
+     }
+    ],
+    "situation": {
+     "current": "짱구 때문에 매일 진땀을 빼지만 아이들을 아끼는 해바라기반 담임.",
+     "status": "평소대로",
+     "history": []
+    }
+   },
+   {
+    "id": "chr_nam",
+    "name": "나미리",
+    "memberships": [
+     {
+      "group": "grp_rose",
+      "role": "담임",
+      "bond": 1.0
+     },
+     {
+      "group": "grp_kindergarten",
+      "role": "교사",
+      "bond": 0.7
+     }
+    ],
+    "traits": [
+     {
+      "key": "rivalry_sunflower",
+      "label": "해바라기반 경쟁심",
+      "value": 0.9,
+      "target": "grp_sunflower"
+     },
+     {
+      "key": "marriage_anxiety",
+      "label": "결혼 조급증",
+      "value": 0.85
+     }
+    ],
+    "situation": {
+     "current": "채성아 선생님에게 지기 싫은 장미반 담임. 맞선에 열심.",
+     "status": "평소대로",
+     "history": []
+    }
+   },
+   {
+    "id": "chr_director",
+    "name": "원장 선생님",
+    "memberships": [
+     {
+      "group": "grp_kindergarten",
+      "role": "원장",
+      "bond": 1.0
+     }
+    ],
+    "traits": [
+     {
+      "key": "kindness",
+      "label": "다정함",
+      "value": 0.9
+     },
+     {
+      "key": "misunderstood",
+      "label": "험상궂은 외모 콤플렉스",
+      "value": 0.8
+     }
+    ],
+    "situation": {
+     "current": "조폭 같은 얼굴 때문에 늘 오해받지만 누구보다 다정한 원장.",
+     "status": "평소대로",
+     "history": []
+    }
+   }
+  ],
+  "relations": [
+   {
+    "id": "rel_hm_ms",
+    "from": "chr_hyungman",
+    "to": "chr_miseon",
+    "type": "family",
+    "intensity": 0.95,
+    "note": "부부"
+   },
+   {
+    "id": "rel_jg_ms",
+    "from": "chr_janggu",
+    "to": "chr_miseon",
+    "type": "family",
+    "intensity": 0.9,
+    "note": "꿀밤과 사랑"
+   },
+   {
+    "id": "rel_jg_hm",
+    "from": "chr_janggu",
+    "to": "chr_hyungman",
+    "type": "family",
+    "intensity": 0.9,
+    "note": "부자"
+   },
+   {
+    "id": "rel_jg_ja",
+    "from": "chr_janggu",
+    "to": "chr_jangga",
+    "type": "family",
+    "intensity": 0.85,
+    "note": "남매"
+   },
+   {
+    "id": "rel_jg_wh",
+    "from": "chr_janggu",
+    "to": "chr_whitey",
+    "type": "family",
+    "intensity": 0.7,
+    "note": "산책 담당(인데 자주 잊음)"
+   },
+   {
+    "id": "rel_sun_rose",
+    "from": "grp_sunflower",
+    "to": "grp_rose",
+    "type": "rival",
+    "intensity": 0.85,
+    "note": "운명의 라이벌"
+   },
+   {
+    "id": "rel_chae_nam",
+    "from": "chr_chae",
+    "to": "chr_nam",
+    "type": "rival",
+    "intensity": 0.8,
+    "note": "앙숙 동료"
+   },
+   {
+    "id": "rel_def_sun",
+    "from": "grp_defense",
+    "to": "grp_sunflower",
+    "type": "alliance",
+    "intensity": 0.8,
+    "note": "같은 반 친구들"
+   },
+   {
+    "id": "rel_jg_cs",
+    "from": "chr_janggu",
+    "to": "chr_cheolsu",
+    "type": "personal",
+    "intensity": 0.8,
+    "note": "놀림과 우정"
+   },
+   {
+    "id": "rel_jg_yr",
+    "from": "chr_yuri",
+    "to": "chr_janggu",
+    "type": "dominate",
+    "intensity": 0.5,
+    "directed": true,
+    "note": "소꿉놀이 강제 출연"
+   },
+   {
+    "id": "rel_jg_mg",
+    "from": "chr_janggu",
+    "to": "chr_maenggu",
+    "type": "alliance",
+    "intensity": 0.8,
+    "note": "말 없이도 통하는 사이"
+   },
+   {
+    "id": "rel_jg_hn",
+    "from": "chr_janggu",
+    "to": "chr_hooni",
+    "type": "personal",
+    "intensity": 0.6,
+    "note": "놀리면서 챙김"
+   },
+   {
+    "id": "rel_jg_chae",
+    "from": "chr_janggu",
+    "to": "chr_chae",
+    "type": "personal",
+    "intensity": 0.6,
+    "note": "선생님을 곤란하게 함"
+   },
+   {
+    "id": "rel_jg_dir",
+    "from": "chr_janggu",
+    "to": "chr_director",
+    "type": "personal",
+    "intensity": 0.6,
+    "note": "'조폭 원장'이라 부름"
+   },
+   {
+    "id": "rel_hm_co",
+    "from": "chr_hyungman",
+    "to": "grp_company",
+    "type": "coexist",
+    "intensity": 0.6,
+    "note": "월급과 야근"
+   },
+   {
+    "id": "rel_fam_def",
+    "from": "grp_family",
+    "to": "grp_defense",
+    "type": "coexist",
+    "intensity": 0.3,
+    "note": "아지트가 사라져 놀이터로 옮김"
+   }
+  ]
+ },
+ "commits": [
+  {
+   "id": "9b14d07",
+   "parent": null,
+   "kind": "init",
+   "message": "세계관 초기 설정 (떡잎마을의 평범한 하루)",
+   "created_at": "2026-10-07T12:00:00Z",
+   "patches": []
+  },
+  {
+   "id": "f5a20c3",
+   "parent": "9b14d07",
+   "kind": "event",
+   "message": "사건: 가스 폭발로 집이 무너짐",
+   "created_at": "2026-10-07T12:10:00Z",
+   "event": {
+    "title": "가스 폭발로 집이 무너짐",
+    "description": "신씨네 2층 집이 가스 폭발로 무너진다. 다친 사람은 없지만 가족은 낡은 아파트로 잠시 이사하고, 35년 대출은 그대로 남는다.",
+    "story_time": "원작 2001년 5월",
+    "involved": [
+     "grp_family",
+     "chr_hyungman",
+     "chr_miseon",
+     "chr_janggu"
+    ]
+   },
+   "impacts": [
+    {
+     "target": "grp_family",
+     "source": "direct",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -0.85,
+     "summary": "집을 잃고 낡은 아파트로 이사"
+    },
+    {
+     "target": "chr_hyungman",
+     "source": "direct",
+     "tags": [
+      "상실"
+     ],
+     "magnitude": -0.8,
+     "summary": "집은 없어졌는데 대출은 남음"
+    },
+    {
+     "target": "grp_defense",
+     "source": "direct",
+     "tags": [
+      "상실"
+     ],
+     "magnitude": -0.3,
+     "summary": "아지트였던 짱구네 집이 사라짐"
+    },
+    {
+     "target": "chr_janggu",
+     "source": "propagated",
+     "via": "grp_family",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -0.57,
+     "summary": ""
+    },
+    {
+     "target": "chr_hyungman",
+     "source": "propagated",
+     "via": "grp_family",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -1.0,
+     "summary": ""
+    },
+    {
+     "target": "chr_miseon",
+     "source": "propagated",
+     "via": "grp_family",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -1.0,
+     "summary": ""
+    },
+    {
+     "target": "chr_jangga",
+     "source": "propagated",
+     "via": "grp_family",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -0.47,
+     "summary": ""
+    },
+    {
+     "target": "chr_whitey",
+     "source": "propagated",
+     "via": "grp_family",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -0.69,
+     "summary": ""
+    },
+    {
+     "target": "chr_cheolsu",
+     "source": "propagated",
+     "via": "grp_defense",
+     "tags": [
+      "상실"
+     ],
+     "magnitude": -0.45,
+     "summary": ""
+    },
+    {
+     "target": "chr_yuri",
+     "source": "propagated",
+     "via": "grp_defense",
+     "tags": [
+      "상실"
+     ],
+     "magnitude": -0.41,
+     "summary": ""
+    },
+    {
+     "target": "chr_hooni",
+     "source": "propagated",
+     "via": "grp_defense",
+     "tags": [
+      "상실"
+     ],
+     "magnitude": -0.31,
+     "summary": ""
+    },
+    {
+     "target": "chr_maenggu",
+     "source": "propagated",
+     "via": "grp_defense",
+     "tags": [
+      "상실"
+     ],
+     "magnitude": -0.14,
+     "summary": ""
+    }
+   ],
+   "patches": [
+    {
+     "op": "add",
+     "path": "/groups/grp_family/situation/history/-",
+     "after": {
+      "commit": "f5a20c3",
+      "summary": "집을 잃고 낡은 아파트로 이사",
+      "source": "direct"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_hyungman/situation/history/-",
+     "after": {
+      "commit": "f5a20c3",
+      "summary": "집은 없어졌는데 대출은 남음",
+      "source": "direct"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/groups/grp_defense/situation/history/-",
+     "after": {
+      "commit": "f5a20c3",
+      "summary": "아지트였던 짱구네 집이 사라짐",
+      "source": "direct"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_janggu/situation/history/-",
+     "after": {
+      "commit": "f5a20c3",
+      "summary": "신씨네 가족에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_family",
+      "weight": -0.57
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_hyungman/situation/history/-",
+     "after": {
+      "commit": "f5a20c3",
+      "summary": "신씨네 가족에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_family",
+      "weight": -1.0
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_miseon/situation/history/-",
+     "after": {
+      "commit": "f5a20c3",
+      "summary": "신씨네 가족에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_family",
+      "weight": -1.0
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_jangga/situation/history/-",
+     "after": {
+      "commit": "f5a20c3",
+      "summary": "신씨네 가족에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_family",
+      "weight": -0.47
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_whitey/situation/history/-",
+     "after": {
+      "commit": "f5a20c3",
+      "summary": "신씨네 가족에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_family",
+      "weight": -0.69
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_cheolsu/situation/history/-",
+     "after": {
+      "commit": "f5a20c3",
+      "summary": "떡잎마을 방범대에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_defense",
+      "weight": -0.45
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_yuri/situation/history/-",
+     "after": {
+      "commit": "f5a20c3",
+      "summary": "떡잎마을 방범대에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_defense",
+      "weight": -0.41
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_hooni/situation/history/-",
+     "after": {
+      "commit": "f5a20c3",
+      "summary": "떡잎마을 방범대에서 전해진 '가스 폭발로 집이 무너짐'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_defense",
+      "weight": -0.31
+     }
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_family/situation/current",
+     "before": "35년 대출로 마련한 2층 집에서 다섯 식구(흰둥이 포함)가 북적이며 산다.",
+     "after": "집이 무너져 낡은 아파트로 잠시 이사. 좁은 방에서 다섯 식구가 부대낌."
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_family/situation/status",
+     "before": "평화",
+     "after": "임시 거처"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_hyungman/situation/current",
+     "before": "대출과 야근에 지쳐도 퇴근 후 맥주 한 캔에 행복해함.",
+     "after": "집은 없어졌는데 35년 대출은 그대로라 회사에서도 넋이 나감."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_hyungman/situation/status",
+     "before": "평소대로",
+     "after": "멘붕"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_miseon/situation/current",
+     "before": "짱구 뒷수습과 가계부 사이에서 바쁜 전업주부.",
+     "after": "보험금과 생활비를 계산하느라 신경이 곤두서 꿀밤이 늘어남."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_miseon/situation/status",
+     "before": "평소대로",
+     "after": "초절약 모드"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_whitey/situation/current",
+     "before": "짱구가 산책을 자주 잊지만 묵묵히 기다리는 하얀 강아지.",
+     "after": "좁은 아파트에서도 묵묵히 짱구를 기다림."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_whitey/situation/status",
+     "before": "평소대로",
+     "after": "적응중"
+    },
+    {
+     "op": "add",
+     "path": "/background/bg_apartment",
+     "after": {
+      "id": "bg_apartment",
+      "category": "지리",
+      "title": "임시 아파트",
+      "content": "가스 폭발 뒤 신씨네가 잠시 사는 낡은 아파트. 개성 강한 이웃들이 산다.",
+      "introduced_in": "f5a20c3"
+     }
+    },
+    {
+     "op": "replace",
+     "path": "/relations/rel_fam_def/intensity",
+     "before": 0.5,
+     "after": 0.3
+    },
+    {
+     "op": "replace",
+     "path": "/relations/rel_fam_def/note",
+     "before": "짱구네 집이 아지트",
+     "after": "아지트가 사라져 놀이터로 옮김"
+    }
+   ]
+  }
+ ]
+}

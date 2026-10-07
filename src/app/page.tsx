@@ -1,10 +1,13 @@
-import styles from "./page.module.css";
+"use client";
+
+import { useEffect } from "react";
+import { SHELL_HTML } from "@/legacy/shell";
+import { start } from "@/legacy/gitstory";
 
 export default function Home() {
-  return (
-    <main className={styles.main}>
-      <h1>GitStory</h1>
-      <p>세계관을 버전 관리하는 AI 스토리 창작 보조 도구</p>
-    </main>
-  );
+  useEffect(() => {
+    start();
+  }, []);
+
+  return <div dangerouslySetInnerHTML={{ __html: SHELL_HTML }} />;
 }

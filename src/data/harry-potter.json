@@ -1,0 +1,1661 @@
+{
+ "meta": {
+  "id": "world_harry_potter",
+  "title": "해리 포터 (예시)",
+  "description": "6권 『혼혈 왕자』 시점에서 시작해 '천문탑, 덤블도어의 죽음' 사건 하나를 커밋한 상태. 자료: 나무위키 해리 포터 문서.",
+  "created_at": "2026-10-07T12:00:00Z"
+ },
+ "head": "e7f2b51",
+ "state": {
+  "background": [
+   {
+    "id": "bg_secrecy",
+    "category": "규칙",
+    "title": "국제 비밀 유지법",
+    "content": "마법사 사회는 머글에게 존재를 숨긴다. 영국 마법 사회는 런던 지하의 마법부가 다스린다.",
+    "introduced_in": null
+   },
+   {
+    "id": "bg_blood_status",
+    "category": "사회",
+    "title": "혈통 위계",
+    "content": "순수혈통, 혼혈, 머글 태생으로 나뉘는 차별 의식. 죽음을 먹는 자들의 순혈주의가 여기서 나온다.",
+    "introduced_in": null
+   },
+   {
+    "id": "bg_prophecy",
+    "category": "역사",
+    "title": "예언",
+    "content": "어둠의 마왕을 물리칠 힘을 가진 아이에 대한 예언. 볼드모트는 이 예언 때문에 해리를 노린다.",
+    "introduced_in": null
+   },
+   {
+    "id": "bg_horcrux",
+    "category": "마법",
+    "title": "호크룩스",
+    "content": "영혼을 쪼개 물건에 숨겨 죽지 않게 하는 어둠의 마법. 덤블도어는 볼드모트의 호크룩스를 추적하고 있다.",
+    "introduced_in": null
+   },
+   {
+    "id": "bg_unbreakable_vow",
+    "category": "마법",
+    "title": "깨뜨릴 수 없는 맹세",
+    "content": "어기면 죽는 마법 맹세. 스네이프는 나르시사에게 드레이코를 돕겠다고 맹세했다.",
+    "introduced_in": null
+   },
+   {
+    "id": "bg_vanishing_cabinet",
+    "category": "사건",
+    "title": "뚫린 호그와트 방어",
+    "content": "사라지는 캐비닛 한 쌍을 통해 호그와트 방어 마법이 뚫렸다. 더 이상 호그와트가 가장 안전한 곳이 아니라는 사실이 알려졌다.",
+    "introduced_in": "e7f2b51"
+   }
+  ],
+  "groups": [
+   {
+    "id": "grp_order",
+    "name": "불사조 기사단",
+    "kind": "faction",
+    "parent": null,
+    "traits": [
+     {
+      "key": "solidarity",
+      "label": "동료애",
+      "value": 0.9
+     },
+     {
+      "key": "anti_dark",
+      "label": "어둠의 마법 적대",
+      "value": 0.95,
+      "target": "grp_death_eaters"
+     },
+     {
+      "key": "secrecy",
+      "label": "비밀주의",
+      "value": 0.7
+     }
+    ],
+    "situation": {
+     "current": "덤블도어를 잃어 지휘에 공백이 생김. 스네이프의 배신에 큰 충격을 받음.",
+     "status": "지도자 상실",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "지도자이자 창설자를 잃음",
+       "source": "direct"
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_hogwarts",
+    "name": "호그와트",
+    "kind": "organization",
+    "parent": null,
+    "traits": [
+     {
+      "key": "protection",
+      "label": "학생 보호",
+      "value": 0.85
+     },
+     {
+      "key": "tradition",
+      "label": "전통",
+      "value": 0.6
+     }
+    ],
+    "situation": {
+     "current": "교장이 죽고 성 안까지 죽음을 먹는 자들이 들어옴. 학부모들이 아이들을 데려가기 시작함.",
+     "status": "폐교 위기",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "교장 사망, 성 안까지 침입당함",
+       "source": "direct"
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_gryffindor",
+    "name": "그리핀도르",
+    "kind": "organization",
+    "parent": "grp_hogwarts",
+    "parent_bond": 0.8,
+    "traits": [
+     {
+      "key": "courage",
+      "label": "용기",
+      "value": 0.9
+     },
+     {
+      "key": "recklessness",
+      "label": "무모함",
+      "value": 0.6
+     },
+     {
+      "key": "rivalry_slytherin",
+      "label": "슬리데린 경쟁심",
+      "value": 0.7,
+      "target": "grp_slytherin"
+     }
+    ],
+    "situation": {
+     "current": "덤블도어를 잃은 충격 속에서 학생들이 흔들림.",
+     "status": "애도",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "교장의 죽음이 기숙사 전체에 전해짐.",
+       "source": "propagated",
+       "via": "grp_hogwarts",
+       "weight": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_slytherin",
+    "name": "슬리데린",
+    "kind": "organization",
+    "parent": "grp_hogwarts",
+    "parent_bond": 0.6,
+    "traits": [
+     {
+      "key": "ambition",
+      "label": "야망",
+      "value": 0.9
+     },
+     {
+      "key": "pureblood",
+      "label": "혈통 의식",
+      "value": 0.6
+     },
+     {
+      "key": "cunning",
+      "label": "교활함",
+      "value": 0.8
+     }
+    ],
+    "situation": {
+     "current": "일부 학생의 가족이 죽음을 먹는 자. 스네이프는 사감을 맡고 있음.",
+     "status": "활동중",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "호그와트에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_hogwarts",
+       "weight": -0.3
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_ministry",
+    "name": "마법부",
+    "kind": "organization",
+    "parent": null,
+    "traits": [
+     {
+      "key": "bureaucracy",
+      "label": "관료주의",
+      "value": 0.8
+     },
+     {
+      "key": "image",
+      "label": "체면 중시",
+      "value": 0.8
+     },
+     {
+      "key": "denial",
+      "label": "현실 외면",
+      "value": 0.6
+     }
+    ],
+    "situation": {
+     "current": "퍼지가 물러나고 스크림저가 장관에 취임. 체포 실적을 내는 데 급급함.",
+     "status": "전시 체제",
+     "history": []
+    }
+   },
+   {
+    "id": "grp_aurors",
+    "name": "오러 사무국",
+    "kind": "organization",
+    "parent": "grp_ministry",
+    "parent_bond": 0.8,
+    "traits": [
+     {
+      "key": "duty",
+      "label": "임무 의식",
+      "value": 0.85
+     },
+     {
+      "key": "order",
+      "label": "질서 중시",
+      "value": 0.7
+     }
+    ],
+    "situation": {
+     "current": "호그와트 경비와 죽음을 먹는 자 체포에 동원됨.",
+     "status": "비상",
+     "history": []
+    }
+   },
+   {
+    "id": "grp_death_eaters",
+    "name": "죽음을 먹는 자들",
+    "kind": "faction",
+    "parent": null,
+    "traits": [
+     {
+      "key": "pureblood",
+      "label": "순혈주의",
+      "value": 0.95
+     },
+     {
+      "key": "fear_rule",
+      "label": "공포에 의한 결속",
+      "value": 0.9
+     },
+     {
+      "key": "cruelty",
+      "label": "잔혹함",
+      "value": 0.85
+     }
+    ],
+    "situation": {
+     "current": "최대 걸림돌이던 덤블도어를 제거하고 마법부 장악을 노림.",
+     "status": "세력 확장",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "최대 걸림돌 제거",
+       "source": "direct"
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_malfoy",
+    "name": "말포이 가문",
+    "kind": "organization",
+    "parent": "grp_death_eaters",
+    "parent_bond": 0.4,
+    "traits": [
+     {
+      "key": "self_preservation",
+      "label": "자기 보존",
+      "value": 0.9
+     },
+     {
+      "key": "pureblood",
+      "label": "순혈주의",
+      "value": 0.85
+     },
+     {
+      "key": "status_seeking",
+      "label": "권세 추구",
+      "value": 0.8
+     }
+    ],
+    "situation": {
+     "current": "루시우스가 신비부 전투 실패로 아즈카반에 수감. 가문의 위신이 바닥.",
+     "status": "몰락 위기",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "죽음을 먹는 자들에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_death_eaters",
+       "weight": 0.56
+      }
+     ]
+    }
+   }
+  ],
+  "characters": [
+   {
+    "id": "chr_harry",
+    "name": "해리 포터",
+    "memberships": [
+     {
+      "group": "grp_gryffindor",
+      "role": "6학년",
+      "bond": 0.9
+     },
+     {
+      "group": "grp_hogwarts",
+      "role": "학생",
+      "bond": 0.8
+     }
+    ],
+    "traits": [
+     {
+      "key": "courage",
+      "label": "용기",
+      "value": 0.9
+     },
+     {
+      "key": "loyalty_friends",
+      "label": "친구에 대한 의리",
+      "value": 0.9
+     },
+     {
+      "key": "recklessness",
+      "label": "충동성",
+      "value": 0.7
+     },
+     {
+      "key": "hate_voldemort",
+      "label": "볼드모트 적대",
+      "value": 0.9,
+      "target": "chr_voldemort"
+     }
+    ],
+    "situation": {
+     "current": "덤블도어를 잃고 스네이프를 증오함. 학교를 떠나 호크룩스를 찾기로 결심.",
+     "status": "결심",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "눈앞에서 스승을 잃음",
+       "source": "direct"
+      },
+      {
+       "commit": "e7f2b51",
+       "summary": "그리핀도르에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_gryffindor",
+       "weight": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_ron",
+    "name": "론 위즐리",
+    "memberships": [
+     {
+      "group": "grp_gryffindor",
+      "role": "6학년",
+      "bond": 0.85
+     },
+     {
+      "group": "grp_hogwarts",
+      "role": "학생",
+      "bond": 0.7
+     }
+    ],
+    "traits": [
+     {
+      "key": "loyalty_friends",
+      "label": "친구에 대한 의리",
+      "value": 0.85
+     },
+     {
+      "key": "insecurity",
+      "label": "열등감",
+      "value": 0.7
+     },
+     {
+      "key": "humor",
+      "label": "유머",
+      "value": 0.6
+     }
+    ],
+    "situation": {
+     "current": "해리와 함께 호크룩스를 찾아 떠나기로 함.",
+     "status": "결심",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "그리핀도르에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_gryffindor",
+       "weight": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_hermione",
+    "name": "헤르미온느 그레인저",
+    "memberships": [
+     {
+      "group": "grp_gryffindor",
+      "role": "6학년",
+      "bond": 0.85
+     },
+     {
+      "group": "grp_hogwarts",
+      "role": "학생",
+      "bond": 0.8
+     }
+    ],
+    "traits": [
+     {
+      "key": "intellect",
+      "label": "지성",
+      "value": 0.95
+     },
+     {
+      "key": "principled",
+      "label": "원칙주의",
+      "value": 0.8
+     },
+     {
+      "key": "loyalty_friends",
+      "label": "친구에 대한 의리",
+      "value": 0.85
+     }
+    ],
+    "situation": {
+     "current": "해리와 함께 떠날 준비를 시작함.",
+     "status": "결심",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "그리핀도르에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_gryffindor",
+       "weight": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_dumbledore",
+    "name": "알버스 덤블도어",
+    "memberships": [
+     {
+      "group": "grp_hogwarts",
+      "role": "교장",
+      "bond": 1.0,
+      "active": false
+     },
+     {
+      "group": "grp_order",
+      "role": "창설자",
+      "bond": 1.0,
+      "active": false
+     }
+    ],
+    "traits": [
+     {
+      "key": "wisdom",
+      "label": "지혜",
+      "value": 0.95
+     },
+     {
+      "key": "strategy",
+      "label": "큰 그림을 위한 계산",
+      "value": 0.9
+     },
+     {
+      "key": "protection",
+      "label": "학생 보호",
+      "value": 0.85
+     }
+    ],
+    "situation": {
+     "current": "천문탑에서 스네이프의 살해 저주를 맞고 사망.",
+     "status": "사망",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "스네이프의 살해 저주로 사망",
+       "source": "direct"
+      },
+      {
+       "commit": "e7f2b51",
+       "summary": "불사조 기사단에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_order",
+       "weight": -0.94
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_snape",
+    "name": "세베루스 스네이프",
+    "memberships": [
+     {
+      "group": "grp_hogwarts",
+      "role": "어둠의 마법 방어술 교수",
+      "bond": 0.6
+     },
+     {
+      "group": "grp_slytherin",
+      "role": "사감",
+      "bond": 0.7
+     },
+     {
+      "group": "grp_order",
+      "role": "덤블도어의 스파이",
+      "bond": 0.8
+     },
+     {
+      "group": "grp_death_eaters",
+      "role": "이중 스파이",
+      "bond": 0.5
+     }
+    ],
+    "traits": [
+     {
+      "key": "double_agent",
+      "label": "이중성",
+      "value": 0.95
+     },
+     {
+      "key": "love_lily",
+      "label": "릴리에 대한 사랑",
+      "value": 0.95
+     },
+     {
+      "key": "bitterness",
+      "label": "원한",
+      "value": 0.7,
+      "target": "chr_harry"
+     }
+    ],
+    "situation": {
+     "current": "덤블도어를 죽이고 죽음을 먹는 자들과 함께 달아남. 겉으로는 볼드모트의 최측근이 됨.",
+     "status": "도주중",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "맹세와 약속 사이에서 덤블도어를 죽임",
+       "source": "direct"
+      },
+      {
+       "commit": "e7f2b51",
+       "summary": "불사조 기사단에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_order",
+       "weight": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_voldemort",
+    "name": "볼드모트",
+    "aliases": [
+     "톰 리들"
+    ],
+    "memberships": [
+     {
+      "group": "grp_death_eaters",
+      "role": "수장",
+      "bond": 1.0
+     }
+    ],
+    "traits": [
+     {
+      "key": "fear_of_death",
+      "label": "죽음에 대한 공포",
+      "value": 0.95
+     },
+     {
+      "key": "cruelty",
+      "label": "잔혹함",
+      "value": 0.9
+     },
+     {
+      "key": "pureblood",
+      "label": "순혈주의(자기우월)",
+      "value": 0.8
+     }
+    ],
+    "situation": {
+     "current": "가장 두려워하던 적이 사라져 마법부 장악에 나섬.",
+     "status": "활동중",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "죽음을 먹는 자들에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_death_eaters",
+       "weight": 0.92
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_bellatrix",
+    "name": "벨라트릭스 레스트레인지",
+    "memberships": [
+     {
+      "group": "grp_death_eaters",
+      "role": "핵심 부하",
+      "bond": 0.95
+     }
+    ],
+    "traits": [
+     {
+      "key": "fanatic",
+      "label": "광신적 충성",
+      "value": 0.95
+     },
+     {
+      "key": "cruelty",
+      "label": "잔혹함",
+      "value": 0.85
+     },
+     {
+      "key": "pureblood",
+      "label": "순혈주의",
+      "value": 0.95
+     }
+    ],
+    "situation": {
+     "current": "덤블도어의 죽음에 환호하며 더 과감해짐.",
+     "status": "활동중",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "죽음을 먹는 자들에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_death_eaters",
+       "weight": 1.0
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_draco",
+    "name": "드레이코 말포이",
+    "memberships": [
+     {
+      "group": "grp_slytherin",
+      "role": "6학년",
+      "bond": 0.8
+     },
+     {
+      "group": "grp_malfoy",
+      "role": "후계자",
+      "bond": 0.9
+     },
+     {
+      "group": "grp_death_eaters",
+      "role": "신입",
+      "bond": 0.5
+     }
+    ],
+    "traits": [
+     {
+      "key": "family_first",
+      "label": "가족 보호",
+      "value": 0.85
+     },
+     {
+      "key": "pride",
+      "label": "오만함",
+      "value": 0.7
+     },
+     {
+      "key": "fear",
+      "label": "두려움",
+      "value": 0.8
+     }
+    ],
+    "situation": {
+     "current": "덤블도어를 죽이지 못하고 스네이프와 함께 달아남. 볼드모트의 처분이 두려움.",
+     "status": "도주중",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "임무에 실패하고 도주",
+       "source": "direct"
+      },
+      {
+       "commit": "e7f2b51",
+       "summary": "말포이 가문에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_malfoy",
+       "weight": 0.5
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_lucius",
+    "name": "루시우스 말포이",
+    "memberships": [
+     {
+      "group": "grp_malfoy",
+      "role": "가장",
+      "bond": 1.0
+     },
+     {
+      "group": "grp_death_eaters",
+      "role": "간부",
+      "bond": 0.6
+     }
+    ],
+    "traits": [
+     {
+      "key": "self_preservation",
+      "label": "자기 보존",
+      "value": 0.9
+     },
+     {
+      "key": "pureblood",
+      "label": "순혈주의",
+      "value": 0.8
+     }
+    ],
+    "situation": {
+     "current": "아들 덕에 가문이 겨우 처분을 면함.",
+     "status": "수감",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "말포이 가문에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_malfoy",
+       "weight": 0.89
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_scrimgeour",
+    "name": "루퍼스 스크림저",
+    "memberships": [
+     {
+      "group": "grp_ministry",
+      "role": "마법부 장관",
+      "bond": 1.0
+     },
+     {
+      "group": "grp_aurors",
+      "role": "전 오러 국장",
+      "bond": 0.6
+     }
+    ],
+    "traits": [
+     {
+      "key": "pragmatism",
+      "label": "실리주의",
+      "value": 0.8
+     },
+     {
+      "key": "toughness",
+      "label": "강경함",
+      "value": 0.7
+     },
+     {
+      "key": "image",
+      "label": "대외 이미지 중시",
+      "value": 0.7
+     }
+    ],
+    "situation": {
+     "current": "전직 오러 국장 출신 장관. 해리를 마법부 홍보에 이용하려 함.",
+     "status": "장관",
+     "history": []
+    }
+   },
+   {
+    "id": "chr_umbridge",
+    "name": "돌로레스 엄브리지",
+    "memberships": [
+     {
+      "group": "grp_ministry",
+      "role": "고위 관료",
+      "bond": 0.9
+     }
+    ],
+    "traits": [
+     {
+      "key": "authoritarian",
+      "label": "권위주의",
+      "value": 0.9
+     },
+     {
+      "key": "anti_halfbreed",
+      "label": "혼혈·비인간 혐오",
+      "value": 0.9
+     },
+     {
+      "key": "ambition",
+      "label": "야망",
+      "value": 0.8
+     }
+    ],
+    "situation": {
+     "current": "스크림저 체제에서도 고위직을 유지하며 기회를 엿봄.",
+     "status": "활동중",
+     "history": []
+    }
+   },
+   {
+    "id": "chr_kingsley",
+    "name": "킹슬리 샤클볼트",
+    "memberships": [
+     {
+      "group": "grp_aurors",
+      "role": "오러",
+      "bond": 0.7
+     },
+     {
+      "group": "grp_order",
+      "role": "기사단원",
+      "bond": 0.9
+     }
+    ],
+    "traits": [
+     {
+      "key": "duty",
+      "label": "임무 의식",
+      "value": 0.85
+     },
+     {
+      "key": "solidarity",
+      "label": "동료애",
+      "value": 0.8
+     }
+    ],
+    "situation": {
+     "current": "기사단의 지휘를 나누어 맡으며 마법부 안을 살핌.",
+     "status": "경계",
+     "history": [
+      {
+       "commit": "e7f2b51",
+       "summary": "불사조 기사단에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+       "source": "propagated",
+       "via": "grp_order",
+       "weight": -1.0
+      }
+     ]
+    }
+   }
+  ],
+  "relations": [
+   {
+    "id": "rel_order_de",
+    "from": "grp_order",
+    "to": "grp_death_eaters",
+    "type": "hostile",
+    "intensity": 0.95,
+    "note": "2차 마법사 전쟁"
+   },
+   {
+    "id": "rel_min_de",
+    "from": "grp_ministry",
+    "to": "grp_death_eaters",
+    "type": "hostile",
+    "intensity": 0.6,
+    "note": "스크림저 체제의 공식 대응"
+   },
+   {
+    "id": "rel_min_order",
+    "from": "grp_ministry",
+    "to": "grp_order",
+    "type": "rival",
+    "intensity": 0.4,
+    "note": "덤블도어와의 불신"
+   },
+   {
+    "id": "rel_hog_order",
+    "from": "grp_hogwarts",
+    "to": "grp_order",
+    "type": "alliance",
+    "intensity": 0.7,
+    "note": "덤블도어가 양쪽을 이끎"
+   },
+   {
+    "id": "rel_gry_sly",
+    "from": "grp_gryffindor",
+    "to": "grp_slytherin",
+    "type": "rival",
+    "intensity": 0.7,
+    "note": "기숙사 경쟁"
+   },
+   {
+    "id": "rel_harry_voldemort",
+    "from": "chr_harry",
+    "to": "chr_voldemort",
+    "type": "hostile",
+    "intensity": 1.0,
+    "note": "예언"
+   },
+   {
+    "id": "rel_harry_ron",
+    "from": "chr_harry",
+    "to": "chr_ron",
+    "type": "personal",
+    "intensity": 0.95,
+    "note": "단짝"
+   },
+   {
+    "id": "rel_harry_hermione",
+    "from": "chr_harry",
+    "to": "chr_hermione",
+    "type": "personal",
+    "intensity": 0.9,
+    "note": "단짝"
+   },
+   {
+    "id": "rel_ron_hermione",
+    "from": "chr_ron",
+    "to": "chr_hermione",
+    "type": "personal",
+    "intensity": 0.7,
+    "note": "서로 호감"
+   },
+   {
+    "id": "rel_harry_dumbledore",
+    "from": "chr_harry",
+    "to": "chr_dumbledore",
+    "type": "personal",
+    "intensity": 0.9,
+    "note": "스승과 제자"
+   },
+   {
+    "id": "rel_snape_dumbledore",
+    "from": "chr_snape",
+    "to": "chr_dumbledore",
+    "type": "alliance",
+    "intensity": 0.8,
+    "note": "약속대로 덤블도어를 죽임"
+   },
+   {
+    "id": "rel_harry_snape",
+    "from": "chr_harry",
+    "to": "chr_snape",
+    "type": "hostile",
+    "intensity": 0.95,
+    "note": "천문탑 이후 증오"
+   },
+   {
+    "id": "rel_harry_draco",
+    "from": "chr_harry",
+    "to": "chr_draco",
+    "type": "hostile",
+    "intensity": 0.7,
+    "note": "앙숙"
+   },
+   {
+    "id": "rel_draco_lucius",
+    "from": "chr_draco",
+    "to": "chr_lucius",
+    "type": "family",
+    "intensity": 0.9,
+    "note": "부자"
+   },
+   {
+    "id": "rel_bella_draco",
+    "from": "chr_bellatrix",
+    "to": "chr_draco",
+    "type": "family",
+    "intensity": 0.6,
+    "note": "이모와 조카"
+   },
+   {
+    "id": "rel_vold_malfoy",
+    "from": "chr_voldemort",
+    "to": "grp_malfoy",
+    "type": "dominate",
+    "intensity": 0.8,
+    "directed": true,
+    "note": "루시우스의 실패를 드레이코에게 갚게 함"
+   },
+   {
+    "id": "rel_scrim_harry",
+    "from": "chr_scrimgeour",
+    "to": "chr_harry",
+    "type": "rival",
+    "intensity": 0.5,
+    "note": "홍보에 이용하려 함"
+   },
+   {
+    "id": "rel_umbridge_harry",
+    "from": "chr_umbridge",
+    "to": "chr_harry",
+    "type": "hostile",
+    "intensity": 0.7
+   }
+  ]
+ },
+ "commits": [
+  {
+   "id": "a3c9e10",
+   "parent": null,
+   "kind": "init",
+   "message": "세계관 초기 설정 (6권 『혼혈 왕자』 시점)",
+   "created_at": "2026-10-07T12:00:00Z",
+   "patches": []
+  },
+  {
+   "id": "e7f2b51",
+   "parent": "a3c9e10",
+   "kind": "event",
+   "message": "사건: 천문탑, 덤블도어의 죽음",
+   "created_at": "2026-10-07T12:10:00Z",
+   "event": {
+    "title": "천문탑, 덤블도어의 죽음",
+    "description": "드레이코가 고친 사라지는 캐비닛으로 죽음을 먹는 자들이 호그와트에 들어온다. 천문탑에서 드레이코가 끝내 덤블도어를 죽이지 못하자 스네이프가 대신 살해 저주를 쏘고, 드레이코와 함께 달아난다.",
+    "story_time": "6권 『혼혈 왕자』 후반",
+    "involved": [
+     "chr_dumbledore",
+     "chr_snape",
+     "chr_draco",
+     "chr_harry",
+     "grp_death_eaters",
+     "grp_hogwarts",
+     "grp_order"
+    ]
+   },
+   "impacts": [
+    {
+     "target": "grp_order",
+     "source": "direct",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -0.9,
+     "summary": "지도자이자 창설자를 잃음"
+    },
+    {
+     "target": "grp_hogwarts",
+     "source": "direct",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -0.85,
+     "summary": "교장 사망, 성 안까지 침입당함"
+    },
+    {
+     "target": "grp_death_eaters",
+     "source": "direct",
+     "tags": [
+      "기회"
+     ],
+     "magnitude": 0.7,
+     "summary": "최대 걸림돌 제거"
+    },
+    {
+     "target": "chr_dumbledore",
+     "source": "direct",
+     "tags": [
+      "상실"
+     ],
+     "magnitude": -1.0,
+     "summary": "스네이프의 살해 저주로 사망"
+    },
+    {
+     "target": "chr_harry",
+     "source": "direct",
+     "tags": [
+      "상실"
+     ],
+     "magnitude": -0.9,
+     "summary": "눈앞에서 스승을 잃음"
+    },
+    {
+     "target": "chr_draco",
+     "source": "direct",
+     "tags": [
+      "위협",
+      "상실"
+     ],
+     "magnitude": -0.7,
+     "summary": "임무에 실패하고 도주"
+    },
+    {
+     "target": "chr_snape",
+     "source": "direct",
+     "tags": [
+      "정체성"
+     ],
+     "magnitude": -0.5,
+     "summary": "맹세와 약속 사이에서 덤블도어를 죽임"
+    },
+    {
+     "target": "grp_gryffindor",
+     "source": "propagated",
+     "via": "grp_hogwarts",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -1.0,
+     "summary": ""
+    },
+    {
+     "target": "grp_slytherin",
+     "source": "propagated",
+     "via": "grp_hogwarts",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -0.3,
+     "summary": ""
+    },
+    {
+     "target": "grp_malfoy",
+     "source": "propagated",
+     "via": "grp_death_eaters",
+     "tags": [
+      "기회"
+     ],
+     "magnitude": 0.56,
+     "summary": ""
+    },
+    {
+     "target": "chr_harry",
+     "source": "propagated",
+     "via": "grp_gryffindor",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -1.0,
+     "summary": ""
+    },
+    {
+     "target": "chr_ron",
+     "source": "propagated",
+     "via": "grp_gryffindor",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -1.0,
+     "summary": ""
+    },
+    {
+     "target": "chr_hermione",
+     "source": "propagated",
+     "via": "grp_gryffindor",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -1.0,
+     "summary": ""
+    },
+    {
+     "target": "chr_dumbledore",
+     "source": "propagated",
+     "via": "grp_order",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -0.94,
+     "summary": ""
+    },
+    {
+     "target": "chr_snape",
+     "source": "propagated",
+     "via": "grp_order",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -1.0,
+     "summary": ""
+    },
+    {
+     "target": "chr_voldemort",
+     "source": "propagated",
+     "via": "grp_death_eaters",
+     "tags": [
+      "기회"
+     ],
+     "magnitude": 0.92,
+     "summary": ""
+    },
+    {
+     "target": "chr_bellatrix",
+     "source": "propagated",
+     "via": "grp_death_eaters",
+     "tags": [
+      "기회"
+     ],
+     "magnitude": 1.0,
+     "summary": ""
+    },
+    {
+     "target": "chr_draco",
+     "source": "propagated",
+     "via": "grp_malfoy",
+     "tags": [
+      "기회"
+     ],
+     "magnitude": 0.5,
+     "summary": ""
+    },
+    {
+     "target": "chr_lucius",
+     "source": "propagated",
+     "via": "grp_malfoy",
+     "tags": [
+      "기회"
+     ],
+     "magnitude": 0.89,
+     "summary": ""
+    },
+    {
+     "target": "chr_kingsley",
+     "source": "propagated",
+     "via": "grp_order",
+     "tags": [
+      "상실",
+      "위협"
+     ],
+     "magnitude": -1.0,
+     "summary": ""
+    }
+   ],
+   "patches": [
+    {
+     "op": "add",
+     "path": "/groups/grp_order/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "지도자이자 창설자를 잃음",
+      "source": "direct"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/groups/grp_hogwarts/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "교장 사망, 성 안까지 침입당함",
+      "source": "direct"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/groups/grp_death_eaters/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "최대 걸림돌 제거",
+      "source": "direct"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_dumbledore/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "스네이프의 살해 저주로 사망",
+      "source": "direct"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_harry/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "눈앞에서 스승을 잃음",
+      "source": "direct"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_draco/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "임무에 실패하고 도주",
+      "source": "direct"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_snape/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "맹세와 약속 사이에서 덤블도어를 죽임",
+      "source": "direct"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/groups/grp_gryffindor/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "교장의 죽음이 기숙사 전체에 전해짐.",
+      "source": "propagated",
+      "via": "grp_hogwarts",
+      "weight": -1.0
+     }
+    },
+    {
+     "op": "add",
+     "path": "/groups/grp_slytherin/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "호그와트에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_hogwarts",
+      "weight": -0.3
+     }
+    },
+    {
+     "op": "add",
+     "path": "/groups/grp_malfoy/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "죽음을 먹는 자들에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_death_eaters",
+      "weight": 0.56
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_harry/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "그리핀도르에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_gryffindor",
+      "weight": -1.0
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_ron/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "그리핀도르에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_gryffindor",
+      "weight": -1.0
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_hermione/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "그리핀도르에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_gryffindor",
+      "weight": -1.0
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_dumbledore/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "불사조 기사단에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_order",
+      "weight": -0.94
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_snape/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "불사조 기사단에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_order",
+      "weight": -1.0
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_voldemort/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "죽음을 먹는 자들에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_death_eaters",
+      "weight": 0.92
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_bellatrix/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "죽음을 먹는 자들에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_death_eaters",
+      "weight": 1.0
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_draco/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "말포이 가문에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_malfoy",
+      "weight": 0.5
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_lucius/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "말포이 가문에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_malfoy",
+      "weight": 0.89
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_kingsley/situation/history/-",
+     "after": {
+      "commit": "e7f2b51",
+      "summary": "불사조 기사단에서 전해진 '천문탑, 덤블도어의 죽음'의 영향을 받음.",
+      "source": "propagated",
+      "via": "grp_order",
+      "weight": -1.0
+     }
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_order/situation/current",
+     "before": "덤블도어 지휘 아래 볼드모트에 맞서 활동. 신비부 전투에서 시리우스를 잃고 전력을 보강하는 중.",
+     "after": "덤블도어를 잃어 지휘에 공백이 생김. 스네이프의 배신에 큰 충격을 받음."
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_order/situation/status",
+     "before": "활동중",
+     "after": "지도자 상실"
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_hogwarts/situation/current",
+     "before": "전쟁 중에도 덤블도어의 보호 아래 수업을 이어감. 성의 보안이 강화됨.",
+     "after": "교장이 죽고 성 안까지 죽음을 먹는 자들이 들어옴. 학부모들이 아이들을 데려가기 시작함."
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_hogwarts/situation/status",
+     "before": "경계",
+     "after": "폐교 위기"
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_death_eaters/situation/current",
+     "before": "볼드모트 부활이 알려진 뒤 대놓고 활동. 호그와트 침투를 준비 중.",
+     "after": "최대 걸림돌이던 덤블도어를 제거하고 마법부 장악을 노림."
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_death_eaters/situation/status",
+     "before": "활동중",
+     "after": "세력 확장"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_dumbledore/situation/current",
+     "before": "저주받은 반지 때문에 손이 검게 타들어 감. 해리에게 호크룩스를 알려주는 중.",
+     "after": "천문탑에서 스네이프의 살해 저주를 맞고 사망."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_dumbledore/situation/status",
+     "before": "쇠약",
+     "after": "사망"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_harry/situation/current",
+     "before": "덤블도어와 함께 볼드모트의 과거와 호크룩스를 추적 중. 드레이코를 의심함.",
+     "after": "덤블도어를 잃고 스네이프를 증오함. 학교를 떠나 호크룩스를 찾기로 결심."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_harry/situation/status",
+     "before": "활동중",
+     "after": "결심"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_draco/situation/current",
+     "before": "덤블도어 살해 임무를 받고 사라지는 캐비닛을 고치는 중.",
+     "after": "덤블도어를 죽이지 못하고 스네이프와 함께 달아남. 볼드모트의 처분이 두려움."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_draco/situation/status",
+     "before": "임무 수행 중",
+     "after": "도주중"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_snape/situation/current",
+     "before": "나르시사와 깨뜨릴 수 없는 맹세를 맺음. 양쪽 모두에게 신임을 받고 있음.",
+     "after": "덤블도어를 죽이고 죽음을 먹는 자들과 함께 달아남. 겉으로는 볼드모트의 최측근이 됨."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_snape/situation/status",
+     "before": "이중 스파이",
+     "after": "도주중"
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_gryffindor/situation/current",
+     "before": "해리·론·헤르미온느가 6학년. 퀴디치 우승을 노림.",
+     "after": "덤블도어를 잃은 충격 속에서 학생들이 흔들림."
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_gryffindor/situation/status",
+     "before": "활동중",
+     "after": "애도"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_ron/situation/current",
+     "before": "퀴디치 키퍼로 활약. 라벤더와 사귀며 헤르미온느와 서먹함.",
+     "after": "해리와 함께 호크룩스를 찾아 떠나기로 함."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_ron/situation/status",
+     "before": "활동중",
+     "after": "결심"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_hermione/situation/current",
+     "before": "머글 태생. 해리가 쓰는 혼혈 왕자의 교과서를 경계함.",
+     "after": "해리와 함께 떠날 준비를 시작함."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_hermione/situation/status",
+     "before": "활동중",
+     "after": "결심"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_voldemort/situation/current",
+     "before": "부활 후 세력을 재건 중. 드레이코에게 덤블도어 살해를 명령함.",
+     "after": "가장 두려워하던 적이 사라져 마법부 장악에 나섬."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_bellatrix/situation/current",
+     "before": "아즈카반 탈옥 후 볼드모트 곁에서 활동. 스네이프를 불신함.",
+     "after": "덤블도어의 죽음에 환호하며 더 과감해짐."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_lucius/situation/current",
+     "before": "신비부 전투 실패로 아즈카반에 수감됨.",
+     "after": "아들 덕에 가문이 겨우 처분을 면함."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_kingsley/situation/current",
+     "before": "오러이자 기사단원. 머글 총리 경호를 맡음.",
+     "after": "기사단의 지휘를 나누어 맡으며 마법부 안을 살핌."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_kingsley/situation/status",
+     "before": "활동중",
+     "after": "경계"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_dumbledore/memberships/grp_hogwarts/active",
+     "before": null,
+     "after": false
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_dumbledore/memberships/grp_order/active",
+     "before": null,
+     "after": false
+    },
+    {
+     "op": "replace",
+     "path": "/relations/rel_harry_snape/intensity",
+     "before": 0.5,
+     "after": 0.95
+    },
+    {
+     "op": "replace",
+     "path": "/relations/rel_harry_snape/note",
+     "before": "서로 불신",
+     "after": "천문탑 이후 증오"
+    },
+    {
+     "op": "replace",
+     "path": "/relations/rel_snape_dumbledore/note",
+     "before": "비밀 약속",
+     "after": "약속대로 덤블도어를 죽임"
+    },
+    {
+     "op": "add",
+     "path": "/background/bg_vanishing_cabinet",
+     "after": {
+      "id": "bg_vanishing_cabinet",
+      "category": "사건",
+      "title": "뚫린 호그와트 방어",
+      "content": "사라지는 캐비닛 한 쌍을 통해 호그와트 방어 마법이 뚫렸다. 더 이상 호그와트가 가장 안전한 곳이 아니라는 사실이 알려졌다.",
+      "introduced_in": "e7f2b51"
+     }
+    }
+   ]
+  }
+ ]
+}

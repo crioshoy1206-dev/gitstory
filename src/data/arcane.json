@@ -1,0 +1,2069 @@
+{
+ "meta": {
+  "id": "world_arcane",
+  "title": "아케인 (예시)",
+  "description": "시즌1 2막 시점에서 시작해, '의회 헥스텍 로켓 공격' 사건 커밋과 녹서스·검은장미단 추가 커밋을 쌓은 상태. state는 HEAD 기준.",
+  "created_at": "2026-10-07T12:00:00Z"
+ },
+ "head": "d2b9f40",
+ "state": {
+  "background": [
+   {
+    "id": "bg_two_cities",
+    "category": "지리",
+    "title": "위 도시와 아래 도시",
+    "content": "필트오버(위 도시)와 자운(아래 도시)은 하나의 도시였으나 수직으로 분리되어 있다. 햇빛·자원은 위로, 오염과 빈곤은 아래로 쏠린다.",
+    "introduced_in": null
+   },
+   {
+    "id": "bg_hextech",
+    "category": "기술",
+    "title": "헥스텍",
+    "content": "마법 룬을 공학으로 제어하는 기술. 제이스와 빅토르가 실용화했고 필트오버 번영의 핵심 동력이다.",
+    "introduced_in": null
+   },
+   {
+    "id": "bg_shimmer",
+    "category": "기술",
+    "title": "시머",
+    "content": "싱지드가 개발한 신체 강화 약물. 실코 세력의 돈줄이자 무력 기반이며 자운을 병들게 한다.",
+    "introduced_in": null
+   },
+   {
+    "id": "bg_bridge_uprising",
+    "category": "역사",
+    "title": "다리 봉기",
+    "content": "과거 반더가 이끈 자운의 봉기. 진압 후 반더와 필트오버 사이에 '아래 도시는 아래끼리' 휴전이 성립했다.",
+    "introduced_in": null
+   },
+   {
+    "id": "bg_hextech_weapon",
+    "category": "기술",
+    "title": "헥스텍의 무기화",
+    "content": "징크스가 헥스텍 보석을 무기로 사용해 의회를 공격하면서, 헥스텍이 무기가 될 수 있다는 사실이 양쪽 도시에 드러났다.",
+    "introduced_in": "c1a7e3f"
+   },
+   {
+    "id": "bg_noxus_empire",
+    "category": "지리",
+    "title": "녹서스 제국",
+    "content": "필트오버 바깥 대륙의 군사 제국. 힘이 곧 정당성이라는 원칙 아래 정복으로 영토를 넓혀왔다. 필트오버의 헥스텍을 전쟁 도구로 노린다.",
+    "introduced_in": "d2b9f40"
+   },
+   {
+    "id": "bg_black_rose_magic",
+    "category": "마법",
+    "title": "검은장미단의 마법",
+    "content": "녹서스 귀족 사회 뒤에 숨은 마법사 결사. 고대 마법과 룬의 힘을 추구하며, 헥스텍이 깨운 마법의 흐름에 주목한다.",
+    "introduced_in": "d2b9f40"
+   }
+  ],
+  "groups": [
+   {
+    "id": "grp_piltover",
+    "name": "필트오버",
+    "kind": "nation",
+    "parent": null,
+    "traits": [
+     {
+      "key": "progress",
+      "label": "진보·번영 지향",
+      "value": 0.8
+     },
+     {
+      "key": "classism",
+      "label": "계급주의",
+      "value": 0.7
+     },
+     {
+      "key": "contempt",
+      "label": "자운 경시",
+      "value": 0.7,
+      "target": "grp_zaun"
+     }
+    ],
+    "situation": {
+     "current": "의회가 로켓 공격을 받아 다수 의원이 사상. 자운에 대한 보복 여론이 폭발 직전.",
+     "status": "위기",
+     "history": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "의회 피격. 진보의 도시라는 자신감이 공포와 분노로 바뀜.",
+       "source": "direct"
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_zaun",
+    "name": "자운",
+    "kind": "nation",
+    "parent": null,
+    "traits": [
+     {
+      "key": "survival",
+      "label": "생존주의",
+      "value": 0.9
+     },
+     {
+      "key": "individualism",
+      "label": "개인주의",
+      "value": 0.7
+     },
+     {
+      "key": "resentment",
+      "label": "필트오버 반감",
+      "value": 0.8,
+      "target": "grp_piltover"
+     }
+    ],
+    "situation": {
+     "current": "실코가 사망해 지배 구조가 흔들리는 동시에, 필트오버의 보복이 예고된 상태.",
+     "status": "불안정",
+     "history": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "실코 사망과 필트오버의 보복 위협이 동시에 닥침.",
+       "source": "direct"
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_council",
+    "name": "필트오버 의회",
+    "kind": "organization",
+    "parent": "grp_piltover",
+    "parent_bond": 0.9,
+    "traits": [
+     {
+      "key": "conservatism",
+      "label": "보수성",
+      "value": 0.6
+     },
+     {
+      "key": "consensus",
+      "label": "합의주의",
+      "value": 0.7
+     }
+    ],
+    "situation": {
+     "current": "회의 중 로켓에 피격. 의원 다수가 사상, 의사결정 기능 마비.",
+     "status": "기능 마비",
+     "history": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "자운과의 협상안을 표결하던 중 피격.",
+       "source": "direct"
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_enforcers",
+    "name": "집행관",
+    "kind": "organization",
+    "parent": "grp_piltover",
+    "parent_bond": 0.8,
+    "traits": [
+     {
+      "key": "order",
+      "label": "질서 중시",
+      "value": 0.8
+     },
+     {
+      "key": "hardline",
+      "label": "강경함",
+      "value": 0.6
+     }
+    ],
+    "situation": {
+     "current": "의회 피격의 책임론과 함께 자운 강경 진압 압력을 받고 있음.",
+     "status": "비상",
+     "history": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "필트오버의 분노가 전파되어 진압 준비 압력이 커짐.",
+       "source": "propagated",
+       "via": "grp_piltover",
+       "weight": -0.67
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_silco_faction",
+    "name": "실코 세력",
+    "kind": "faction",
+    "parent": "grp_zaun",
+    "parent_bond": 0.7,
+    "traits": [
+     {
+      "key": "totalitarian",
+      "label": "전체주의(수장 중심)",
+      "value": 0.8
+     },
+     {
+      "key": "independence",
+      "label": "자운 독립 추구",
+      "value": 0.9
+     }
+    ],
+    "situation": {
+     "current": "수장 실코가 징크스의 총에 사망. 징크스가 사실상 상징이 되었으나 조직은 구심점을 잃음.",
+     "status": "수장 공백",
+     "history": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "실코 사망. 시머 공급망과 화공남작 통제력이 흔들림.",
+       "source": "direct"
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_chembarons",
+    "name": "화공남작",
+    "kind": "faction",
+    "parent": "grp_zaun",
+    "parent_bond": 0.5,
+    "traits": [
+     {
+      "key": "profit",
+      "label": "이익 추구",
+      "value": 0.9
+     },
+     {
+      "key": "opportunism",
+      "label": "기회주의",
+      "value": 0.8
+     }
+    ],
+    "situation": {
+     "current": "실코의 빈자리를 노리며 각자 세력 확장을 모색.",
+     "status": "활동중",
+     "history": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "실코 사망으로 권력 공백이 생기자 오히려 기회로 받아들임.",
+       "source": "direct"
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_firelights",
+    "name": "파이어라이트",
+    "kind": "faction",
+    "parent": "grp_zaun",
+    "parent_bond": 0.6,
+    "traits": [
+     {
+      "key": "community",
+      "label": "공동체 중시",
+      "value": 0.9
+     },
+     {
+      "key": "anti_silco",
+      "label": "실코 적대",
+      "value": 0.8,
+      "target": "grp_silco_faction"
+     }
+    ],
+    "situation": {
+     "current": "자운 전체에 닥칠 보복을 우려하며 은신처 방어를 강화.",
+     "status": "경계",
+     "history": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "자운이 받은 보복 위협이 전파됨.",
+       "source": "propagated",
+       "via": "grp_zaun",
+       "weight": -0.58
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_singed",
+    "name": "싱지드",
+    "kind": "solo",
+    "parent": "grp_zaun",
+    "parent_bond": 0.2,
+    "traits": [
+     {
+      "key": "obsession",
+      "label": "연구 집착",
+      "value": 0.95
+     },
+     {
+      "key": "amorality",
+      "label": "무도덕성",
+      "value": 0.9
+     }
+    ],
+    "situation": {
+     "current": "후원자 실코를 잃었지만 연구는 계속하고 있음.",
+     "status": "활동중",
+     "history": []
+    }
+   },
+   {
+    "id": "grp_noxus",
+    "name": "녹서스",
+    "kind": "nation",
+    "parent": null,
+    "traits": [
+     {
+      "key": "expansionism",
+      "label": "팽창주의",
+      "value": 0.9
+     },
+     {
+      "key": "meritocracy",
+      "label": "실력주의(힘의 원칙)",
+      "value": 0.85
+     },
+     {
+      "key": "militarism",
+      "label": "군사주의",
+      "value": 0.9
+     },
+     {
+      "key": "covet_hextech",
+      "label": "헥스텍 탐욕",
+      "value": 0.7,
+      "target": "grp_piltover"
+     }
+    ],
+    "situation": {
+     "current": "대륙 곳곳에서 전쟁 중. 필트오버의 헥스텍을 손에 넣을 기회를 엿보고 있음.",
+     "status": "전쟁중",
+     "history": [
+      {
+       "commit": "d2b9f40",
+       "summary": "세계관에 녹서스 추가",
+       "source": "manual"
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_medarda",
+    "name": "메다르다 가문",
+    "kind": "organization",
+    "parent": "grp_noxus",
+    "parent_bond": 0.7,
+    "traits": [
+     {
+      "key": "warrior_honor",
+      "label": "전사의 명예",
+      "value": 0.9
+     },
+     {
+      "key": "family_first",
+      "label": "가문 우선",
+      "value": 0.85
+     },
+     {
+      "key": "vendetta",
+      "label": "검은장미단 복수심",
+      "value": 0.9,
+      "target": "grp_black_rose",
+      "note": "아들 키노를 잃음"
+     }
+    ],
+    "situation": {
+     "current": "암베사가 이끄는 녹서스 군벌 가문. 장남 키노를 잃은 뒤 검은장미단을 쫓고 있음.",
+     "status": "활동중",
+     "history": [
+      {
+       "commit": "d2b9f40",
+       "summary": "세계관에 메다르다 가문 추가",
+       "source": "manual"
+      }
+     ]
+    }
+   },
+   {
+    "id": "grp_black_rose",
+    "name": "검은장미단",
+    "kind": "faction",
+    "parent": "grp_noxus",
+    "parent_bond": 0.3,
+    "traits": [
+     {
+      "key": "secrecy",
+      "label": "은밀함",
+      "value": 0.95
+     },
+     {
+      "key": "pursuit_magic",
+      "label": "마법 추구",
+      "value": 0.9
+     },
+     {
+      "key": "ambition_noxus",
+      "label": "녹서스 배후 지배 야망",
+      "value": 0.8,
+      "target": "grp_noxus"
+     },
+     {
+      "key": "manipulation",
+      "label": "조종·이간",
+      "value": 0.85
+     }
+    ],
+    "situation": {
+     "current": "녹서스 그림자 속에서 움직이는 마법 결사. 헥스텍이 일으킨 마법의 흔들림에 주목하고 있음.",
+     "status": "잠복",
+     "history": [
+      {
+       "commit": "d2b9f40",
+       "summary": "세계관에 검은장미단 추가",
+       "source": "manual"
+      }
+     ]
+    }
+   }
+  ],
+  "characters": [
+   {
+    "id": "chr_jinx",
+    "name": "징크스",
+    "aliases": [
+     "파우더"
+    ],
+    "memberships": [
+     {
+      "group": "grp_silco_faction",
+      "role": "실코의 수양딸 → 사실상 상징",
+      "bond": 0.9
+     },
+     {
+      "group": "grp_zaun",
+      "bond": 0.6
+     }
+    ],
+    "traits": [
+     {
+      "key": "instability",
+      "label": "정서 불안",
+      "value": 0.9
+     },
+     {
+      "key": "need_approval",
+      "label": "인정 욕구",
+      "value": 0.85
+     },
+     {
+      "key": "family_vi",
+      "label": "바이에 대한 애착",
+      "value": 0.8,
+      "target": "chr_vi"
+     }
+    ],
+    "situation": {
+     "current": "실코를 자기 손으로 쏜 뒤, 의회에 로켓을 발사. 파우더가 아닌 '징크스'로 완전히 정체성을 굳힘.",
+     "status": "도주중",
+     "history": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "실코를 오인 사살하고 의회를 공격. 바이와의 관계는 결정적으로 갈라짐.",
+       "source": "direct"
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_vi",
+    "name": "바이",
+    "memberships": [
+     {
+      "group": "grp_zaun",
+      "role": "하층민 출신",
+      "bond": 0.7
+     },
+     {
+      "group": "grp_enforcers",
+      "role": "비공식 협력자",
+      "bond": 0.3
+     }
+    ],
+    "traits": [
+     {
+      "key": "protective",
+      "label": "보호 본능",
+      "value": 0.9
+     },
+     {
+      "key": "impulsive",
+      "label": "충동성",
+      "value": 0.7
+     },
+     {
+      "key": "distrust_pilt",
+      "label": "필트오버 불신",
+      "value": 0.6,
+      "target": "grp_piltover"
+     }
+    ],
+    "situation": {
+     "current": "동생을 되찾으려다 눈앞에서 공격을 막지 못함. 자운에 닥칠 보복까지 막아야 한다는 압박.",
+     "status": "충격",
+     "history": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "현장에서 징크스를 설득하지 못하고 공격을 목격.",
+       "source": "direct"
+      },
+      {
+       "commit": "c1a7e3f",
+       "summary": "자운이 받을 보복을 자신이 막아야 한다고 느낌.",
+       "source": "propagated",
+       "via": "grp_zaun",
+       "weight": -0.9
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_caitlyn",
+    "name": "케이틀린",
+    "memberships": [
+     {
+      "group": "grp_piltover",
+      "role": "키라만 가문",
+      "bond": 0.7
+     },
+     {
+      "group": "grp_enforcers",
+      "role": "집행관",
+      "bond": 0.8
+     }
+    ],
+    "traits": [
+     {
+      "key": "justice",
+      "label": "정의감",
+      "value": 0.9
+     },
+     {
+      "key": "principled",
+      "label": "원칙주의",
+      "value": 0.7
+     },
+     {
+      "key": "loyalty_pilt",
+      "label": "필트오버 충성",
+      "value": 0.6,
+      "target": "grp_piltover"
+     }
+    ],
+    "situation": {
+     "current": "필트오버의 분노를 누구보다 크게 받아들이며 징크스 추적 의지를 굳힘. 바이와의 관계는 긴장 상태.",
+     "status": "활동중",
+     "history": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "필트오버 피격의 분노가 정의감을 거쳐 크게 증폭됨.",
+       "source": "propagated",
+       "via": "grp_piltover",
+       "weight": -0.98
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_silco",
+    "name": "실코",
+    "memberships": [
+     {
+      "group": "grp_silco_faction",
+      "role": "수장",
+      "bond": 1.0,
+      "active": false
+     },
+     {
+      "group": "grp_zaun",
+      "bond": 0.9,
+      "active": false
+     }
+    ],
+    "traits": [
+     {
+      "key": "independence",
+      "label": "자운 독립 열망",
+      "value": 0.95
+     },
+     {
+      "key": "ruthless",
+      "label": "냉혹함",
+      "value": 0.8
+     },
+     {
+      "key": "love_jinx",
+      "label": "징크스에 대한 부성",
+      "value": 0.85,
+      "target": "chr_jinx"
+     }
+    ],
+    "situation": {
+     "current": "징크스의 총에 사망.",
+     "status": "사망",
+     "history": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "징크스를 포기하지 않겠다고 말한 직후 오인 사격으로 사망.",
+       "source": "direct"
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_jayce",
+    "name": "제이스",
+    "memberships": [
+     {
+      "group": "grp_piltover",
+      "bond": 0.85
+     },
+     {
+      "group": "grp_council",
+      "role": "의원",
+      "bond": 0.8
+     }
+    ],
+    "traits": [
+     {
+      "key": "responsibility",
+      "label": "책임감",
+      "value": 0.8
+     },
+     {
+      "key": "idealism",
+      "label": "이상주의",
+      "value": 0.7
+     },
+     {
+      "key": "progress",
+      "label": "진보 지향",
+      "value": 0.8
+     }
+    ],
+    "situation": {
+     "current": "의회 피격 현장에 있었음. 헥스텍이 무기가 된 데 대한 책임감과 자운 강경론 사이에서 흔들림.",
+     "status": "부상",
+     "history": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "의회가 받은 타격이 책임감을 거쳐 최대치로 전달됨.",
+       "source": "propagated",
+       "via": "grp_council",
+       "weight": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_viktor",
+    "name": "빅토르",
+    "memberships": [
+     {
+      "group": "grp_piltover",
+      "role": "헥스텍 공동 개발자",
+      "bond": 0.4
+     },
+     {
+      "group": "grp_zaun",
+      "role": "출신",
+      "bond": 0.5
+     }
+    ],
+    "traits": [
+     {
+      "key": "science_obsession",
+      "label": "과학 집착",
+      "value": 0.9
+     },
+     {
+      "key": "utilitarian",
+      "label": "공리주의",
+      "value": 0.7
+     }
+    ],
+    "situation": {
+     "current": "자신의 연구와 병세에 몰두해 있어 정치적 충격은 상대적으로 덜 받음.",
+     "status": "투병중",
+     "history": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "자운의 보복 위협이 전파되었으나 과학 집착 성향으로 경미하게만 반영.",
+       "source": "propagated",
+       "via": "grp_zaun",
+       "weight": -0.27
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_ekko",
+    "name": "에코",
+    "memberships": [
+     {
+      "group": "grp_firelights",
+      "role": "수장",
+      "bond": 1.0
+     },
+     {
+      "group": "grp_zaun",
+      "bond": 0.8
+     }
+    ],
+    "traits": [
+     {
+      "key": "community",
+      "label": "공동체 의식",
+      "value": 0.9
+     },
+     {
+      "key": "anti_silco",
+      "label": "실코 적대",
+      "value": 0.8,
+      "target": "chr_silco"
+     }
+    ],
+    "situation": {
+     "current": "실코의 죽음보다 자운 전체가 휘말릴 보복을 더 걱정하며 대비 중.",
+     "status": "활동중",
+     "history": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "자운이 받은 보복 위협이 공동체 의식을 거쳐 크게 전달됨.",
+       "source": "propagated",
+       "via": "grp_zaun",
+       "weight": -0.86
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_ambessa",
+    "name": "암베사 메다르다",
+    "memberships": [
+     {
+      "group": "grp_medarda",
+      "role": "가주",
+      "bond": 1.0
+     },
+     {
+      "group": "grp_noxus",
+      "role": "장군",
+      "bond": 0.8
+     }
+    ],
+    "traits": [
+     {
+      "key": "ruthless",
+      "label": "냉혹함",
+      "value": 0.85
+     },
+     {
+      "key": "protect_family",
+      "label": "가족 보호",
+      "value": 0.9,
+      "target": "grp_medarda"
+     },
+     {
+      "key": "pragmatism",
+      "label": "실용주의",
+      "value": 0.8
+     },
+     {
+      "key": "hate_black_rose",
+      "label": "검은장미단 증오",
+      "value": 0.95,
+      "target": "grp_black_rose"
+     }
+    ],
+    "situation": {
+     "current": "필트오버에 머물며 헥스텍 무기를 확보하려 함. 딸 멜을 녹서스로 데려가길 원함.",
+     "status": "활동중",
+     "history": [
+      {
+       "commit": "d2b9f40",
+       "summary": "세계관에 암베사 추가",
+       "source": "manual"
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_mel",
+    "name": "멜 메다르다",
+    "memberships": [
+     {
+      "group": "grp_council",
+      "role": "의원",
+      "bond": 0.75
+     },
+     {
+      "group": "grp_piltover",
+      "bond": 0.7
+     },
+     {
+      "group": "grp_medarda",
+      "role": "암베사의 딸(유배)",
+      "bond": 0.4
+     }
+    ],
+    "traits": [
+     {
+      "key": "diplomacy",
+      "label": "외교·협상",
+      "value": 0.9
+     },
+     {
+      "key": "peace",
+      "label": "평화 지향",
+      "value": 0.8
+     },
+     {
+      "key": "mother_conflict",
+      "label": "어머니에 대한 애증",
+      "value": 0.75,
+      "target": "chr_ambessa"
+     },
+     {
+      "key": "hidden_magic",
+      "label": "잠재된 마법",
+      "value": 0.6,
+      "note": "본인도 아직 모름"
+     }
+    ],
+    "situation": {
+     "current": "의회 피격 현장에서 살아남음. 녹서스와 필트오버 사이에서 자신의 자리를 고민 중.",
+     "status": "부상",
+     "history": [
+      {
+       "commit": "d2b9f40",
+       "summary": "세계관에 멜 추가",
+       "source": "manual"
+      }
+     ]
+    }
+   },
+   {
+    "id": "chr_leblanc",
+    "name": "르블랑",
+    "memberships": [
+     {
+      "group": "grp_black_rose",
+      "role": "수장",
+      "bond": 1.0
+     }
+    ],
+    "traits": [
+     {
+      "key": "deception",
+      "label": "기만",
+      "value": 0.95
+     },
+     {
+      "key": "pursuit_magic",
+      "label": "마법 추구",
+      "value": 0.9
+     },
+     {
+      "key": "patience",
+      "label": "장기적 계략",
+      "value": 0.85
+     },
+     {
+      "key": "interest_mel",
+      "label": "멜에 대한 관심",
+      "value": 0.7,
+      "target": "chr_mel",
+      "note": "멜의 마법을 노림"
+     }
+    ],
+    "situation": {
+     "current": "정체를 숨긴 채 필트오버와 녹서스의 움직임을 지켜보고 있음.",
+     "status": "잠복",
+     "history": [
+      {
+       "commit": "d2b9f40",
+       "summary": "세계관에 르블랑 추가",
+       "source": "manual"
+      }
+     ]
+    }
+   }
+  ],
+  "relations": [
+   {
+    "id": "rel_pilt_zaun",
+    "from": "grp_piltover",
+    "to": "grp_zaun",
+    "type": "hostile",
+    "intensity": 0.95,
+    "note": "의회 피격 이후 최고조"
+   },
+   {
+    "id": "rel_pilt_dominate",
+    "from": "grp_piltover",
+    "to": "grp_zaun",
+    "type": "dominate",
+    "intensity": 0.7,
+    "directed": true
+   },
+   {
+    "id": "rel_silco_fire",
+    "from": "grp_silco_faction",
+    "to": "grp_firelights",
+    "type": "hostile",
+    "intensity": 0.8
+   },
+   {
+    "id": "rel_enf_silco",
+    "from": "grp_enforcers",
+    "to": "grp_silco_faction",
+    "type": "coexist",
+    "intensity": 0.2,
+    "note": "마커스를 통한 유착. 실코 사망으로 사실상 소멸"
+   },
+   {
+    "id": "rel_silco_chem",
+    "from": "grp_silco_faction",
+    "to": "grp_chembarons",
+    "type": "dominate",
+    "intensity": 0.3,
+    "directed": true,
+    "note": "통제력 약화"
+   },
+   {
+    "id": "rel_jinx_vi",
+    "from": "chr_jinx",
+    "to": "chr_vi",
+    "type": "family",
+    "intensity": 0.9,
+    "note": "자매. 애착은 남았지만 대립 중"
+   },
+   {
+    "id": "rel_jinx_silco",
+    "from": "chr_jinx",
+    "to": "chr_silco",
+    "type": "family",
+    "intensity": 0.9,
+    "note": "수양 부녀"
+   },
+   {
+    "id": "rel_vi_cait",
+    "from": "chr_vi",
+    "to": "chr_caitlyn",
+    "type": "personal",
+    "intensity": 0.7
+   },
+   {
+    "id": "rel_jayce_viktor",
+    "from": "chr_jayce",
+    "to": "chr_viktor",
+    "type": "alliance",
+    "intensity": 0.6
+   },
+   {
+    "id": "rel_ekko_jinx",
+    "from": "chr_ekko",
+    "to": "chr_jinx",
+    "type": "hostile",
+    "intensity": 0.6,
+    "note": "어린 시절 친구"
+   },
+   {
+    "id": "rel_noxus_pilt",
+    "from": "grp_noxus",
+    "to": "grp_piltover",
+    "type": "rival",
+    "intensity": 0.6,
+    "note": "헥스텍을 노리는 외교적 긴장"
+   },
+   {
+    "id": "rel_rose_medarda",
+    "from": "grp_black_rose",
+    "to": "grp_medarda",
+    "type": "hostile",
+    "intensity": 0.9,
+    "note": "키노 살해 이후 숙적"
+   },
+   {
+    "id": "rel_rose_noxus",
+    "from": "grp_black_rose",
+    "to": "grp_noxus",
+    "type": "dominate",
+    "intensity": 0.5,
+    "directed": true,
+    "note": "그림자 속 영향력. 겉으로는 드러나지 않음"
+   },
+   {
+    "id": "rel_ambessa_mel",
+    "from": "chr_ambessa",
+    "to": "chr_mel",
+    "type": "family",
+    "intensity": 0.85,
+    "note": "모녀. 사랑과 갈등이 함께"
+   },
+   {
+    "id": "rel_ambessa_rose",
+    "from": "chr_ambessa",
+    "to": "grp_black_rose",
+    "type": "hostile",
+    "intensity": 0.95
+   },
+   {
+    "id": "rel_mel_jayce",
+    "from": "chr_mel",
+    "to": "chr_jayce",
+    "type": "personal",
+    "intensity": 0.75,
+    "note": "연인이자 정치적 동반자"
+   },
+   {
+    "id": "rel_leblanc_mel",
+    "from": "chr_leblanc",
+    "to": "chr_mel",
+    "type": "personal",
+    "intensity": 0.5,
+    "directed": true,
+    "note": "멜의 마법을 노림. 멜은 모름"
+   },
+   {
+    "id": "rel_ambessa_jayce",
+    "from": "chr_ambessa",
+    "to": "chr_jayce",
+    "type": "alliance",
+    "intensity": 0.4,
+    "note": "헥스텍 무기를 둘러싼 이해관계"
+   }
+  ]
+ },
+ "commits": [
+  {
+   "id": "b0d41e2",
+   "parent": null,
+   "kind": "init",
+   "message": "세계관 초기 설정 (시즌1 2막 시점)",
+   "created_at": "2026-10-07T12:00:00Z",
+   "patches": []
+  },
+  {
+   "id": "c1a7e3f",
+   "parent": "b0d41e2",
+   "kind": "event",
+   "message": "사건: 징크스의 의회 헥스텍 로켓 공격",
+   "created_at": "2026-10-07T12:10:00Z",
+   "event": {
+    "title": "징크스의 의회 헥스텍 로켓 공격",
+    "description": "실코가 징크스를 넘기려 한다고 오해한 징크스가 실코를 쏴 죽이고, 자운과의 협상을 표결하던 필트오버 의회에 헥스텍 로켓을 발사한다.",
+    "story_time": "시즌1 3막 마지막",
+    "involved": [
+     "chr_jinx",
+     "chr_silco",
+     "chr_vi",
+     "chr_caitlyn",
+     "grp_council",
+     "grp_silco_faction"
+    ]
+   },
+   "impacts": [
+    {
+     "target": "grp_council",
+     "source": "direct",
+     "tags": [
+      "위협",
+      "상실"
+     ],
+     "magnitude": -0.95,
+     "summary": "의원 다수 사상, 기능 마비"
+    },
+    {
+     "target": "grp_piltover",
+     "source": "direct",
+     "tags": [
+      "위협",
+      "분노",
+      "보복여론"
+     ],
+     "magnitude": -0.8,
+     "summary": "도시 전체가 공포와 분노"
+    },
+    {
+     "target": "grp_zaun",
+     "source": "direct",
+     "tags": [
+      "보복위협",
+      "권력공백"
+     ],
+     "magnitude": -0.7,
+     "summary": "실코 사망 + 보복 예고"
+    },
+    {
+     "target": "grp_silco_faction",
+     "source": "direct",
+     "tags": [
+      "상실",
+      "권력공백"
+     ],
+     "magnitude": -0.9,
+     "summary": "수장 사망"
+    },
+    {
+     "target": "grp_chembarons",
+     "source": "direct",
+     "tags": [
+      "기회"
+     ],
+     "magnitude": 0.5,
+     "summary": "권력 공백을 기회로 인식"
+    },
+    {
+     "target": "chr_jinx",
+     "source": "direct",
+     "tags": [
+      "상실",
+      "정체성"
+     ],
+     "magnitude": -0.9,
+     "summary": "실코를 잃고 징크스로 정체성 확정",
+     "trait_changes": [
+      {
+       "key": "instability",
+       "from": 0.85,
+       "to": 0.9
+      }
+     ]
+    },
+    {
+     "target": "chr_silco",
+     "source": "direct",
+     "tags": [
+      "사망"
+     ],
+     "magnitude": -1.0,
+     "summary": "사망"
+    },
+    {
+     "target": "chr_vi",
+     "source": "direct",
+     "tags": [
+      "상실"
+     ],
+     "magnitude": -0.8,
+     "summary": "동생을 되찾는 데 실패"
+    },
+    {
+     "target": "grp_enforcers",
+     "source": "propagated",
+     "via": "grp_piltover",
+     "tags": [
+      "위협",
+      "분노"
+     ],
+     "magnitude": -0.67,
+     "summary": "진압 준비 압력"
+    },
+    {
+     "target": "grp_firelights",
+     "source": "propagated",
+     "via": "grp_zaun",
+     "tags": [
+      "보복위협"
+     ],
+     "magnitude": -0.58,
+     "summary": "은신처 방어 강화"
+    },
+    {
+     "target": "chr_jayce",
+     "source": "propagated",
+     "via": "grp_council",
+     "tags": [
+      "위협",
+      "상실"
+     ],
+     "magnitude": -1.0,
+     "summary": "책임감과 강경론 사이에서 흔들림"
+    },
+    {
+     "target": "chr_caitlyn",
+     "source": "propagated",
+     "via": "grp_piltover",
+     "tags": [
+      "위협",
+      "분노"
+     ],
+     "magnitude": -0.98,
+     "summary": "징크스 추적 의지를 굳힘"
+    },
+    {
+     "target": "chr_vi",
+     "source": "propagated",
+     "via": "grp_zaun",
+     "tags": [
+      "보복위협"
+     ],
+     "magnitude": -0.9,
+     "summary": "자운을 지켜야 한다는 압박"
+    },
+    {
+     "target": "chr_ekko",
+     "source": "propagated",
+     "via": "grp_zaun",
+     "tags": [
+      "보복위협"
+     ],
+     "magnitude": -0.86,
+     "summary": "보복 대비"
+    },
+    {
+     "target": "chr_viktor",
+     "source": "propagated",
+     "via": "grp_zaun",
+     "tags": [
+      "보복위협"
+     ],
+     "magnitude": -0.27,
+     "summary": "경미하게 반영"
+    }
+   ],
+   "patches": [
+    {
+     "op": "add",
+     "path": "/background/bg_hextech_weapon",
+     "after": {
+      "id": "bg_hextech_weapon",
+      "category": "기술",
+      "title": "헥스텍의 무기화",
+      "content": "징크스가 헥스텍 보석을 무기로 사용해 의회를 공격하면서, 헥스텍이 무기가 될 수 있다는 사실이 양쪽 도시에 드러났다.",
+      "introduced_in": "c1a7e3f"
+     }
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_piltover/situation/current",
+     "before": "헥스텍으로 번영 중. 자운과의 긴장 속에서 의회가 자운 독립 협상안을 논의 중.",
+     "after": "의회가 로켓 공격을 받아 다수 의원이 사상. 자운에 대한 보복 여론이 폭발 직전."
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_piltover/situation/status",
+     "before": "활동중",
+     "after": "위기"
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_piltover/situation/history",
+     "before": [],
+     "after": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "의회 피격. 진보의 도시라는 자신감이 공포와 분노로 바뀜.",
+       "source": "direct"
+      }
+     ]
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_zaun/situation/current",
+     "before": "실코 지배 아래 시머 경제로 버티는 중. 필트오버와 독립 협상이 진행 중.",
+     "after": "실코가 사망해 지배 구조가 흔들리는 동시에, 필트오버의 보복이 예고된 상태."
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_zaun/situation/status",
+     "before": "활동중",
+     "after": "불안정"
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_zaun/situation/history",
+     "before": [],
+     "after": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "실코 사망과 필트오버의 보복 위협이 동시에 닥침.",
+       "source": "direct"
+      }
+     ]
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_council/situation/current",
+     "before": "자운 독립 협상안을 표결하려고 소집됨.",
+     "after": "회의 중 로켓에 피격. 의원 다수가 사상, 의사결정 기능 마비."
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_council/situation/status",
+     "before": "정상",
+     "after": "기능 마비"
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_council/situation/history",
+     "before": [],
+     "after": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "자운과의 협상안을 표결하던 중 피격.",
+       "source": "direct"
+      }
+     ]
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_enforcers/situation/current",
+     "before": "마커스 체제 아래 실코 세력과 암묵적으로 유착.",
+     "after": "의회 피격의 책임론과 함께 자운 강경 진압 압력을 받고 있음."
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_enforcers/situation/status",
+     "before": "활동중",
+     "after": "비상"
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_enforcers/situation/history",
+     "before": [],
+     "after": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "필트오버의 분노가 전파되어 진압 준비 압력이 커짐.",
+       "source": "propagated",
+       "via": "grp_piltover",
+       "weight": -0.67
+      }
+     ]
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_silco_faction/situation/current",
+     "before": "실코가 시머로 자운과 화공남작을 장악. 필트오버와 독립 협상 중.",
+     "after": "수장 실코가 징크스의 총에 사망. 징크스가 사실상 상징이 되었으나 조직은 구심점을 잃음."
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_silco_faction/situation/status",
+     "before": "활동중",
+     "after": "수장 공백"
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_silco_faction/situation/history",
+     "before": [],
+     "after": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "실코 사망. 시머 공급망과 화공남작 통제력이 흔들림.",
+       "source": "direct"
+      }
+     ]
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_chembarons/situation/current",
+     "before": "실코의 통제 아래 불만을 품고 있음.",
+     "after": "실코의 빈자리를 노리며 각자 세력 확장을 모색."
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_chembarons/situation/history",
+     "before": [],
+     "after": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "실코 사망으로 권력 공백이 생기자 오히려 기회로 받아들임.",
+       "source": "direct"
+      }
+     ]
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_firelights/situation/current",
+     "before": "실코 세력의 시머 공급망을 상대로 게릴라전 중.",
+     "after": "자운 전체에 닥칠 보복을 우려하며 은신처 방어를 강화."
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_firelights/situation/status",
+     "before": "활동중",
+     "after": "경계"
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_firelights/situation/history",
+     "before": [],
+     "after": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "자운이 받은 보복 위협이 전파됨.",
+       "source": "propagated",
+       "via": "grp_zaun",
+       "weight": -0.58
+      }
+     ]
+    },
+    {
+     "op": "replace",
+     "path": "/groups/grp_singed/situation/current",
+     "before": "실코의 후원 아래 시머 연구를 계속하고 있음.",
+     "after": "후원자 실코를 잃었지만 연구는 계속하고 있음."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_jinx/memberships/grp_silco_faction/role",
+     "before": "실코의 수양딸",
+     "after": "실코의 수양딸 → 사실상 상징"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_jinx/traits/instability/value",
+     "before": 0.85,
+     "after": 0.9
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_jinx/situation/current",
+     "before": "실코의 오른팔. 바이가 돌아온 뒤 파우더와 징크스 사이에서 흔들림.",
+     "after": "실코를 자기 손으로 쏜 뒤, 의회에 로켓을 발사. 파우더가 아닌 '징크스'로 완전히 정체성을 굳힘."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_jinx/situation/status",
+     "before": "활동중",
+     "after": "도주중"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_jinx/situation/history",
+     "before": [],
+     "after": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "실코를 오인 사살하고 의회를 공격. 바이와의 관계는 결정적으로 갈라짐.",
+       "source": "direct"
+      }
+     ]
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_vi/situation/current",
+     "before": "7년 만에 출소. 케이틀린과 함께 동생을 찾는 중.",
+     "after": "동생을 되찾으려다 눈앞에서 공격을 막지 못함. 자운에 닥칠 보복까지 막아야 한다는 압박."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_vi/situation/status",
+     "before": "활동중",
+     "after": "충격"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_vi/situation/history",
+     "before": [],
+     "after": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "현장에서 징크스를 설득하지 못하고 공격을 목격.",
+       "source": "direct"
+      },
+      {
+       "commit": "c1a7e3f",
+       "summary": "자운이 받을 보복을 자신이 막아야 한다고 느낌.",
+       "source": "propagated",
+       "via": "grp_zaun",
+       "weight": -0.9
+      }
+     ]
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_caitlyn/situation/current",
+     "before": "바이와 함께 자운을 조사하며 실코를 추적 중.",
+     "after": "필트오버의 분노를 누구보다 크게 받아들이며 징크스 추적 의지를 굳힘. 바이와의 관계는 긴장 상태."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_caitlyn/situation/history",
+     "before": [],
+     "after": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "필트오버 피격의 분노가 정의감을 거쳐 크게 증폭됨.",
+       "source": "propagated",
+       "via": "grp_piltover",
+       "weight": -0.98
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_silco/memberships/grp_silco_faction/active",
+     "after": false
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_silco/memberships/grp_zaun/active",
+     "after": false
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_silco/situation/current",
+     "before": "자운을 지배하며 필트오버와 독립 협상 중. 징크스를 넘기라는 요구에 흔들림.",
+     "after": "징크스의 총에 사망."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_silco/situation/status",
+     "before": "활동중",
+     "after": "사망"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_silco/situation/history",
+     "before": [],
+     "after": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "징크스를 포기하지 않겠다고 말한 직후 오인 사격으로 사망.",
+       "source": "direct"
+      }
+     ]
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_jayce/situation/current",
+     "before": "의원이 되어 헥스텍 발전과 자운 협상을 주도.",
+     "after": "의회 피격 현장에 있었음. 헥스텍이 무기가 된 데 대한 책임감과 자운 강경론 사이에서 흔들림."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_jayce/situation/status",
+     "before": "활동중",
+     "after": "부상"
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_jayce/situation/history",
+     "before": [],
+     "after": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "의회가 받은 타격이 책임감을 거쳐 최대치로 전달됨.",
+       "source": "propagated",
+       "via": "grp_council",
+       "weight": -1.0
+      }
+     ]
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_viktor/situation/current",
+     "before": "헥스텍 연구에 몰두하며 병세가 악화 중.",
+     "after": "자신의 연구와 병세에 몰두해 있어 정치적 충격은 상대적으로 덜 받음."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_viktor/situation/history",
+     "before": [],
+     "after": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "자운의 보복 위협이 전파되었으나 과학 집착 성향으로 경미하게만 반영.",
+       "source": "propagated",
+       "via": "grp_zaun",
+       "weight": -0.27
+      }
+     ]
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_ekko/situation/current",
+     "before": "파이어라이트를 이끌며 실코 세력과 싸우는 중.",
+     "after": "실코의 죽음보다 자운 전체가 휘말릴 보복을 더 걱정하며 대비 중."
+    },
+    {
+     "op": "replace",
+     "path": "/characters/chr_ekko/situation/history",
+     "before": [],
+     "after": [
+      {
+       "commit": "c1a7e3f",
+       "summary": "자운이 받은 보복 위협이 공동체 의식을 거쳐 크게 전달됨.",
+       "source": "propagated",
+       "via": "grp_zaun",
+       "weight": -0.86
+      }
+     ]
+    },
+    {
+     "op": "replace",
+     "path": "/relations/rel_pilt_zaun/intensity",
+     "before": 0.8,
+     "after": 0.95
+    },
+    {
+     "op": "replace",
+     "path": "/relations/rel_pilt_zaun/note",
+     "before": "협상과 긴장이 공존",
+     "after": "의회 피격 이후 최고조"
+    },
+    {
+     "op": "replace",
+     "path": "/relations/rel_enf_silco/intensity",
+     "before": 0.5,
+     "after": 0.2
+    },
+    {
+     "op": "replace",
+     "path": "/relations/rel_enf_silco/note",
+     "before": "마커스를 통한 유착",
+     "after": "마커스를 통한 유착. 실코 사망으로 사실상 소멸"
+    },
+    {
+     "op": "replace",
+     "path": "/relations/rel_silco_chem/intensity",
+     "before": 0.6,
+     "after": 0.3
+    },
+    {
+     "op": "replace",
+     "path": "/relations/rel_silco_chem/note",
+     "before": "시머 공급으로 통제",
+     "after": "통제력 약화"
+    }
+   ]
+  },
+  {
+   "id": "d2b9f40",
+   "parent": "c1a7e3f",
+   "kind": "manual",
+   "message": "녹서스·메다르다 가문·검은장미단과 관련 인물 추가",
+   "created_at": "2026-10-07T12:20:00Z",
+   "patches": [
+    {
+     "op": "add",
+     "path": "/background/bg_noxus_empire",
+     "after": {
+      "id": "bg_noxus_empire",
+      "category": "지리",
+      "title": "녹서스 제국",
+      "content": "필트오버 바깥 대륙의 군사 제국. 힘이 곧 정당성이라는 원칙 아래 정복으로 영토를 넓혀왔다. 필트오버의 헥스텍을 전쟁 도구로 노린다.",
+      "introduced_in": "d2b9f40"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/background/bg_black_rose_magic",
+     "after": {
+      "id": "bg_black_rose_magic",
+      "category": "마법",
+      "title": "검은장미단의 마법",
+      "content": "녹서스 귀족 사회 뒤에 숨은 마법사 결사. 고대 마법과 룬의 힘을 추구하며, 헥스텍이 깨운 마법의 흐름에 주목한다.",
+      "introduced_in": "d2b9f40"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/groups/grp_noxus",
+     "after": {
+      "id": "grp_noxus",
+      "name": "녹서스",
+      "kind": "nation",
+      "parent": null,
+      "traits": [
+       {
+        "key": "expansionism",
+        "label": "팽창주의",
+        "value": 0.9
+       },
+       {
+        "key": "meritocracy",
+        "label": "실력주의(힘의 원칙)",
+        "value": 0.85
+       },
+       {
+        "key": "militarism",
+        "label": "군사주의",
+        "value": 0.9
+       },
+       {
+        "key": "covet_hextech",
+        "label": "헥스텍 탐욕",
+        "value": 0.7,
+        "target": "grp_piltover"
+       }
+      ],
+      "situation": {
+       "current": "대륙 곳곳에서 전쟁 중. 필트오버의 헥스텍을 손에 넣을 기회를 엿보고 있음.",
+       "status": "전쟁중",
+       "history": [
+        {
+         "commit": "d2b9f40",
+         "summary": "세계관에 녹서스 추가",
+         "source": "manual"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "op": "add",
+     "path": "/groups/grp_medarda",
+     "after": {
+      "id": "grp_medarda",
+      "name": "메다르다 가문",
+      "kind": "organization",
+      "parent": "grp_noxus",
+      "parent_bond": 0.7,
+      "traits": [
+       {
+        "key": "warrior_honor",
+        "label": "전사의 명예",
+        "value": 0.9
+       },
+       {
+        "key": "family_first",
+        "label": "가문 우선",
+        "value": 0.85
+       },
+       {
+        "key": "vendetta",
+        "label": "검은장미단 복수심",
+        "value": 0.9,
+        "target": "grp_black_rose",
+        "note": "아들 키노를 잃음"
+       }
+      ],
+      "situation": {
+       "current": "암베사가 이끄는 녹서스 군벌 가문. 장남 키노를 잃은 뒤 검은장미단을 쫓고 있음.",
+       "status": "활동중",
+       "history": [
+        {
+         "commit": "d2b9f40",
+         "summary": "세계관에 메다르다 가문 추가",
+         "source": "manual"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "op": "add",
+     "path": "/groups/grp_black_rose",
+     "after": {
+      "id": "grp_black_rose",
+      "name": "검은장미단",
+      "kind": "faction",
+      "parent": "grp_noxus",
+      "parent_bond": 0.3,
+      "traits": [
+       {
+        "key": "secrecy",
+        "label": "은밀함",
+        "value": 0.95
+       },
+       {
+        "key": "pursuit_magic",
+        "label": "마법 추구",
+        "value": 0.9
+       },
+       {
+        "key": "ambition_noxus",
+        "label": "녹서스 배후 지배 야망",
+        "value": 0.8,
+        "target": "grp_noxus"
+       },
+       {
+        "key": "manipulation",
+        "label": "조종·이간",
+        "value": 0.85
+       }
+      ],
+      "situation": {
+       "current": "녹서스 그림자 속에서 움직이는 마법 결사. 헥스텍이 일으킨 마법의 흔들림에 주목하고 있음.",
+       "status": "잠복",
+       "history": [
+        {
+         "commit": "d2b9f40",
+         "summary": "세계관에 검은장미단 추가",
+         "source": "manual"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_ambessa",
+     "after": {
+      "id": "chr_ambessa",
+      "name": "암베사 메다르다",
+      "memberships": [
+       {
+        "group": "grp_medarda",
+        "role": "가주",
+        "bond": 1.0
+       },
+       {
+        "group": "grp_noxus",
+        "role": "장군",
+        "bond": 0.8
+       }
+      ],
+      "traits": [
+       {
+        "key": "ruthless",
+        "label": "냉혹함",
+        "value": 0.85
+       },
+       {
+        "key": "protect_family",
+        "label": "가족 보호",
+        "value": 0.9,
+        "target": "grp_medarda"
+       },
+       {
+        "key": "pragmatism",
+        "label": "실용주의",
+        "value": 0.8
+       },
+       {
+        "key": "hate_black_rose",
+        "label": "검은장미단 증오",
+        "value": 0.95,
+        "target": "grp_black_rose"
+       }
+      ],
+      "situation": {
+       "current": "필트오버에 머물며 헥스텍 무기를 확보하려 함. 딸 멜을 녹서스로 데려가길 원함.",
+       "status": "활동중",
+       "history": [
+        {
+         "commit": "d2b9f40",
+         "summary": "세계관에 암베사 추가",
+         "source": "manual"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_mel",
+     "after": {
+      "id": "chr_mel",
+      "name": "멜 메다르다",
+      "memberships": [
+       {
+        "group": "grp_council",
+        "role": "의원",
+        "bond": 0.75
+       },
+       {
+        "group": "grp_piltover",
+        "bond": 0.7
+       },
+       {
+        "group": "grp_medarda",
+        "role": "암베사의 딸(유배)",
+        "bond": 0.4
+       }
+      ],
+      "traits": [
+       {
+        "key": "diplomacy",
+        "label": "외교·협상",
+        "value": 0.9
+       },
+       {
+        "key": "peace",
+        "label": "평화 지향",
+        "value": 0.8
+       },
+       {
+        "key": "mother_conflict",
+        "label": "어머니에 대한 애증",
+        "value": 0.75,
+        "target": "chr_ambessa"
+       },
+       {
+        "key": "hidden_magic",
+        "label": "잠재된 마법",
+        "value": 0.6,
+        "note": "본인도 아직 모름"
+       }
+      ],
+      "situation": {
+       "current": "의회 피격 현장에서 살아남음. 녹서스와 필트오버 사이에서 자신의 자리를 고민 중.",
+       "status": "부상",
+       "history": [
+        {
+         "commit": "d2b9f40",
+         "summary": "세계관에 멜 추가",
+         "source": "manual"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "op": "add",
+     "path": "/characters/chr_leblanc",
+     "after": {
+      "id": "chr_leblanc",
+      "name": "르블랑",
+      "memberships": [
+       {
+        "group": "grp_black_rose",
+        "role": "수장",
+        "bond": 1.0
+       }
+      ],
+      "traits": [
+       {
+        "key": "deception",
+        "label": "기만",
+        "value": 0.95
+       },
+       {
+        "key": "pursuit_magic",
+        "label": "마법 추구",
+        "value": 0.9
+       },
+       {
+        "key": "patience",
+        "label": "장기적 계략",
+        "value": 0.85
+       },
+       {
+        "key": "interest_mel",
+        "label": "멜에 대한 관심",
+        "value": 0.7,
+        "target": "chr_mel",
+        "note": "멜의 마법을 노림"
+       }
+      ],
+      "situation": {
+       "current": "정체를 숨긴 채 필트오버와 녹서스의 움직임을 지켜보고 있음.",
+       "status": "잠복",
+       "history": [
+        {
+         "commit": "d2b9f40",
+         "summary": "세계관에 르블랑 추가",
+         "source": "manual"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "op": "add",
+     "path": "/relations/rel_noxus_pilt",
+     "after": {
+      "id": "rel_noxus_pilt",
+      "from": "grp_noxus",
+      "to": "grp_piltover",
+      "type": "rival",
+      "intensity": 0.6,
+      "note": "헥스텍을 노리는 외교적 긴장"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/relations/rel_rose_medarda",
+     "after": {
+      "id": "rel_rose_medarda",
+      "from": "grp_black_rose",
+      "to": "grp_medarda",
+      "type": "hostile",
+      "intensity": 0.9,
+      "note": "키노 살해 이후 숙적"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/relations/rel_rose_noxus",
+     "after": {
+      "id": "rel_rose_noxus",
+      "from": "grp_black_rose",
+      "to": "grp_noxus",
+      "type": "dominate",
+      "intensity": 0.5,
+      "directed": true,
+      "note": "그림자 속 영향력. 겉으로는 드러나지 않음"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/relations/rel_ambessa_mel",
+     "after": {
+      "id": "rel_ambessa_mel",
+      "from": "chr_ambessa",
+      "to": "chr_mel",
+      "type": "family",
+      "intensity": 0.85,
+      "note": "모녀. 사랑과 갈등이 함께"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/relations/rel_ambessa_rose",
+     "after": {
+      "id": "rel_ambessa_rose",
+      "from": "chr_ambessa",
+      "to": "grp_black_rose",
+      "type": "hostile",
+      "intensity": 0.95
+     }
+    },
+    {
+     "op": "add",
+     "path": "/relations/rel_mel_jayce",
+     "after": {
+      "id": "rel_mel_jayce",
+      "from": "chr_mel",
+      "to": "chr_jayce",
+      "type": "personal",
+      "intensity": 0.75,
+      "note": "연인이자 정치적 동반자"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/relations/rel_leblanc_mel",
+     "after": {
+      "id": "rel_leblanc_mel",
+      "from": "chr_leblanc",
+      "to": "chr_mel",
+      "type": "personal",
+      "intensity": 0.5,
+      "directed": true,
+      "note": "멜의 마법을 노림. 멜은 모름"
+     }
+    },
+    {
+     "op": "add",
+     "path": "/relations/rel_ambessa_jayce",
+     "after": {
+      "id": "rel_ambessa_jayce",
+      "from": "chr_ambessa",
+      "to": "chr_jayce",
+      "type": "alliance",
+      "intensity": 0.4,
+      "note": "헥스텍 무기를 둘러싼 이해관계"
+     }
+    }
+   ]
+  }
+ ]
+}
