@@ -63,3 +63,10 @@ export type Usage = { date: string; used: number; limit: number; credits: number
 export function fetchUsage() {
   return callApi<Usage>("/api/usage");
 }
+
+export type AnalyzeResult = { analysis: Record<string, unknown>; tokens: number; model: string; usage: Usage };
+
+/** 사건을 AI로 분석한다. 쓴 토큰은 서버가 오늘 한도에서 뺀다. */
+export function analyzeEvent(event: { title: string; description: string; story_time: string }, world: unknown) {
+  return callApi<AnalyzeResult>("/api/analyze", { method: "POST", body: JSON.stringify({ event, world }) });
+}

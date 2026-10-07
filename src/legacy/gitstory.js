@@ -3,7 +3,7 @@
 import DATA_ARCANE from "@/data/arcane.json";
 import DATA_HP from "@/data/harry-potter.json";
 import DATA_JG from "@/data/janggu.json";
-import { loadCloud, saveCloud, signOutUser, fetchUsage } from "@/legacy/cloud";
+import { loadCloud, saveCloud, signOutUser, fetchUsage, analyzeEvent } from "@/legacy/cloud";
 
 let started = false;
 let USER;
@@ -341,6 +341,20 @@ const SAMPLE_ARCANE = {
     {on:true, op:'add', path:'/relations/rel_enf_fire', after:{id:'rel_enf_fire', from:'grp_enforcers', to:'grp_firelights', type:'hostile', intensity:0.7, note:'진압과 저항'}, why:'진압 현장에서 직접 충돌'}
   ]
 };
+/* AI에 보낼 세계관 요약 (이력은 빼고 현재 상태만) */
+function worldForAi(s=state){
+  const tr=e=>(e.traits||[]).map(t=>({key:t.key,label:t.label,value:t.value}));
+  const sit=e=>({current:e.situation?.current, status:e.situation?.status});
+  const keys=new Set(); [...s.groups,...s.characters].forEach(e=>(e.traits||[]).forEach(t=>{ if(!RELEVANCE[t.key]) keys.add(t.key); }));
+  return {
+    title:DATA.meta.title,
+    background:(s.background||[]).map(b=>({title:b.title, content:b.content})),
+    groups:s.groups.map(g=>({id:g.id, name:g.name, parent:g.parent, traits:tr(g), situation:sit(g)})),
+    characters:s.characters.map(c=>({id:c.id, name:c.name, aliases:c.aliases, memberships:(c.memberships||[]).map(m=>({group:m.group, role:m.role, bond:m.bond})), traits:tr(c), situation:sit(c)})),
+    relations:s.relations.map(r=>({id:r.id, from:r.from, to:r.to, type:r.type, intensity:r.intensity, note:r.note})),
+    unscored_traits:[...keys]
+  };
+}
 function guessAnalysis(title, text){
   const s=state; const found=[...s.groups, ...s.characters].filter(e=>text.includes(e.name) || (e.aliases||[]).some(a=>text.includes(a)));
   const tags=[]; [['공격','위협'],['습격','위협'],['죽','상실'],['잃','상실'],['진압','탄압'],['체포','탄압'],['장악','기회'],['기회','기회'],['분노','분노'],['보복','보복위협']].forEach(([k,t])=>{ if(text.includes(k)&&!tags.includes(t)) tags.push(t); });
@@ -402,15 +416,26 @@ function renderEvent(){
     </aside>
   </div>`;
   $('#ev-sample').onclick=()=>{ $('#ev-title').value=SAMPLE.title; $('#ev-text').value=SAMPLE.description; $('#ev-time').value=SAMPLE.story_time; };
-  $('#ev-run').onclick=()=>{
-    const title=$('#ev-title').value.trim()||'새 사건', text=$('#ev-text').value.trim();
+  $('#ev-run').onclick=async ()=>{
+    const title=$('#ev-title').value.trim()||'새 사건', text=$('#ev-text').value.trim(), time=$('#ev-time').value.trim();
     if(!text){ $('#ev-result').innerHTML=`<div class="flash flash-warn">${icon('alert')}<div>사건 내용을 입력하세요.</div></div>`; return; }
-    $('#ev-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">사건이 단체·인물에 주는 직접 영향을 판단하고 있습니다</span></div></div>`;
-    setTimeout(()=>{
-      analysis = (title===SAMPLE.title) ? {...clone(SAMPLE), description:text} : guessAnalysis(title, text);
-      analysis.story_time=$('#ev-time').value.trim();
-      drawAnalysis();
-    }, 650);
+    const btn=$('#ev-run'); btn.disabled=true;
+    $('#ev-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 사건이 단체·인물에 주는 직접 영향을 판단하고 있습니다</span></div></div>`;
+    let a, note='';
+    try{
+      const r=await analyzeEvent({title, description:text, story_time:time}, worldForAi());
+      a=r.analysis; Object.entries(a.relevance||{}).forEach(([k,v])=>{ RELEVANCE[k]={...(RELEVANCE[k]||{}), ...v}; });
+      showUsage(r.usage); toast(`AI 분석 완료 · 토큰 ${r.tokens.toLocaleString()} 사용`);
+      if(!a.direct.length) note='AI가 직접 영향을 받는 대상을 찾지 못했습니다. 사건에 단체나 인물 이름을 넣어 보세요.';
+    }catch(err){
+      console.warn('AI 분석 실패', err);
+      if(err.status===429){ if(err.body?.usage) showUsage(err.body.usage); note='오늘 쓸 수 있는 토큰을 다 썼어요. 한국 시간 자정에 다시 채워집니다. (충전 기능은 준비 중)'; }
+      else note=`AI 분석을 쓸 수 없어 간단 추정으로 대신했습니다 (${err.message||'연결 실패'})`;
+      a = (title===SAMPLE.title) ? {...clone(SAMPLE), description:text} : guessAnalysis(title, text);
+    }
+    btn.disabled=false;
+    analysis=a; analysis.story_time=time; drawAnalysis();
+    if(note) $('#ev-result').insertAdjacentHTML('afterbegin', `<div class="flash flash-warn">${icon('alert')}<div>${esc(note)}</div></div>`);
   };
   if(analysis) drawAnalysis();
   wirePending();
@@ -816,13 +841,14 @@ function saveWorld(){
   }, 800);
 }
 /* 오늘 남은 AI 토큰 표시 */
+function showUsage(u){
+  const el=$('#token-meter'); const left=Math.max(0,u.limit-u.used)+u.credits;
+  el.textContent=`오늘 남은 토큰 ${left.toLocaleString()}`;
+  el.className='Label '+(left>0?'':'Label--danger');
+  el.title=`하루 ${u.limit.toLocaleString()} 중 ${u.used.toLocaleString()} 사용 · 충전 잔액 ${u.credits.toLocaleString()} · 매일 한국 시간 자정 초기화`;
+}
 function refreshUsage(){
-  fetchUsage().then(u=>{
-    const el=$('#token-meter'); const left=Math.max(0,u.limit-u.used)+u.credits;
-    el.textContent=`오늘 남은 토큰 ${left.toLocaleString()}`;
-    el.className='Label '+(left>0?'':'Label--danger');
-    el.title=`하루 ${u.limit.toLocaleString()} 중 ${u.used.toLocaleString()} 사용 · 충전 잔액 ${u.credits.toLocaleString()} · 매일 한국 시간 자정 초기화`;
-  }).catch(err=>{ console.warn('토큰 사용량 확인 실패', err); const el=$('#token-meter'); el.textContent=`토큰 확인 불가 (${err.status===404?'서버 경로 없음':err.message||'연결 실패'})`; el.className='Label Label--danger'; el.title=el.textContent; });
+  fetchUsage().then(showUsage).catch(err=>{ console.warn('토큰 사용량 확인 실패', err); const el=$('#token-meter'); el.textContent=`토큰 확인 불가 (${err.status===404?'서버 경로 없음':err.message||'연결 실패'})`; el.className='Label Label--danger'; el.title=el.textContent; });
 }
 /* 다른 기기에서 저장한 게 더 최신이면 불러옴 */
 function syncFromCloud(k){
