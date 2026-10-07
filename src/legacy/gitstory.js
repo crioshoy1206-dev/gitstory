@@ -3,6 +3,7 @@
 import DATA_ARCANE from "@/data/arcane.json";
 import DATA_HP from "@/data/harry-potter.json";
 import DATA_JG from "@/data/janggu.json";
+import { loadCloud, saveCloud } from "@/legacy/cloud";
 
 let started = false;
 
@@ -792,8 +793,40 @@ WORLDS.jg = {
 };
 let worldKey;
 const saveKey = k => `gitstory-save-${k}`;
+/* 저장: 브라우저(localStorage)에 즉시, Firestore에는 0.8초 모아서. 실패하면 브라우저 저장만 유지 */
+let lastJson=null, savedAt=0, cloudTimer=null;
+function setCloud(st){
+  const el=$('#cloud-status'); if(!el) return;
+  const m={connecting:['클라우드 연결 중','Label--attention'], synced:['클라우드에 저장됨','Label--success'], saving:['저장 중','Label--attention'], offline:['브라우저에만 저장','Label--danger']}[st];
+  el.textContent=m[0]; el.className='Label '+m[1];
+}
 function saveWorld(){
-  try{ localStorage.setItem(saveKey(worldKey), JSON.stringify({state, commits, pending})); }catch(e){}
+  const json=JSON.stringify({state, commits, pending});
+  if(json===lastJson) return;
+  lastJson=json; savedAt=Date.now();
+  try{ localStorage.setItem(saveKey(worldKey), JSON.stringify({state, commits, pending, savedAt})); }catch(e){}
+  clearTimeout(cloudTimer);
+  const key=worldKey, at=savedAt, data={state, commits, pending};
+  setCloud('saving');
+  cloudTimer=setTimeout(()=>{
+    saveCloud(key, data, at).then(()=>setCloud('synced')).catch(err=>{ console.warn('Firestore 저장 실패', err); setCloud('offline'); });
+  }, 800);
+}
+/* 다른 기기에서 저장한 게 더 최신이면 불러옴 */
+function syncFromCloud(k){
+  setCloud('connecting');
+  loadCloud(k).then(remote=>{
+    if(k!==worldKey) return;
+    if(remote && remote.updatedAt>savedAt && remote.data?.state){
+      state=remote.data.state; commits=remote.data.commits; pending=remote.data.pending||[];
+      savedAt=remote.updatedAt; lastJson=JSON.stringify({state, commits, pending});
+      try{ localStorage.setItem(saveKey(k), JSON.stringify({state, commits, pending, savedAt})); }catch(e){}
+      render(); toast('클라우드에 저장된 세계관을 불러왔습니다');
+    } else if(!remote || remote.updatedAt<savedAt){
+      lastJson=null; saveWorld();
+    }
+    setCloud('synced');
+  }).catch(err=>{ console.warn('Firestore 불러오기 실패', err); setCloud('offline'); });
 }
 function loadWorld(k, fresh=false){
   W=WORLDS[k]; DATA=W.data; POS=W.pos; SAMPLE=W.sample; worldKey=k;
@@ -802,15 +835,17 @@ function loadWorld(k, fresh=false){
     try{
       const saved=JSON.parse(localStorage.getItem(saveKey(k)));
       if(saved?.state && saved?.commits){ state=saved.state; commits=saved.commits; pending=saved.pending||[]; }
-    }catch(e){}
-  }
+      savedAt=saved?.savedAt||0;
+    }catch(e){ savedAt=0; }
+  } else savedAt=0;
+  lastJson=JSON.stringify({state, commits, pending});
   Object.assign(ui, {sel:W.sel, graphVer:'work', relFilter:'all', cmpA:null, cmpB:null, confirm:null, open:{}});
   try{ localStorage.setItem('gitstory-world', k); }catch(e){}
 }
-$('#world-pick').onchange=ev=>{ loadWorld(ev.target.value); render(); toast(`${DATA.meta.title} 세계관을 불러왔습니다`); };
+$('#world-pick').onchange=ev=>{ loadWorld(ev.target.value); render(); syncFromCloud(worldKey); toast(`${DATA.meta.title} 세계관을 불러왔습니다`); };
 $('#world-reset').onclick=()=>{
   if(!confirm(`${DATA.meta.title}의 모든 변경을 지우고 처음 예시 상태로 되돌릴까요?`)) return;
-  loadWorld(worldKey, true); render(); toast('처음 예시 상태로 되돌렸습니다');
+  loadWorld(worldKey, true); lastJson=null; render(); toast('처음 예시 상태로 되돌렸습니다');
 };
 let startWorld='arcane';
 try{ const v=localStorage.getItem('gitstory-world'); if(WORLDS[v]) startWorld=v; }catch(e){}
@@ -819,4 +854,5 @@ if(location.hash==='#arcane') startWorld='arcane';
 $('#world-pick').value=startWorld;
 loadWorld(startWorld);
 render('world');
+syncFromCloud(startWorld);
 }
