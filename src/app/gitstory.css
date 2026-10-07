@@ -210,3 +210,10 @@ details.more summary{cursor:pointer;color:var(--accent);font-size:12px;font-weig
 @media (prefers-reduced-motion:reduce){.spinner{animation-duration:3s}}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:13px;margin:0}
 .kv dt{color:var(--fg-muted)} .kv dd{margin:0;min-width:0}
+
+.login{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;text-align:center}
+.login h1{font-size:24px;margin:0}
+.login p{margin:0}
+.login .logo{width:48px;height:48px;font-size:22px}
+.login-error{color:var(--danger)}
+.avatar img{display:block}

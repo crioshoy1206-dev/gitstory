@@ -1,30 +1,23 @@
-// 세계관을 Firestore에 저장한다. 사용자는 익명 로그인으로 구분하고,
-// 문서는 users/{uid}/worlds/{worldKey} 하나에 상태 전체를 JSON 문자열로 둔다.
-import { onAuthStateChanged, signInAnonymously, type User } from "firebase/auth";
+// 로그인(구글)과 Firestore 저장. 문서는 users/{uid}/worlds/{worldKey} 하나에 상태 전체를 JSON 문자열로 둔다.
+import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
-export type CloudStatus = "connecting" | "synced" | "saving" | "offline";
+export function watchUser(cb: (user: User | null) => void) {
+  return onAuthStateChanged(auth, cb);
+}
 
-let userPromise: Promise<User> | null = null;
+export function signInWithGoogle() {
+  return signInWithPopup(auth, new GoogleAuthProvider());
+}
 
-function getUser(): Promise<User> {
-  if (!userPromise) {
-    userPromise = new Promise<User>((resolve, reject) => {
-      const off = onAuthStateChanged(auth, (u) => {
-        if (u) {
-          off();
-          resolve(u);
-        }
-      });
-      signInAnonymously(auth).catch((e) => {
-        off();
-        userPromise = null;
-        reject(e);
-      });
-    });
-  }
-  return userPromise;
+export function signOutUser() {
+  return signOut(auth);
+}
+
+function currentUser(): User {
+  if (!auth.currentUser) throw new Error("로그인이 필요합니다");
+  return auth.currentUser;
 }
 
 function worldRef(uid: string, key: string) {
@@ -32,18 +25,34 @@ function worldRef(uid: string, key: string) {
 }
 
 export async function loadCloud(key: string): Promise<{ data: unknown; updatedAt: number } | null> {
-  const user = await getUser();
-  const snap = await getDoc(worldRef(user.uid, key));
+  const snap = await getDoc(worldRef(currentUser().uid, key));
   if (!snap.exists()) return null;
   const v = snap.data();
   return { data: JSON.parse(v.data), updatedAt: v.savedAt ?? 0 };
 }
 
 export async function saveCloud(key: string, data: unknown, savedAt: number): Promise<void> {
-  const user = await getUser();
-  await setDoc(worldRef(user.uid, key), {
+  await setDoc(worldRef(currentUser().uid, key), {
     data: JSON.stringify(data),
     savedAt,
     updatedAt: serverTimestamp(),
   });
+}
+
+/** 서버 API 호출. 로그인 토큰을 붙인다. */
+export async function callApi<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = await currentUser().getIdToken();
+  const res = await fetch(path, {
+    ...init,
+    headers: { ...init.headers, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(body.error || res.statusText), { status: res.status, body });
+  return body as T;
+}
+
+export type Usage = { date: string; used: number; limit: number; credits: number };
+
+export function fetchUsage() {
+  return callApi<Usage>("/api/usage");
 }

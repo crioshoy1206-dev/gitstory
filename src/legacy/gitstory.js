@@ -3,13 +3,16 @@
 import DATA_ARCANE from "@/data/arcane.json";
 import DATA_HP from "@/data/harry-potter.json";
 import DATA_JG from "@/data/janggu.json";
-import { loadCloud, saveCloud } from "@/legacy/cloud";
+import { loadCloud, saveCloud, signOutUser, fetchUsage } from "@/legacy/cloud";
 
 let started = false;
+let USER;
 
-export function start() {
+/** user: { uid, name, photo } */
+export function start(user) {
 if (started) return;
 started = true;
+USER = user;
 /* 예시 데이터: design/arcane-example.json 그대로 */
 
 
@@ -642,7 +645,7 @@ function renderHistory(){
       <div class="Box" style="margin-bottom:8px"><div class="Box-body">
         <div class="commit">
           <div class="msg">${esc(c.message)}${i===n-1?'<span class="head-tag">HEAD</span>':''}
-            <small><span class="Label" style="margin-right:4px">${COMMIT_KIND[c.kind]||c.kind}</span>rladuwn 커밋${c.parent?` · 부모 ${c.parent}`:''}${c.impacts?.length?` · 영향 ${c.impacts.length}건`:''} · 변경 ${c.patches.length}건</small></div>
+            <small><span class="Label" style="margin-right:4px">${COMMIT_KIND[c.kind]||c.kind}</span>${esc(USER.name)} 커밋${c.parent?` · 부모 ${c.parent}`:''}${c.impacts?.length?` · 영향 ${c.impacts.length}건`:''} · 변경 ${c.patches.length}건</small></div>
           <span class="sha">${c.id}</span>
           <div class="pick" role="group" aria-label="비교 대상">
             <label><input type="radio" name="cmpA" value="${c.id}" ${ui.cmpA===c.id?'checked':''}>A</label>
@@ -792,7 +795,7 @@ WORLDS.jg = {
   }
 };
 let worldKey;
-const saveKey = k => `gitstory-save-${k}`;
+const saveKey = k => `gitstory-save-${USER.uid}-${k}`;
 /* 저장: 브라우저(localStorage)에 즉시, Firestore에는 0.8초 모아서. 실패하면 브라우저 저장만 유지 */
 let lastJson=null, savedAt=0, cloudTimer=null;
 function setCloud(st){
@@ -811,6 +814,15 @@ function saveWorld(){
   cloudTimer=setTimeout(()=>{
     saveCloud(key, data, at).then(()=>setCloud('synced')).catch(err=>{ console.warn('Firestore 저장 실패', err); setCloud('offline'); });
   }, 800);
+}
+/* 오늘 남은 AI 토큰 표시 */
+function refreshUsage(){
+  fetchUsage().then(u=>{
+    const el=$('#token-meter'); const left=Math.max(0,u.limit-u.used)+u.credits;
+    el.textContent=`오늘 남은 토큰 ${left.toLocaleString()}`;
+    el.className='Label '+(left>0?'':'Label--danger');
+    el.title=`하루 ${u.limit.toLocaleString()} 중 ${u.used.toLocaleString()} 사용 · 충전 잔액 ${u.credits.toLocaleString()} · 매일 한국 시간 자정 초기화`;
+  }).catch(err=>{ console.warn('토큰 사용량 확인 실패', err); const el=$('#token-meter'); el.textContent='토큰 확인 불가'; el.className='Label'; });
 }
 /* 다른 기기에서 저장한 게 더 최신이면 불러옴 */
 function syncFromCloud(k){
@@ -852,6 +864,12 @@ try{ const v=localStorage.getItem('gitstory-world'); if(WORLDS[v]) startWorld=v;
 if(location.hash==='#hp' || location.hash==='#harry-potter') startWorld='hp';
 if(location.hash==='#arcane') startWorld='arcane';
 $('#world-pick').value=startWorld;
+document.querySelectorAll('[data-user-name]').forEach(el=>el.textContent=USER.name);
+const av=$('#user-avatar'); av.title=USER.name;
+if(USER.photo){ const img=document.createElement('img'); img.src=USER.photo; img.alt=''; img.referrerPolicy='no-referrer'; img.style.cssText='width:100%;height:100%;border-radius:50%'; av.appendChild(img); }
+else av.textContent=(USER.name||'?').slice(0,1).toUpperCase();
+$('#sign-out').onclick=()=>signOutUser().then(()=>location.reload());
+refreshUsage();
 loadWorld(startWorld);
 render('world');
 syncFromCloud(startWorld);
