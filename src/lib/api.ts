@@ -7,5 +7,6 @@ export function errorResponse(e: unknown) {
   if (e instanceof QuotaExceeded) return Response.json({ error: e.message, usage: e.usage }, { status: 429 });
   if (e instanceof AdminNotConfigured) return Response.json({ error: e.message }, { status: 503 });
   console.error(e);
-  return Response.json({ error: "서버 오류" }, { status: 500 });
+  const msg = e instanceof Error ? e.message.slice(0, 120) : String(e);
+  return Response.json({ error: `서버 오류: ${msg}` }, { status: 500 });
 }
