@@ -58,13 +58,13 @@ export async function callApi<T>(path: string, init: RequestInit = {}): Promise<
   return body as T;
 }
 
-export type Usage = { date: string; used: number; limit: number; credits: number };
+export type Usage = { date: string; used: number; limit: number; credits: number; plan: "free" | "pro" };
 
 export function fetchUsage() {
   return callApi<Usage>("/api/usage");
 }
 
-export type AnalyzeResult = { analysis: Record<string, unknown>; tokens: number; model: string; usage: Usage };
+export type AnalyzeResult = { analysis: Record<string, unknown>; tokens: number; model: string; provider: "claude" | "gemini"; usage: Usage };
 
 /** 사건을 AI로 분석한다. 쓴 토큰은 서버가 오늘 한도에서 뺀다. */
 export function analyzeEvent(event: { title: string; description: string; story_time: string }, world: unknown) {

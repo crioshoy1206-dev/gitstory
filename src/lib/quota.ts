@@ -1,5 +1,5 @@
 // 하루 AI 토큰 한도. 사용량은 서버만 쓴다(Firestore 규칙에서 클라이언트 쓰기 금지).
-//   users/{uid}                 { credits }   충전 잔액 (하루 한도를 다 쓰면 여기서 차감)
+//   users/{uid}                 { credits, plan }   충전 잔액(하루 한도를 다 쓰면 여기서 차감), 요금제 "free"|"pro"
 //   users/{uid}/usage/{날짜}     { tokens }    그날(한국 시간) 쓴 토큰
 import "server-only";
 import { FieldValue } from "firebase-admin/firestore";
@@ -12,7 +12,7 @@ export function today(): string {
   return new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
 }
 
-export type Usage = { date: string; used: number; limit: number; credits: number };
+export type Usage = { date: string; used: number; limit: number; credits: number; plan: "free" | "pro" };
 
 export async function getUsage(uid: string): Promise<Usage> {
   const db = adminDb();
@@ -21,7 +21,7 @@ export async function getUsage(uid: string): Promise<Usage> {
     db.doc(`users/${uid}/usage/${date}`).get(),
     db.doc(`users/${uid}`).get(),
   ]);
-  return { date, used: u.get("tokens") ?? 0, limit: DAILY_LIMIT, credits: user.get("credits") ?? 0 };
+  return { date, used: u.get("tokens") ?? 0, limit: DAILY_LIMIT, credits: user.get("credits") ?? 0, plan: user.get("plan") === "pro" ? "pro" : "free" };
 }
 
 export class QuotaExceeded extends Error {
@@ -51,6 +51,6 @@ export async function consume(uid: string, tokens: number): Promise<Usage> {
     const fromCredits = Math.min(credits, Math.max(0, tokens - freeLeft));
     tx.set(usageRef, { tokens: used + tokens, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     if (fromCredits > 0) tx.set(userRef, { credits: credits - fromCredits }, { merge: true });
-    return { date, used: used + tokens, limit: DAILY_LIMIT, credits: credits - fromCredits };
+    return { date, used: used + tokens, limit: DAILY_LIMIT, credits: credits - fromCredits, plan: user.get("plan") === "pro" ? "pro" : "free" };
   });
 }

@@ -27,10 +27,10 @@ export async function POST(req: Request) {
     if (JSON.stringify(body.world).length > 60000) {
       return Response.json({ error: "세계관이 너무 큽니다" }, { status: 413 });
     }
-    await mods.assertQuota(uid, mods.ESTIMATE);
-    const { analysis, tokens, model } = await mods.analyzeEvent(body.event, body.world);
+    const before = await mods.assertQuota(uid, mods.ESTIMATE);
+    const { analysis, tokens, model, provider } = await mods.analyzeEvent(body.event, body.world, before.plan);
     const usage = await mods.consume(uid, tokens);
-    return Response.json({ analysis, tokens, model, usage });
+    return Response.json({ analysis, tokens, model, provider, usage });
   } catch (e) {
     // 거절·파싱 실패여도 AI가 쓴 토큰은 차감한다
     const spent = (e as { tokens?: number }).tokens;

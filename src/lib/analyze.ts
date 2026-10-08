@@ -1,9 +1,15 @@
 // 사건 분석: AI가 판단(직접 영향, 성격 반응도, 상황 문장, 관계 변화)하고, 숫자 전파 계산은 브라우저 앱이 한다.
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 
-export const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5-5";
-export const EFFORT = (process.env.ANTHROPIC_EFFORT || "low") as "low" | "medium" | "high";
+// 요금제별 모델: 무료 = Gemini Flash(원가 낮음), 유료 = Claude Sonnet(판단 품질). 형식 "제공사:모델"
+export type Plan = "free" | "pro";
+const PLAN_MODEL: Record<Plan, string> = {
+  free: process.env.AI_MODEL_FREE || "gemini:gemini-3.8-flash",
+  pro: process.env.AI_MODEL_PRO || "claude:claude-sonnet-5-5",
+};
+const EFFORT = (process.env.AI_EFFORT || "low") as "low" | "medium" | "high";
 /** 분석 한 번에 필요하다고 보고 미리 확인하는 토큰 양 */
 export const ESTIMATE = 3000;
 
@@ -101,24 +107,69 @@ function clamp(x: number, lo: number, hi: number) {
 }
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
-export async function analyzeEvent(event: EventInput, world: WorldInput) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new AiNotConfigured("AI 키(ANTHROPIC_API_KEY)가 서버에 등록되지 않았습니다");
-  const client = new Anthropic({ apiKey });
+type Raw = { text: string; tokens: number; refused: boolean; stop: string; model: string };
 
-  const user = `## 세계관\n${JSON.stringify(world)}\n\n## 사건\n제목: ${event.title}\n작중 시점: ${event.story_time || "(미정)"}\n내용: ${event.description}`;
+async function callClaude(model: string, user: string): Promise<Raw> {
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  // 서버측 거절 대체(fallbacks)는 Opus·Fable 계열에서만 켠다
+  const fb = /^claude-(opus|fable)/.test(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {};
   const res = await client.beta.messages.create({
-    model: MODEL,
+    model,
     max_tokens: 8000,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
+    ...fb,
     output_config: { effort: EFFORT, format: { type: "json_schema", schema: SCHEMA } },
     system: SYSTEM,
     messages: [{ role: "user", content: user }],
   });
-  const tokens = (res.usage.input_tokens ?? 0) + (res.usage.output_tokens ?? 0);
-  if (res.stop_reason === "refusal") throw Object.assign(new AiRefused("AI가 이 사건 분석을 거절했습니다"), { tokens });
-  const text = res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
+  return {
+    text: res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(""),
+    tokens: (res.usage.input_tokens ?? 0) + (res.usage.output_tokens ?? 0),
+    refused: res.stop_reason === "refusal",
+    stop: String(res.stop_reason),
+    model: res.model,
+  };
+}
+
+async function callGemini(model: string, user: string): Promise<Raw> {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const res = await ai.models.generateContent({
+    model,
+    contents: user,
+    config: {
+      systemInstruction: SYSTEM,
+      responseMimeType: "application/json",
+      responseJsonSchema: SCHEMA,
+      maxOutputTokens: 8000,
+      thinkingConfig: { thinkingLevel: EFFORT === "high" ? ThinkingLevel.HIGH : EFFORT === "medium" ? ThinkingLevel.MEDIUM : ThinkingLevel.LOW },
+    },
+  });
+  const finish = res.candidates?.[0]?.finishReason ?? "";
+  return {
+    text: res.text ?? "",
+    tokens: res.usageMetadata?.totalTokenCount ?? 0,
+    refused: !!res.promptFeedback?.blockReason || ["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII"].includes(finish),
+    stop: String(res.promptFeedback?.blockReason || finish),
+    model: res.modelVersion || model,
+  };
+}
+
+/** 요금제에 맞는 모델을 고른다. 그 제공사 키가 없으면 다른 쪽으로 대신한다. */
+function pickModel(plan: Plan): { provider: "claude" | "gemini"; model: string } {
+  const has = { claude: !!process.env.ANTHROPIC_API_KEY, gemini: !!process.env.GEMINI_API_KEY };
+  const [p, m] = PLAN_MODEL[plan].split(":") as ["claude" | "gemini", string];
+  if (has[p]) return { provider: p, model: m };
+  if (has.gemini) return { provider: "gemini", model: PLAN_MODEL.free.split(":")[1] };
+  if (has.claude) return { provider: "claude", model: PLAN_MODEL.pro.split(":")[1] };
+  throw new AiNotConfigured("AI 키(GEMINI_API_KEY 또는 ANTHROPIC_API_KEY)가 서버에 등록되지 않았습니다");
+}
+
+export async function analyzeEvent(event: EventInput, world: WorldInput, plan: Plan = "free") {
+  const { provider, model } = pickModel(plan);
+  const user = `## 세계관\n${JSON.stringify(world)}\n\n## 사건\n제목: ${event.title}\n작중 시점: ${event.story_time || "(미정)"}\n내용: ${event.description}`;
+  const res = await (provider === "claude" ? callClaude : callGemini)(model, user);
+  const tokens = res.tokens;
+  if (res.refused) throw Object.assign(new AiRefused("AI가 이 사건 분석을 거절했습니다"), { tokens });
+  const text = res.text;
   let raw: {
     direct: { target: string; M: number; tags: string[]; summary: string }[];
     relevance: { trait: string; tag: string; rel: number }[];
@@ -128,7 +179,7 @@ export async function analyzeEvent(event: EventInput, world: WorldInput) {
   try {
     raw = JSON.parse(text);
   } catch {
-    throw Object.assign(new Error(`AI 응답을 읽지 못했습니다 (${res.stop_reason})`), { tokens });
+    throw Object.assign(new Error(`AI 응답을 읽지 못했습니다 (${res.stop})`), { tokens });
   }
 
   // 검증: 세계관에 있는 id·태그만 남기고 숫자 범위를 자른다
@@ -160,5 +211,5 @@ export async function analyzeEvent(event: EventInput, world: WorldInput) {
     }
     return [];
   });
-  return { analysis: { title: event.title, description: event.description, story_time: event.story_time ?? "", direct, relevance, rewrite, relations }, tokens, model: res.model };
+  return { analysis: { title: event.title, description: event.description, story_time: event.story_time ?? "", direct, relevance, rewrite, relations }, tokens, model: res.model, provider };
 }

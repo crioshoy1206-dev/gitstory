@@ -5,7 +5,7 @@
 ## 지금 상태 (샘플)
 - 예시 세계관 3개(아케인, 해리 포터, 짱구는 못말려)로 세계관 편집, 사건 입력, 관계도, 버전 기록(비교, 되돌리기)이 동작한다.
 - 변경 내용은 브라우저(localStorage)에 저장된다. "처음 상태로" 버튼으로 예시 초기 상태로 되돌린다.
-- 사건 분석은 `/api/analyze`에서 Claude가 판단한다(직접 영향·반응도·상황 문장·관계 변화). 숫자 전파는 브라우저가 계산. Vercel 환경변수 `ANTHROPIC_API_KEY` 필요, `ANTHROPIC_MODEL`(기본 claude-opus-5-5)·`ANTHROPIC_EFFORT`(기본 low)로 조정. 키가 없거나 실패하면 키워드 추정으로 대신한다.
+- 사건 분석은 `/api/analyze`에서 AI가 판단한다(직접 영향·반응도·상황 문장·관계 변화). 숫자 전파는 브라우저가 계산. 요금제별 모델: 무료 = Gemini(`GEMINI_API_KEY`, 기본 gemini-3.8-flash), 유료 = Claude(`ANTHROPIC_API_KEY`, 기본 claude-sonnet-5-5). `AI_MODEL_FREE`/`AI_MODEL_PRO`("제공사:모델")와 `AI_EFFORT`(기본 low)로 조정. 한쪽 키만 있으면 그쪽으로 대신하고, 둘 다 없거나 실패하면 키워드 추정. 요금제는 Firestore `users/{uid}.plan`("pro"면 유료, 결제 연결 전까지 콘솔에서 지정).
 - 화면 로직은 `src/legacy/gitstory.js`(프로토타입 스크립트 이식), 예시 데이터는 `src/data/`.
 
 ## 스택

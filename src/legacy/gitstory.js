@@ -425,7 +425,7 @@ function renderEvent(){
     try{
       const r=await analyzeEvent({title, description:text, story_time:time}, worldForAi());
       a=r.analysis; Object.entries(a.relevance||{}).forEach(([k,v])=>{ RELEVANCE[k]={...(RELEVANCE[k]||{}), ...v}; });
-      showUsage(r.usage); toast(`AI 분석 완료 · 토큰 ${r.tokens.toLocaleString()} 사용`);
+      showUsage(r.usage); toast(`AI 분석 완료 (${r.provider==='claude'?'Claude':'Gemini'}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
       if(!a.direct.length) note='AI가 직접 영향을 받는 대상을 찾지 못했습니다. 사건에 단체나 인물 이름을 넣어 보세요.';
     }catch(err){
       console.warn('AI 분석 실패', err);
@@ -843,7 +843,7 @@ function saveWorld(){
 /* 오늘 남은 AI 토큰 표시 */
 function showUsage(u){
   const el=$('#token-meter'); const left=Math.max(0,u.limit-u.used)+u.credits;
-  el.textContent=`오늘 남은 토큰 ${left.toLocaleString()}`;
+  el.textContent=`${u.plan==='pro'?'Pro · ':''}오늘 남은 토큰 ${left.toLocaleString()}`;
   el.className='Label '+(left>0?'':'Label--danger');
   el.title=`하루 ${u.limit.toLocaleString()} 중 ${u.used.toLocaleString()} 사용 · 충전 잔액 ${u.credits.toLocaleString()} · 매일 한국 시간 자정 초기화`;
 }
