@@ -1,5 +1,5 @@
 // 사건 AI 분석. 로그인 확인 → 남은 토큰 확인 → AI 호출 → 쓴 토큰만큼 차감
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   // 헤더는 try 밖에서 읽는다 (Next가 동적 렌더링 전환용으로 던지는 신호를 잡지 않도록)
@@ -36,6 +36,7 @@ export async function POST(req: Request) {
     const spent = (e as { tokens?: number }).tokens;
     if (uid && spent) await mods.consume(uid, spent).catch(console.error);
     if (e instanceof mods.AiNotConfigured) return Response.json({ error: e.message }, { status: 503 });
+    if (e instanceof mods.AiTimeout) return Response.json({ error: e.message }, { status: 504 });
     if (e instanceof mods.AiRefused) return Response.json({ error: e.message }, { status: 422 });
     return mods.errorResponse(e);
   }

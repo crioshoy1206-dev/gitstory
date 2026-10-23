@@ -9,6 +9,8 @@ const PLAN_MODEL: Record<Plan, string> = {
   free: process.env.AI_MODEL_FREE || "gemini:gemini-3.8-flash",
   pro: process.env.AI_MODEL_PRO || "claude:claude-sonnet-5-5",
 };
+/** 서버 함수 제한(60초) 전에 AI 호출을 끊어, 시간 초과도 알아볼 수 있는 오류로 돌려준다 */
+const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 50000);
 const EFFORT = (process.env.AI_EFFORT || "low") as "low" | "medium" | "high";
 /** 분석 한 번에 필요하다고 보고 미리 확인하는 토큰 양 */
 export const ESTIMATE = 3000;
@@ -18,6 +20,7 @@ const REL_TYPES = ["hostile", "rival", "dominate", "coexist", "alliance", "famil
 
 export class AiNotConfigured extends Error {}
 export class AiRefused extends Error {}
+export class AiTimeout extends Error {}
 
 export type EventInput = { title: string; description: string; story_time?: string };
 export type WorldInput = {
@@ -100,7 +103,8 @@ const SYSTEM = `당신은 스토리 세계관의 개연성을 지키는 편집�
 - M은 그 대상이 받는 영향의 크기와 방향입니다 (-1 큰 피해 ~ +1 큰 이득). 태그는 영향의 성격입니다.
 - 각 인물의 성격(traits)과 현재 상황에 근거해 판단하고, 세계관에 없는 사실을 지어내지 않습니다.
 - 모든 문장은 한국어로, 세계관의 말투에 맞게 씁니다.
-- id는 반드시 세계관에 있는 것만 씁니다 (새 관계 id만 예외).`;
+- id는 반드시 세계관에 있는 것만 씁니다 (새 관계 id만 예외).
+- 간결하게: direct는 정말 직접 닿는 대상만(보통 1~5개), rewrite는 크게 바뀌는 대상만(최대 6개), relations는 실제로 바뀌는 것만(최대 5개). 문장은 짧게.`;
 
 function clamp(x: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, Number.isFinite(x) ? x : 0));
@@ -110,12 +114,12 @@ const r2 = (x: number) => Math.round(x * 100) / 100;
 type Raw = { text: string; tokens: number; refused: boolean; stop: string; model: string };
 
 async function callClaude(model: string, user: string): Promise<Raw> {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: AI_TIMEOUT_MS, maxRetries: 0 });
   // 서버측 거절 대체(fallbacks)는 Opus·Fable 계열에서만 켠다
   const fb = /^claude-(opus|fable)/.test(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {};
   const res = await client.beta.messages.create({
     model,
-    max_tokens: 8000,
+    max_tokens: 4000,
     ...fb,
     output_config: { effort: EFFORT, format: { type: "json_schema", schema: SCHEMA } },
     system: SYSTEM,
@@ -139,7 +143,8 @@ async function callGemini(model: string, user: string): Promise<Raw> {
       systemInstruction: SYSTEM,
       responseMimeType: "application/json",
       responseJsonSchema: SCHEMA,
-      maxOutputTokens: 8000,
+      maxOutputTokens: 4000,
+      abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
       thinkingConfig: { thinkingLevel: EFFORT === "high" ? ThinkingLevel.HIGH : EFFORT === "medium" ? ThinkingLevel.MEDIUM : ThinkingLevel.LOW },
     },
   });
@@ -166,7 +171,22 @@ function pickModel(plan: Plan): { provider: "claude" | "gemini"; model: string }
 export async function analyzeEvent(event: EventInput, world: WorldInput, plan: Plan = "free") {
   const { provider, model } = pickModel(plan);
   const user = `## 세계관\n${JSON.stringify(world)}\n\n## 사건\n제목: ${event.title}\n작중 시점: ${event.story_time || "(미정)"}\n내용: ${event.description}`;
-  const res = await (provider === "claude" ? callClaude : callGemini)(model, user);
+  const t0 = Date.now();
+  let res: Raw;
+  try {
+    // SDK 시간 제한이 안 먹는 경우를 대비해 직접 경주시킨다
+    res = await Promise.race([
+      (provider === "claude" ? callClaude : callGemini)(model, user),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timed out")), AI_TIMEOUT_MS)),
+    ]);
+  } catch (e) {
+    const msg = e instanceof Error ? `${e.name} ${e.message}` : String(e);
+    if (Date.now() - t0 >= AI_TIMEOUT_MS - 1000 || /abort|timed? ?out/i.test(msg)) {
+      throw new AiTimeout(`AI 응답이 ${Math.round(AI_TIMEOUT_MS / 1000)}초 안에 오지 않았습니다 (${model})`);
+    }
+    throw e;
+  }
+  console.log(`analyze ${provider}/${model} ${Date.now() - t0}ms tokens=${res.tokens} chars=${user.length}`);
   const tokens = res.tokens;
   if (res.refused) throw Object.assign(new AiRefused("AI가 이 사건 분석을 거절했습니다"), { tokens });
   const text = res.text;

@@ -342,16 +342,31 @@ const SAMPLE_ARCANE = {
   ]
 };
 /* AI에 보낼 세계관 요약 (이력은 빼고 현재 상태만) */
-function worldForAi(s=state){
+/* AI에 보낼 세계관 요약. 사건에 이름이 나온 단체·인물과 그 주변(소속·구성원·상하위 단체)만 보낸다.
+   이름이 하나도 안 나오면 전체를 보낸다. 이력은 빼고 현재 상태만. 전파 계산은 브라우저가 전체 상태로 한다. */
+function worldForAi(text='', s=state){
   const tr=e=>(e.traits||[]).map(t=>({key:t.key,label:t.label,value:t.value}));
   const sit=e=>({current:e.situation?.current, status:e.situation?.status});
-  const keys=new Set(); [...s.groups,...s.characters].forEach(e=>(e.traits||[]).forEach(t=>{ if(!RELEVANCE[t.key]) keys.add(t.key); }));
+  const hit=e=>text.includes(e.name) || (e.aliases||[]).some(a=>a && text.includes(a));
+  let gs=s.groups, cs=s.characters;
+  const seeds=[...s.groups,...s.characters].filter(hit).map(e=>e.id);
+  if(seeds.length){
+    const ids=new Set(seeds);
+    s.characters.filter(c=>ids.has(c.id)).forEach(c=>(c.memberships||[]).forEach(m=>ids.add(m.group)));
+    s.groups.filter(g=>ids.has(g.id)).forEach(g=>{ if(g.parent) ids.add(g.parent); });
+    const grp=new Set([...ids].filter(id=>id.startsWith('grp_')));
+    s.groups.forEach(g=>{ if(g.parent && grp.has(g.parent)) ids.add(g.id); });
+    s.characters.forEach(c=>{ if((c.memberships||[]).some(m=>grp.has(m.group))) ids.add(c.id); });
+    gs=s.groups.filter(g=>ids.has(g.id)); cs=s.characters.filter(c=>ids.has(c.id));
+  }
+  const ids=new Set([...gs,...cs].map(e=>e.id));
+  const keys=new Set(); [...gs,...cs].forEach(e=>(e.traits||[]).forEach(t=>{ if(!RELEVANCE[t.key]) keys.add(t.key); }));
   return {
     title:DATA.meta.title,
     background:(s.background||[]).map(b=>({title:b.title, content:b.content})),
-    groups:s.groups.map(g=>({id:g.id, name:g.name, parent:g.parent, traits:tr(g), situation:sit(g)})),
-    characters:s.characters.map(c=>({id:c.id, name:c.name, aliases:c.aliases, memberships:(c.memberships||[]).map(m=>({group:m.group, role:m.role, bond:m.bond})), traits:tr(c), situation:sit(c)})),
-    relations:s.relations.map(r=>({id:r.id, from:r.from, to:r.to, type:r.type, intensity:r.intensity, note:r.note})),
+    groups:gs.map(g=>({id:g.id, name:g.name, parent:g.parent, traits:tr(g), situation:sit(g)})),
+    characters:cs.map(c=>({id:c.id, name:c.name, aliases:c.aliases, memberships:(c.memberships||[]).map(m=>({group:m.group, role:m.role, bond:m.bond})), traits:tr(c), situation:sit(c)})),
+    relations:s.relations.filter(r=>ids.has(r.from)&&ids.has(r.to)).map(r=>({id:r.id, from:r.from, to:r.to, type:r.type, intensity:r.intensity, note:r.note})),
     unscored_traits:[...keys]
   };
 }
@@ -423,7 +438,7 @@ function renderEvent(){
     $('#ev-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 사건이 단체·인물에 주는 직접 영향을 판단하고 있습니다</span></div></div>`;
     let a, note='';
     try{
-      const r=await analyzeEvent({title, description:text, story_time:time}, worldForAi());
+      const r=await analyzeEvent({title, description:text, story_time:time}, worldForAi(title+' '+text));
       a=r.analysis; Object.entries(a.relevance||{}).forEach(([k,v])=>{ RELEVANCE[k]={...(RELEVANCE[k]||{}), ...v}; });
       showUsage(r.usage); toast(`AI 분석 완료 (${r.provider==='claude'?'Claude':'Gemini'}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
       if(!a.direct.length) note='AI가 직접 영향을 받는 대상을 찾지 못했습니다. 사건에 단체나 인물 이름을 넣어 보세요.';
