@@ -6,5 +6,10 @@ export async function GET(req: Request) {
   try {
     keyJson = !!raw && !!JSON.parse(raw).private_key;
   } catch {}
-  return Response.json({ ok: true, node: process.version, serviceAccountSet: !!raw, serviceAccountValid: keyJson });
+  return Response.json({
+    ok: true, node: process.version, serviceAccountSet: !!raw, serviceAccountValid: keyJson,
+    geminiKeySet: !!process.env.GEMINI_API_KEY?.trim(),
+    anthropicKeySet: !!process.env.ANTHROPIC_API_KEY?.trim(),
+    env: process.env.VERCEL_ENV ?? "local",
+  });
 }
