@@ -11,6 +11,8 @@ const PLAN_MODEL: Record<Plan, string> = {
 };
 /** 서버 함수 제한(60초) 전에 AI 호출을 끊어, 시간 초과도 알아볼 수 있는 오류로 돌려준다 */
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 50000);
+/** Gemini가 붐빌 때(503·429) 차례로 시도할 다른 모델 */
+const GEMINI_FALLBACKS = (process.env.AI_GEMINI_FALLBACKS || "gemini-3.7-flash,gemini-3.5-flash").split(",").map((m) => m.trim()).filter(Boolean);
 const EFFORT = (process.env.AI_EFFORT || "low") as "low" | "medium" | "high";
 /** 분석 한 번에 필요하다고 보고 미리 확인하는 토큰 양 */
 export const ESTIMATE = 3000;
@@ -21,6 +23,7 @@ const REL_TYPES = ["hostile", "rival", "dominate", "coexist", "alliance", "famil
 export class AiNotConfigured extends Error {}
 export class AiRefused extends Error {}
 export class AiTimeout extends Error {}
+export class AiBusy extends Error {}
 
 export type EventInput = { title: string; description: string; story_time?: string };
 export type WorldInput = {
@@ -172,21 +175,36 @@ export async function analyzeEvent(event: EventInput, world: WorldInput, plan: P
   const { provider, model } = pickModel(plan);
   const user = `## 세계관\n${JSON.stringify(world)}\n\n## 사건\n제목: ${event.title}\n작중 시점: ${event.story_time || "(미정)"}\n내용: ${event.description}`;
   const t0 = Date.now();
-  let res: Raw;
-  try {
-    // SDK 시간 제한이 안 먹는 경우를 대비해 직접 경주시킨다
-    res = await Promise.race([
-      (provider === "claude" ? callClaude : callGemini)(model, user),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timed out")), AI_TIMEOUT_MS)),
-    ]);
-  } catch (e) {
-    const msg = e instanceof Error ? `${e.name} ${e.message}` : String(e);
-    if (Date.now() - t0 >= AI_TIMEOUT_MS - 1000 || /abort|timed? ?out/i.test(msg)) {
-      throw new AiTimeout(`AI 응답이 ${Math.round(AI_TIMEOUT_MS / 1000)}초 안에 오지 않았습니다 (${model})`);
+  const deadline = t0 + AI_TIMEOUT_MS;
+  // 붐빔(503·429)이면 잠깐 쉬고 같은 모델 한 번, 그다음 대체 모델 순서로 시도한다
+  const tries = provider === "gemini" ? [model, model, ...GEMINI_FALLBACKS.filter((m) => m !== model)] : [model, model];
+  let res: Raw | undefined;
+  let used = model;
+  for (let i = 0; i < tries.length && !res; i++) {
+    used = tries[i];
+    const left = deadline - Date.now();
+    if (left < 3000) throw new AiTimeout(`AI 응답이 ${Math.round(AI_TIMEOUT_MS / 1000)}초 안에 오지 않았습니다 (${used})`);
+    try {
+      // SDK 시간 제한이 안 먹는 경우를 대비해 직접 경주시킨다
+      res = await Promise.race([
+        (provider === "claude" ? callClaude : callGemini)(used, user),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timed out")), left)),
+      ]);
+    } catch (e) {
+      const msg = e instanceof Error ? `${e.name} ${e.message}` : String(e);
+      const status = (e as { status?: number }).status;
+      if (Date.now() >= deadline - 1000 || /abort|timed? ?out/i.test(msg)) {
+        throw new AiTimeout(`AI 응답이 ${Math.round(AI_TIMEOUT_MS / 1000)}초 안에 오지 않았습니다 (${used})`);
+      }
+      const busy = status === 503 || status === 429 || status === 529 || /\b(503|429|529)\b|high demand|overloaded|UNAVAILABLE|RESOURCE_EXHAUSTED/i.test(msg);
+      console.warn(`analyze ${provider}/${used} 실패 (${busy ? "붐빔" : "오류"}): ${msg.slice(0, 200)}`);
+      if (!busy) throw e;
+      if (i === tries.length - 1) throw new AiBusy("AI 서버가 지금 붐벼요. 잠시 후 다시 눌러 주세요");
+      await new Promise((r) => setTimeout(r, i === 0 ? 1500 : 300));
     }
-    throw e;
   }
-  console.log(`analyze ${provider}/${model} ${Date.now() - t0}ms tokens=${res.tokens} chars=${user.length}`);
+  if (!res) throw new AiBusy("AI 서버가 지금 붐벼요. 잠시 후 다시 눌러 주세요");
+  console.log(`analyze ${provider}/${used} ${Date.now() - t0}ms tokens=${res.tokens} chars=${user.length}`);
   const tokens = res.tokens;
   if (res.refused) throw Object.assign(new AiRefused("AI가 이 사건 분석을 거절했습니다"), { tokens });
   const text = res.text;

@@ -36,6 +36,7 @@ export async function POST(req: Request) {
     const spent = (e as { tokens?: number }).tokens;
     if (uid && spent) await mods.consume(uid, spent).catch(console.error);
     if (e instanceof mods.AiNotConfigured) return Response.json({ error: e.message }, { status: 503 });
+    if (e instanceof mods.AiBusy) return Response.json({ error: e.message }, { status: 503 });
     if (e instanceof mods.AiTimeout) return Response.json({ error: e.message }, { status: 504 });
     if (e instanceof mods.AiRefused) return Response.json({ error: e.message }, { status: 422 });
     return mods.errorResponse(e);
