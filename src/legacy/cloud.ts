@@ -1,6 +1,6 @@
 // 로그인(구글)과 Firestore 저장. 문서는 users/{uid}/worlds/{worldKey} 하나에 상태 전체를 JSON 문자열로 둔다.
 import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
 export function watchUser(cb: (user: User | null) => void) {
@@ -29,6 +29,22 @@ export async function loadCloud(key: string): Promise<{ data: unknown; updatedAt
   if (!snap.exists()) return null;
   const v = snap.data();
   return { data: JSON.parse(v.data), updatedAt: v.savedAt ?? 0 };
+}
+
+/** 이 사용자의 직접 만든 프로젝트(키가 p_로 시작) 목록 */
+export async function listProjects(): Promise<{ key: string; meta: Record<string, string>; savedAt: number }[]> {
+  const snap = await getDocs(collection(db, "users", currentUser().uid, "worlds"));
+  return snap.docs
+    .filter((d) => d.id.startsWith("p_"))
+    .flatMap((d) => {
+      try {
+        const v = d.data();
+        const meta = JSON.parse(v.data).meta;
+        return meta ? [{ key: d.id, meta, savedAt: v.savedAt ?? 0 }] : [];
+      } catch {
+        return [];
+      }
+    });
 }
 
 export async function saveCloud(key: string, data: unknown, savedAt: number): Promise<void> {

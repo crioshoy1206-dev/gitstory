@@ -3,7 +3,7 @@
 import DATA_ARCANE from "@/data/arcane.json";
 import DATA_HP from "@/data/harry-potter.json";
 import DATA_JG from "@/data/janggu.json";
-import { loadCloud, saveCloud, signOutUser, fetchUsage, analyzeEvent } from "@/legacy/cloud";
+import { loadCloud, saveCloud, signOutUser, fetchUsage, analyzeEvent, listProjects } from "@/legacy/cloud";
 
 let started = false;
 let USER;
@@ -63,6 +63,7 @@ function nationOf(s,e){
 function nationColor(n){ const z=W.zones.find(z=>z.id===n); return z?`var(${z.c})`:'var(--fg-muted)'; }
 function statusCls(st){ return st==='사망'?'Label--danger':/위기|마비|비상|충격|불안정|공백|도주|진압|교전|부상|축소|저항|쇠약|수감|수배|장악|숙청|상실|폐교|동요/.test(st||'')?'Label--attention':''; }
 function fmtDate(s){ if(!s) return '방금 전'; const d=new Date(s); return `${d.getMonth()+1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
+function newId(p){ return `${p}_${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2,5)}`; }
 function newSha(){ return Array.from({length:7},()=>'0123456789abcdef'[Math.random()*16|0]).join(''); }
 function toast(t){ const el=$('#toast'); el.textContent=t; el.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,2600); }
 
@@ -104,21 +105,30 @@ function describePath(s,path){
   const seg=path.split('/').slice(1); const [c,id]=seg; const rest=seg.slice(2).join('/');
   if(c==='relations'){ const r=ent2rel(s,id); const who=r?`${nm(s,r.from)} ↔ ${nm(s,r.to)} ${REL[r.type]?.l||''}`:id; return rest?`관계 ${who} · ${rest==='intensity'?'강도':rest==='note'?'메모':rest==='type'?'유형':rest}`:`관계 ${who}`; }
   const n=nm(s,id);
-  if(c==='background') return `배경 '${n}'${rest==='content'?' 내용':''}`;
+  if(c==='background') return `배경 '${n}'${rest==='content'?' 내용':rest==='title'?' 제목':rest==='category'?' 분류':''}`;
+  if(!rest) return `${c==='characters'?'인물':'단체'} '${n}'`;
+  if(rest==='name') return `${n} · 이름`;
+  if(rest==='aliases') return `${n} · 다른 이름`;
+  if(rest==='kind') return `${n} · 단체 종류`;
+  if(rest==='parent') return `${n} · 상위 단체`;
+  if(rest==='traits') return `${n} · 성격 목록`;
   if(rest==='situation/status') return `${n} · 상황 태그`;
   if(rest==='situation/current') return `${n} · 현재 상황`;
   if(rest==='situation/history/-') return `${n} · 상황 이력`;
   if(rest==='parent_bond') return `${n} · 상위 단체 결속도`;
   let m=rest.match(/^traits\/([^/]+)\/value$/); if(m){ const e=ent(s,id)||ent(state,id); const t=e?.traits?.find(t=>t.key===m[1]); return `${n} · 성격 '${t?.label||m[1]}'`; }
+  m=rest.match(/^traits\/([^/]+)$/); if(m){ const e=ent(s,id)||ent(state,id); const t=e?.traits?.find(t=>t.key===m[1]); return `${n} · 성격 '${t?.label||m[1]}'`; }
+  m=rest.match(/^memberships\/([^/]+)$/); if(m) return `${n} · '${nm(s,m[1])}' 소속`;
   m=rest.match(/^memberships\/([^/]+)\/bond$/); if(m) return `${n} · '${nm(s,m[1])}' 결속도`;
   m=rest.match(/^memberships\/([^/]+)\/active$/); if(m) return `${n} · '${nm(s,m[1])}' 소속 활성`;
   return `${n} · ${rest}`;
 }
 function ent2rel(s,id){ return s.relations.find(r=>r.id===id) || state.relations.find(r=>r.id===id); }
-function showVal(v){ if(v==null) return '(없음)'; if(typeof v==='number') return f2(v); if(typeof v==='boolean') return v?'예':'아니오'; if(typeof v==='object') return v.type&&REL[v.type] ? `${REL[v.type].l} ${f2(v.intensity)}${v.note?' · '+v.note:''}` : (v.summary || v.title || '항목'); return v; }
+function showVal(v){ if(v==null) return '(없음)'; if(Array.isArray(v)) return v.length?v.join(', '):'(없음)'; if(typeof v==='object' && v.group && v.bond!=null) return `결속도 ${f2(v.bond)}${v.role?' · '+v.role:''}`; if(typeof v==='object' && v.key && v.value!=null) return f2(v.value); if(typeof v==='number') return f2(v); if(typeof v==='boolean') return v?'예':'아니오'; if(typeof v==='object') return v.type&&REL[v.type] ? `${REL[v.type].l} ${f2(v.intensity)}${v.note?' · '+v.note:''}` : (v.summary || v.title || v.name || v.label || '항목'); return v; }
 function patchLines(s,p){
   const label=(p.op!=='replace' && p.path.startsWith('/relations/') && (p.after||p.before)?.from) ? `관계 ${nm(s,(p.after||p.before).from)} ↔ ${nm(s,(p.after||p.before).to)}` : describePath(s,p.path);
   if(p.op==='replace') return [['chg',`~ ${label}: ${showVal(p.before)} → ${showVal(p.after)}`]];
+  if(p.op==='add' && p.path.split('/').length===3 && !p.path.startsWith('/relations/')) return [['add',`+ ${label} 추가`]];
   if(p.op==='add') return [['add',`+ ${label}: ${showVal(p.after)}`]];
   return [['del',`- ${label}: ${showVal(p.before)}`]];
 }
@@ -131,6 +141,11 @@ function setManual(path, value){
   const r=walk(state,path); r.obj[r.key]=value;
   if(JSON.stringify(p.before)===JSON.stringify(p.after)) pending=pending.filter(x=>x!==p);
 }
+
+/* 새 항목 추가 → pending (id로 가리키는 경로라 되돌리기도 그 항목만 뺀다) */
+function addManual(path, obj){ const p={op:'add', path, after:clone(obj)}; pending.push(p); applyPatch(state,p); }
+/* gid가 anc의 하위 단체인지 (상위 단체 지정 시 순환 방지) */
+function isUnder(s,gid,anc){ let g=s.groups.find(x=>x.id===gid), n=0; while(g && n++<20){ if(g.id===anc) return true; g=s.groups.find(x=>x.id===g.parent); } return false; }
 
 /* ---------- 영향 전파 (앱 코드가 계산) ---------- */
 function sensitivity(e, tags){
@@ -217,10 +232,12 @@ function treeGroups(s){
   walkG(null,0); return out;
 }
 function renderWorld(){
-  const s=state; const e=ent(s,ui.sel) || s.characters[0]; ui.sel=e.id;
+  const s=state; const e=ent(s,ui.sel) || s.characters[0] || s.groups[0] || s.background[0]; ui.sel=e?.id;
   const cats=[...new Set(s.background.map(b=>b.category))];
   const btn=(id,label,mark,meta,pad=0)=>`<li><button data-id="${id}" aria-current="${id===ui.sel}" style="padding-left:${8+pad*16}px">${mark}${esc(label)}${meta?`<span class="meta">${esc(meta)}</span>`:''}</button></li>`;
-  const nav = `<nav class="Box" aria-label="세계관 항목"><ul class="tree">
+  const nav = `<nav class="Box" aria-label="세계관 항목">
+    <div class="Box-header" style="gap:6px;flex-wrap:wrap"><button class="btn btn-sm" data-new="chr">+ 인물</button><button class="btn btn-sm" data-new="grp">+ 단체</button><button class="btn btn-sm" data-new="bg">+ 배경</button></div>
+    <ul class="tree">
     <li class="group"><span>인물</span><span>${s.characters.length}</span></li>
     ${s.characters.map(c=>btn(c.id,c.name,`<span class="dot" style="background:${nationColor(nationOf(s,c))}${c.situation?.status==='사망'?';opacity:.4':''}"></span>`, c.situation?.status)).join('')}
     <li class="group"><span>단체</span><span>${s.groups.length}</span></li>
@@ -229,7 +246,8 @@ function renderWorld(){
     ${cats.map(c=>s.background.filter(b=>b.category===c).map(b=>btn(b.id,b.title,`<span class="sq" style="background:var(--border-strong)"></span>`, c)).join('')).join('')}
   </ul></nav>`;
   let body;
-  if(e.id.startsWith('bg_')) body=bgDetail(e); else body=entityDetail(e);
+  if(!e) body=`<div class="blankslate Box"><div class="Box-body stack" style="text-align:center;padding:40px 16px"><h3 style="margin:0">아직 비어 있는 세계관이에요</h3><p class="caption" style="margin:0">왼쪽 위 <b>+ 인물</b>, <b>+ 단체</b>, <b>+ 배경</b>으로 시작하세요. 추가한 내용은 수동 수정으로 담기고, 커밋하면 버전으로 남습니다.</p></div></div>`;
+  else if(e.id.startsWith('bg_')) body=bgDetail(e); else body=entityDetail(e);
   $('#tab-world').innerHTML = pendingBanner() + `<div class="split">${nav}<div class="stack">${body}</div></div>`;
   $$('.tree button').forEach(b=>b.onclick=()=>{ ui.sel=b.dataset.id; renderWorld(); });
   $$('[data-go]').forEach(b=>b.onclick=()=>{ ui.sel=b.dataset.go; renderWorld(); });
@@ -242,7 +260,18 @@ function renderWorld(){
     setManual(base+'/status', $('#sit-status').value.trim()); setManual(base+'/current', $('#sit-current').value.trim());
     toast(pending.length?'수동 수정에 담았습니다':'바뀐 내용이 없습니다'); renderWorld();
   };
-  const bs=$('#bg-save'); if(bs) bs.onclick=()=>{ setManual(`/background/${e.id}/content`, $('#bg-content').value.trim()); renderWorld(); };
+  const bs=$('#bg-save'); if(bs) bs.onclick=()=>{
+    const t=$('#bg-title').value.trim(); if(!t){ toast('제목을 입력하세요'); return; }
+    setManual(`/background/${e.id}/title`, t); setManual(`/background/${e.id}/category`, $('#bg-cat').value.trim()||'기타');
+    setManual(`/background/${e.id}/content`, $('#bg-content').value.trim()); toast(pending.length?'수동 수정에 담았습니다':'바뀐 내용이 없습니다'); renderWorld(); };
+  $$('[data-new]').forEach(b=>b.onclick=()=>{
+    const t=b.dataset.new; const name=(prompt({chr:'새 인물 이름',grp:'새 단체 이름',bg:'새 배경 제목'}[t])||'').trim(); if(!name) return;
+    const sit={current:'', status:'', history:[]};
+    if(t==='chr'){ const id=newId('chr'); addManual(`/characters/${id}`, {id, name, aliases:[], memberships:[], traits:[], situation:sit}); ui.sel=id; }
+    else if(t==='grp'){ const id=newId('grp'); addManual(`/groups/${id}`, {id, name, kind:'organization', parent:null, traits:[], situation:sit}); ui.sel=id; }
+    else { const id=newId('bg'); const cat=(prompt('분류 (예: 지리, 역사, 기술)','기타')||'기타').trim(); addManual(`/background/${id}`, {id, category:cat, title:name, content:'', introduced_in:null}); ui.sel=id; }
+    ui.editing=null; toast('추가했습니다. 위 노란 상자에서 커밋하면 버전으로 남아요'); renderWorld(); });
+  if(e && !e.id.startsWith('bg_')) wireEntityEdit(e);
   const sg=$('#see-graph'); if(sg) sg.onclick=()=>{ ui.graphVer='work'; showTab('graph'); };
   wirePending();
 }
@@ -250,6 +279,8 @@ function bgDetail(b){
   return `<div class="Subhead"><h2>${esc(b.title)}</h2><span class="Label">배경</span><span class="Label">${esc(b.category)}</span>
     ${b.introduced_in?`<span class="Label Label--done">${icon('commit')}${b.introduced_in}에서 추가</span>`:''}</div>
     <div class="Box"><div class="Box-body stack">
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><div class="form-group" style="flex:2 1 200px"><label for="bg-title">제목</label><input class="form-control" id="bg-title" value="${esc(b.title)}"></div>
+        <div class="form-group" style="flex:1 1 120px"><label for="bg-cat">분류</label><input class="form-control" id="bg-cat" value="${esc(b.category)}"></div></div>
       <div class="form-group"><label for="bg-content">내용</label><textarea class="form-control" id="bg-content" rows="5">${esc(b.content)}</textarea>
       <span class="caption">배경은 소속·성격·상황이 없는 기초 정보입니다. 사건으로 새 배경이 생기면 그 커밋이 기록됩니다.</span></div>
       <div><button class="btn btn-primary" id="bg-save">수정 담기</button></div>
@@ -258,7 +289,7 @@ function bgDetail(b){
 function traitRows(e){
   const c=coll(e.id);
   return (e.traits||[]).map(t=>`<div class="trait Box-row" style="display:grid">
-    <div class="lab">${esc(t.label)} ${t.target?`<span class="Label">${icon('graph')}${esc(nm(state,t.target))}</span>`:''}<small class="num">${esc(t.key)}</small></div>
+    <div class="lab">${esc(t.label)} ${t.target?`<span class="Label">${icon('graph')}${esc(nm(state,t.target))}</span>`:''}${t.key.startsWith('t_')?'':`<small class="num">${esc(t.key)}</small>`}</div>
     <input type="range" min="0" max="1" step="0.05" value="${t.value}" data-path="/${c}/${e.id}/traits/${t.key}/value" aria-label="${esc(t.label)} 강도">
     <span class="num v" style="text-align:right">${f2(t.value)}</span></div>`).join('');
 }
@@ -267,6 +298,59 @@ function bondRow(label, sub, path, v, goId, extra=''){
     <div class="lab"><button class="btn-link" data-go="${goId}">${esc(label)}</button> ${extra}${sub?`<small>${esc(sub)}</small>`:''}</div>
     <input type="range" min="0" max="1" step="0.05" value="${v}" data-path="${path}" aria-label="${esc(label)} 결속도">
     <span class="num v" style="text-align:right">${f2(v)}</span></div>`;
+}
+function editBox(e){
+  const s=state, isG=e.id.startsWith('grp_');
+  return `<div class="Box" style="margin-bottom:16px"><div class="Box-header"><h3>기본 정보 수정</h3><span class="caption right">고친 내용은 수동 수정으로 담기고, 커밋하면 버전으로 남아요</span></div><div class="Box-body stack">
+    <div class="form-group"><label for="ed-name">이름</label><input class="form-control" id="ed-name" value="${esc(e.name)}"></div>
+    ${isG?`<div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div class="form-group" style="flex:1 1 140px"><label for="ed-kind">종류</label><select class="form-control" id="ed-kind">${Object.entries(KIND).map(([k,l])=>`<option value="${k}" ${e.kind===k?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="form-group" style="flex:1 1 180px"><label for="ed-parent">상위 단체</label><select class="form-control" id="ed-parent"><option value="">없음 (최상위)</option>${s.groups.filter(g=>!isUnder(s,g.id,e.id)).map(g=>`<option value="${g.id}" ${e.parent===g.id?'selected':''}>${esc(g.name)}</option>`).join('')}</select></div></div>`
+    :`<div class="form-group"><label for="ed-alias">다른 이름 (쉼표로 구분)</label><input class="form-control" id="ed-alias" value="${esc((e.aliases||[]).join(', '))}"></div>`}
+    <div style="display:flex;gap:8px"><button class="btn btn-primary" id="ed-save">수정 담기</button><button class="btn" id="ed-cancel">취소</button></div>
+  </div></div>`;
+}
+function addRelRow(e){
+  const others=[...state.groups,...state.characters].filter(x=>x.id!==e.id);
+  if(!others.length) return '';
+  return `<div class="Box-row" style="flex-wrap:wrap;gap:8px;background:var(--bg-subtle)">
+    <select class="form-control" id="rel-to" style="flex:1 1 130px;width:auto" aria-label="관계 대상">${others.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>
+    <select class="form-control" id="rel-type" style="width:auto" aria-label="관계 유형">${Object.entries(REL).map(([k,R])=>`<option value="${k}">${R.l}</option>`).join('')}</select>
+    <input class="form-control" id="rel-int" type="number" min="0" max="1" step="0.05" value="0.6" style="width:76px" aria-label="강도">
+    <input class="form-control" id="rel-note" placeholder="메모 (선택)" style="flex:1 1 120px;width:auto" aria-label="메모">
+    <button class="btn btn-sm" id="rel-add">+ 관계 추가</button></div>`;
+}
+function wireEntityEdit(e){
+  const c=coll(e.id), base=`/${c}/${e.id}`;
+  const done=msg=>{ toast(msg); renderWorld(); };
+  $('#ent-edit').onclick=()=>{ ui.editing = ui.editing===e.id?null:e.id; renderWorld(); if(ui.editing) $('#ed-name')?.focus(); };
+  const cc=$('#ed-cancel'); if(cc) cc.onclick=()=>{ ui.editing=null; renderWorld(); };
+  const sv=$('#ed-save'); if(sv) sv.onclick=()=>{
+    const name=$('#ed-name').value.trim(); if(!name){ toast('이름을 입력하세요'); return; }
+    const before=pending.length;
+    setManual(base+'/name', name);
+    const al=$('#ed-alias'); if(al){ const v=al.value.split(',').map(x=>x.trim()).filter(Boolean); if(v.length || e.aliases?.length) setManual(base+'/aliases', v); }
+    const kd=$('#ed-kind'); if(kd) setManual(base+'/kind', kd.value);
+    const pr=$('#ed-parent'); if(pr) setManual(base+'/parent', pr.value||null);
+    ui.editing=null; done(pending.length!==before||pending.length?'수동 수정에 담았습니다. 위 노란 상자에서 커밋하세요':'바뀐 내용이 없습니다');
+  };
+  const ta=$('#tr-add'); if(ta) ta.onclick=()=>{
+    const label=$('#tr-label').value.trim(); if(!label){ toast('성격 이름을 입력하세요'); return; }
+    if(!e.traits) setManual(base+'/traits', []);
+    const key='t_'+Date.now().toString(36);
+    addManual(`${base}/traits/${key}`, {key, label, value:Math.round(clamp(+$('#tr-val').value||0,0,1)*100)/100});
+    done(`성격 '${label}'을 담았습니다`);
+  };
+  const ma=$('#mem-add'); if(ma) ma.onclick=()=>{
+    const g=$('#mem-group').value, role=$('#mem-role').value.trim();
+    const m={group:g, bond:Math.round(clamp(+$('#mem-bond').value||0,0,1)*100)/100}; if(role) m.role=role;
+    addManual(`${base}/memberships/${g}`, m); done(`'${nm(state,g)}' 소속을 담았습니다`);
+  };
+  const ra=$('#rel-add'); if(ra) ra.onclick=()=>{
+    const id=newId('rel'), to=$('#rel-to').value, note=$('#rel-note').value.trim();
+    const r={id, from:e.id, to, type:$('#rel-type').value, intensity:Math.round(clamp(+$('#rel-int').value||0,0,1)*100)/100}; if(note) r.note=note;
+    addManual(`/relations/${id}`, r); done(`${nm(state,to)}와의 관계를 담았습니다`);
+  };
 }
 function entityDetail(e){
   const s=state, isG=e.id.startsWith('grp_'), c=coll(e.id), sit=e.situation||{history:[]};
@@ -284,13 +368,15 @@ function entityDetail(e){
       ${!subs.length&&!members.length?'<div class="Box-row caption">아직 없습니다.</div>':''}</div>`;
   } else {
     belong = `<div class="Box"><div class="Box-header"><h3>소속</h3><span class="Counter">${e.memberships.length}</span><span class="caption right">결속도 = 영향이 전달되는 배율</span></div>
-      ${e.memberships.map(m=>bondRow(nm(s,m.group), m.role, `/characters/${e.id}/memberships/${m.group}/bond`, m.bond, m.group, m.active===false?'<span class="Label">비활성</span>':'')).join('')}</div>`;
+      ${e.memberships.map(m=>bondRow(nm(s,m.group), m.role, `/characters/${e.id}/memberships/${m.group}/bond`, m.bond, m.group, m.active===false?'<span class="Label">비활성</span>':'')).join('')}
+      ${(()=>{ const cand=s.groups.filter(g=>!e.memberships.some(m=>m.group===g.id)); return cand.length?`<div class="Box-row" style="flex-wrap:wrap;gap:8px;background:var(--bg-subtle)"><select class="form-control" id="mem-group" style="flex:1 1 140px;width:auto" aria-label="소속 단체">${cand.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')}</select><input class="form-control" id="mem-role" placeholder="역할 (선택)" style="flex:1 1 110px;width:auto" aria-label="역할"><input class="form-control" id="mem-bond" type="number" min="0" max="1" step="0.05" value="0.7" style="width:76px" aria-label="결속도"><button class="btn btn-sm" id="mem-add">+ 소속 추가</button></div>`:`<div class="Box-row caption">${s.groups.length?'추가할 수 있는 단체가 더 없어요.':'소속을 추가하려면 먼저 단체를 만드세요.'}</div>`; })()}</div>`;
   }
   return `<div class="Subhead"><h2>${esc(e.name)}</h2>
       ${isG?`<span class="Label">${KIND[e.kind]}</span>`:'<span class="Label">인물</span>'}
       ${nat?`<span class="Label" style="color:${nationColor(nat)};border-color:${nationColor(nat)}">${esc(nm(s,nat))}</span>`:''}
       ${e.aliases?.length?`<span class="caption">다른 이름: ${esc(e.aliases.join(', '))}</span>`:''}
-      <div class="actions"><button class="btn btn-sm" id="see-graph">${icon('graph')}관계도에서 보기</button></div></div>
+      <div class="actions"><button class="btn btn-sm" id="ent-edit" aria-pressed="${ui.editing===e.id}">이름·기본 정보 수정</button><button class="btn btn-sm" id="see-graph">${icon('graph')}관계도에서 보기</button></div></div>
+    ${ui.editing===e.id?editBox(e):''}
     <div class="cols2">
       <div class="stack">
         <div class="Box"><div class="Box-header"><h3>상황</h3>${sit.status?`<span class="Label ${statusCls(sit.status)}">${esc(sit.status)}</span>`:''}</div>
@@ -305,13 +391,15 @@ function entityDetail(e){
               ${h.via?`<span>${esc(nm(s,h.via))} 경유</span>`:''}${h.weight!=null?`<span class="num ${h.weight<0?'neg':'pos'}">w ${sf2(h.weight)}</span>`:''}</div></li>`).join('')}</ul>`:'<span class="caption">아직 이력이 없습니다.</span>'}</div>
           </div></div>
         <div class="Box"><div class="Box-header"><h3>관계</h3><span class="Counter">${rels.length}</span></div>
-          ${rels.map(r=>{const o=r.from===e.id?r.to:r.from; const R=REL[r.type]; return `<div class="Box-row"><i style="display:inline-block;width:18px;border-top:2px ${R.dash?'dashed':'solid'} ${R.c}"></i>
+          ${rels.map(r=>{const o=r.from===e.id?r.to:r.from; const R=REL[r.type]||REL.personal; return `<div class="Box-row"><i style="display:inline-block;width:18px;border-top:2px ${R.dash?'dashed':'solid'} ${R.c}"></i>
             <div style="flex:1;min-width:0"><button class="btn-link" data-go="${o}">${esc(nm(s,o))}</button>${r.note?`<div class="caption">${esc(r.note)}</div>`:''}</div>
             <span class="Label" style="color:${R.c};border-color:${R.c}">${R.l}${r.directed?(r.from===e.id?' →':' ←'):''}</span><span class="num">${f2(r.intensity)}</span></div>`}).join('') || '<div class="Box-row caption">관계가 없습니다.</div>'}
+          ${addRelRow(e)}
         </div>
       </div>
       <div class="stack">
-        <div class="Box"><div class="Box-header"><h3>성격</h3><span class="Counter">${(e.traits||[]).length}</span><span class="caption right">항목 + 강도(0~1)</span></div>${traitRows(e)}</div>
+        <div class="Box"><div class="Box-header"><h3>성격</h3><span class="Counter">${(e.traits||[]).length}</span><span class="caption right">항목 + 강도(0~1)</span></div>${traitRows(e)}
+          <div class="Box-row" style="flex-wrap:wrap;gap:8px;background:var(--bg-subtle)"><input class="form-control" id="tr-label" placeholder="새 성격 (예: 복수심)" style="flex:1 1 150px;width:auto" aria-label="새 성격 이름"><input class="form-control" id="tr-val" type="number" min="0" max="1" step="0.05" value="0.7" style="width:76px" aria-label="강도"><button class="btn btn-sm" id="tr-add">+ 성격 추가</button></div></div>
         ${belong}
       </div>
     </div>`;
@@ -415,7 +503,7 @@ function renderEvent(){
         <div class="form-group"><label for="ev-title">사건 제목</label><input class="form-control" id="ev-title" value="${esc(analysis?.title ?? SAMPLE.title)}"></div>
         <div class="form-group"><label for="ev-text">무슨 일이 일어나나요?</label><textarea class="form-control" id="ev-text" rows="3">${esc(analysis?.description ?? SAMPLE.description)}</textarea></div>
         <div class="form-group" style="max-width:260px"><label for="ev-time">작중 시점</label><input class="form-control" id="ev-time" value="${esc(analysis?.story_time ?? SAMPLE.story_time)}"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="ev-run">${icon('spark')}AI 영향 분석</button><button class="btn" id="ev-sample">예시 사건 넣기</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="ev-run">${icon('spark')}AI 영향 분석</button>${W.sample?'<button class="btn" id="ev-sample">예시 사건 넣기</button>':''}</div>
       </div></div>
       <div id="ev-result" class="stack"></div>
     </div>
@@ -430,7 +518,7 @@ function renderEvent(){
       <div class="flash">${icon('info')}<div class="caption" style="color:var(--fg)">반응도 판단과 상황 문장은 AI가, 숫자 계산은 앱이 합니다. 그래서 M이나 성격 강도를 고치면 결과가 바로 다시 계산됩니다.</div></div>
     </aside>
   </div>`;
-  $('#ev-sample').onclick=()=>{ $('#ev-title').value=SAMPLE.title; $('#ev-text').value=SAMPLE.description; $('#ev-time').value=SAMPLE.story_time; };
+  const evs=$('#ev-sample'); if(evs) evs.onclick=()=>{ $('#ev-title').value=SAMPLE.title; $('#ev-text').value=SAMPLE.description; $('#ev-time').value=SAMPLE.story_time; };
   $('#ev-run').onclick=async ()=>{
     const title=$('#ev-title').value.trim()||'새 사건', text=$('#ev-text').value.trim(), time=$('#ev-time').value.trim();
     if(!text){ $('#ev-result').innerHTML=`<div class="flash flash-warn">${icon('alert')}<div>사건 내용을 입력하세요.</div></div>`; return; }
@@ -542,11 +630,19 @@ function overlayMap(){
 }
 function renderGraph(){
   const s=graphState(); const ov=ui.overlay?overlayMap():{};
-  const sel=ent(s,ui.sel) && !ui.sel.startsWith('bg_') ? ui.sel : 'chr_vi'; ui.sel=sel;
+  const first=(s.characters[0]||s.groups[0])?.id;
+  if(!first){ $('#tab-graph').innerHTML = pendingBanner() + `<div class="Subhead"><h2>관계도</h2></div><div class="Box"><div class="Box-body caption" style="text-align:center;padding:40px 16px">세계관 탭에서 인물이나 단체를 추가하면 관계도가 그려져요.</div></div>`; wirePending(); return; }
+  const sel=ui.sel && ent(s,ui.sel) && !ui.sel.startsWith('bg_') ? ui.sel : first; ui.sel=sel;
   const filt={all:null, conflict:['hostile','rival'], coop:['coexist','alliance'], dominate:['dominate'], personal:['family','personal']}[ui.relFilter];
   const rels=s.relations.filter(r=>!filt||filt.includes(r.type));
   const pairs={}; rels.forEach(r=>{ const k=[r.from,r.to].sort().join('|'); (pairs[k]=pairs[k]||[]).push(r); });
-  const pos=id=>POS[id]||[430,300];
+  // 위치가 정해지지 않은 항목(새로 추가한 것)은 자동 배치: 빈 세계관이면 화면 전체 격자, 아니면 아래쪽 줄
+  const auto={}; const missing=[...s.groups,...s.characters].filter(x=>!POS[x.id]);
+  if(missing.length){
+    const empty=!Object.keys(POS).length; const cols=empty?Math.ceil(Math.sqrt(missing.length*2)):Math.min(missing.length,8); const rows=Math.ceil(missing.length/cols);
+    missing.forEach((x,i)=>{ const c=i%cols, r=Math.floor(i/cols); auto[x.id]= empty ? [Math.round((c+0.5)*1100/cols), Math.round(70+(r+0.5)*400/rows)] : [Math.round((c+0.5)*1100/cols), 470-r*60]; });
+  }
+  const pos=id=>POS[id]||auto[id]||[430,300];
   const linked=new Set([sel]); s.relations.forEach(r=>{ if(r.from===sel) linked.add(r.to); if(r.to===sel) linked.add(r.from); });
   const isNode=id=>id.startsWith('grp_')||id.startsWith('chr_');
   const edge=(r)=>{
@@ -556,7 +652,7 @@ function renderGraph(){
     const sgn = r.from<r.to?1:-1;
     const cx=(x1+x2)/2 - dy/L*off*sgn, cy=(y1+y2)/2 + dx/L*off*sgn;
     if(r.directed){ const ex=x2-cx, ey=y2-cy, el=Math.hypot(ex,ey)||1; x2-=ex/el*30; y2-=ey/el*30; }
-    const R=REL[r.type]; const dim = !(r.from===sel||r.to===sel);
+    const R=REL[r.type]||REL.personal; const dim = !(r.from===sel||r.to===sel);
     const w=1+r.intensity*3.5;
     const lx=(x1+2*cx+x2)/4, ly=(y1+2*cy+y2)/4;
     return `<g opacity="${dim?.35:1}"><path d="M${x1},${y1} Q${cx},${cy} ${x2},${y2}" style="fill:none;stroke:${R.c};stroke-width:${w};${R.dash?`stroke-dasharray:${R.dash}`:''}" stroke-linecap="round" ${r.directed?'marker-end="url(#arrow)"':''}><title>${esc(nm(s,r.from))} ${r.directed?'→':'↔'} ${esc(nm(s,r.to))} · ${R.l} ${f2(r.intensity)}${r.note?' · '+esc(r.note):''}</title></path>
@@ -849,7 +945,7 @@ function saveWorld(){
   lastJson=json; savedAt=Date.now();
   try{ localStorage.setItem(saveKey(worldKey), JSON.stringify({state, commits, pending, savedAt})); }catch(e){}
   clearTimeout(cloudTimer);
-  const key=worldKey, at=savedAt, data={state, commits, pending};
+  const key=worldKey, at=savedAt, data={state, commits, pending, meta:DATA.meta};
   setCloud('saving');
   cloudTimer=setTimeout(()=>{
     saveCloud(key, data, at).then(()=>setCloud('synced')).catch(err=>{ console.warn('Firestore 저장 실패', err); setCloud('offline'); });
@@ -882,7 +978,8 @@ function syncFromCloud(k){
   }).catch(err=>{ console.warn('Firestore 불러오기 실패', err); setCloud('offline'); });
 }
 function loadWorld(k, fresh=false){
-  W=WORLDS[k]; DATA=W.data; POS=W.pos; SAMPLE=W.sample; worldKey=k;
+  W=WORLDS[k]; DATA=W.data; POS=W.pos||{}; SAMPLE=W.sample||{title:'', description:'', story_time:'', direct:[], rewrite:{}, relations:[]}; worldKey=k;
+  const pe=$('#proj-edit'); if(pe) pe.style.display=k.startsWith('p_')?'':'none';
   state=clone(DATA.state); commits=clone(DATA.commits); pending=[]; analysis=null;
   if(!fresh){
     try{
@@ -892,26 +989,66 @@ function loadWorld(k, fresh=false){
     }catch(e){ savedAt=0; }
   } else savedAt=0;
   lastJson=JSON.stringify({state, commits, pending});
-  Object.assign(ui, {sel:W.sel, graphVer:'work', relFilter:'all', cmpA:null, cmpB:null, confirm:null, open:{}});
+  Object.assign(ui, {sel:W.sel, editing:null, graphVer:'work', relFilter:'all', cmpA:null, cmpB:null, confirm:null, open:{}});
   try{ localStorage.setItem('gitstory-world', k); }catch(e){}
 }
 $('#world-pick').onchange=ev=>{ loadWorld(ev.target.value); render(); syncFromCloud(worldKey); toast(`${DATA.meta.title} 세계관을 불러왔습니다`); };
 $('#world-reset').onclick=()=>{
-  if(!confirm(`${DATA.meta.title}의 모든 변경을 지우고 처음 예시 상태로 되돌릴까요?`)) return;
+  if(!confirm(`${DATA.meta.title}의 모든 변경을 지우고 처음 상태로 되돌릴까요?${worldKey.startsWith('p_')?' (직접 만든 프로젝트는 빈 상태가 됩니다)':''}`)) return;
   loadWorld(worldKey, true); lastJson=null; render(); toast('처음 예시 상태로 되돌렸습니다');
 };
+/* ---------- 직접 만든 프로젝트 (키 p_...) ----------
+   목록은 브라우저에 두고, 각 프로젝트 내용은 다른 세계관처럼 users/{uid}/worlds/{키}에 meta와 함께 저장한다. */
+const projKey=()=>`gitstory-projects-${USER.uid}`;
+let PROJECTS=[];
+try{ PROJECTS=JSON.parse(localStorage.getItem(projKey()))||[]; }catch(e){ PROJECTS=[]; }
+function writeProjects(){ try{ localStorage.setItem(projKey(), JSON.stringify(PROJECTS)); }catch(e){} }
+function customWorld(p){
+  return {slug:p.key, pos:{}, sample:null, sel:null, zones:[], data:{meta:p.meta, state:{background:[], groups:[], characters:[], relations:[]},
+    commits:[{id:p.key.slice(2,9).padEnd(7,'0'), parent:null, kind:'init', message:'프로젝트 시작', created_at:p.meta.created_at, patches:[]}]}};
+}
+function fillPicker(){
+  const sel=$('#world-pick'), v=worldKey||sel.value;
+  sel.innerHTML=`<optgroup label="예시 세계관"><option value="arcane">아케인</option><option value="hp">해리 포터</option><option value="jg">짱구는 못말려</option></optgroup>`
+    + (PROJECTS.length?`<optgroup label="내 프로젝트">${PROJECTS.map(p=>`<option value="${p.key}">${esc(p.meta.title)}</option>`).join('')}</optgroup>`:'');
+  sel.value=v; sel.setAttribute('aria-label','세계관 선택');
+}
+PROJECTS.forEach(p=>{ WORLDS[p.key]=customWorld(p); });
+$('#world-pick').insertAdjacentHTML('afterend', '<button class="btn btn-sm" id="proj-new" type="button">+ 새 프로젝트</button><button class="btn btn-sm" id="proj-edit" type="button" style="display:none">프로젝트 이름 바꾸기</button>');
+$('#proj-new').onclick=()=>{
+  const title=(prompt('새 프로젝트(세계관) 이름')||'').trim(); if(!title) return;
+  const description=(prompt('한 줄 설명 (비워도 돼요)')||'').trim();
+  const key='p_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  const p={key, meta:{id:key, title, description, created_at:new Date().toISOString()}};
+  PROJECTS.push(p); writeProjects(); WORLDS[key]=customWorld(p);
+  loadWorld(key); fillPicker(); showTab('world'); syncFromCloud(key);
+  toast(`'${title}' 프로젝트를 만들었습니다. + 인물, + 단체로 시작하세요`);
+};
+$('#proj-edit').onclick=()=>{
+  const p=PROJECTS.find(x=>x.key===worldKey); if(!p) return;
+  const title=(prompt('프로젝트 이름', p.meta.title)||'').trim(); if(!title) return;
+  const d=prompt('한 줄 설명', p.meta.description||''); if(d!==null) p.meta.description=d.trim();
+  p.meta.title=title; DATA.meta=p.meta; writeProjects(); fillPicker(); lastJson=null; render(); toast('프로젝트 정보를 바꿨습니다');
+};
+/* 다른 기기에서 만든 프로젝트도 목록에 합친다 */
+listProjects().then(list=>{
+  let changed=false;
+  list.forEach(r=>{ const mine=PROJECTS.find(p=>p.key===r.key);
+    if(!mine){ const p={key:r.key, meta:r.meta}; PROJECTS.push(p); WORLDS[r.key]=customWorld(p); changed=true; }
+    else if(r.meta.title!==mine.meta.title || r.meta.description!==mine.meta.description){ Object.assign(mine.meta, r.meta); changed=true; } });
+  if(changed){ writeProjects(); fillPicker(); if(worldKey.startsWith('p_')) render(); }
+}).catch(err=>console.warn('프로젝트 목록 불러오기 실패', err));
 let startWorld='arcane';
 try{ const v=localStorage.getItem('gitstory-world'); if(WORLDS[v]) startWorld=v; }catch(e){}
 if(location.hash==='#hp' || location.hash==='#harry-potter') startWorld='hp';
 if(location.hash==='#arcane') startWorld='arcane';
-$('#world-pick').value=startWorld;
+fillPicker(); loadWorld(startWorld); fillPicker();
 document.querySelectorAll('[data-user-name]').forEach(el=>el.textContent=USER.name);
 const av=$('#user-avatar'); av.title=USER.name;
 if(USER.photo){ const img=document.createElement('img'); img.src=USER.photo; img.alt=''; img.referrerPolicy='no-referrer'; img.style.cssText='width:100%;height:100%;border-radius:50%'; av.appendChild(img); }
 else av.textContent=(USER.name||'?').slice(0,1).toUpperCase();
 $('#sign-out').onclick=()=>signOutUser().then(()=>location.reload());
 refreshUsage();
-loadWorld(startWorld);
 render('world');
 syncFromCloud(startWorld);
 }
