@@ -9,8 +9,9 @@ const PLAN_MODEL: Record<Plan, string> = {
   free: process.env.AI_MODEL_FREE || "gemini:gemini-3.8-flash",
   pro: process.env.AI_MODEL_PRO || "claude:claude-sonnet-5-5",
 };
-/** 서버 함수 제한(60초) 전에 AI 호출을 끊어, 시간 초과도 알아볼 수 있는 오류로 돌려준다 */
-const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 50000);
+/** 서버 함수 제한(maxDuration 180초) 전에 AI 호출을 끊어, 시간 초과도 알아볼 수 있는 오류로 돌려준다 */
+const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 150000);
+let lastGoodGemini = "";
 /** Gemini가 붐빌 때(503·429) 차례로 시도할 다른 모델 */
 const GEMINI_FALLBACKS = (process.env.AI_GEMINI_FALLBACKS || "gemini-3.7-flash,gemini-3.5-flash").split(",").map((m) => m.trim()).filter(Boolean);
 const EFFORT = (process.env.AI_EFFORT || "low") as "low" | "medium" | "high";
@@ -177,19 +178,25 @@ export async function analyzeEvent(event: EventInput, world: WorldInput, plan: P
   const t0 = Date.now();
   const deadline = t0 + AI_TIMEOUT_MS;
   // 붐빔(503·429)이면 잠깐 쉬고 같은 모델 한 번, 그다음 대체 모델 순서로 시도한다
-  const tries = provider === "gemini" ? [model, model, ...GEMINI_FALLBACKS.filter((m) => m !== model)] : [model, model];
+  // 붐빔(503·429)이면 모델을 돌아가며 기다렸다 다시 시도한다. 성공 1회에 보통 20초 안팎이라 그만큼 남았을 때까지만.
+  // 마지막으로 성공한 Gemini 모델부터 시작한다 (같은 서버 인스턴스가 살아 있는 동안 기억)
+  const chain = provider === "gemini" ? [...new Set([lastGoodGemini || model, model, ...GEMINI_FALLBACKS])] : [model];
   let res: Raw | undefined;
   let used = model;
-  for (let i = 0; i < tries.length && !res; i++) {
-    used = tries[i];
+  for (let i = 0; !res; i++) {
+    used = chain[i % chain.length];
     const left = deadline - Date.now();
-    if (left < 3000) throw new AiTimeout(`AI 응답이 ${Math.round(AI_TIMEOUT_MS / 1000)}초 안에 오지 않았습니다 (${used})`);
+    if (left < (i ? 20000 : 3000)) {
+      if (i) throw new AiBusy("AI 서버가 지금 붐벼요. 잠시 후 다시 눌러 주세요");
+      throw new AiTimeout(`AI 응답이 ${Math.round(AI_TIMEOUT_MS / 1000)}초 안에 오지 않았습니다 (${used})`);
+    }
     try {
       // SDK 시간 제한이 안 먹는 경우를 대비해 직접 경주시킨다
       res = await Promise.race([
         (provider === "claude" ? callClaude : callGemini)(used, user),
         new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timed out")), left)),
       ]);
+      if (provider === "gemini") lastGoodGemini = used;
     } catch (e) {
       const msg = e instanceof Error ? `${e.name} ${e.message}` : String(e);
       const status = (e as { status?: number }).status;
@@ -197,10 +204,12 @@ export async function analyzeEvent(event: EventInput, world: WorldInput, plan: P
         throw new AiTimeout(`AI 응답이 ${Math.round(AI_TIMEOUT_MS / 1000)}초 안에 오지 않았습니다 (${used})`);
       }
       const busy = status === 503 || status === 429 || status === 529 || /\b(503|429|529)\b|high demand|overloaded|UNAVAILABLE|RESOURCE_EXHAUSTED/i.test(msg);
-      console.warn(`analyze ${provider}/${used} 실패 (${busy ? "붐빔" : "오류"}): ${msg.slice(0, 200)}`);
+      console.warn(`analyze ${provider}/${used} 실패 (${busy ? "붐빔" : "오류"}, ${Date.now() - t0}ms): ${msg.slice(0, 160)}`);
       if (!busy) throw e;
-      if (i === tries.length - 1) throw new AiBusy("AI 서버가 지금 붐벼요. 잠시 후 다시 눌러 주세요");
-      await new Promise((r) => setTimeout(r, i === 0 ? 1500 : 300));
+      if (used === lastGoodGemini) lastGoodGemini = "";
+      // 한 바퀴 돌 때마다 더 길게 쉰다: 0.5초, 2초, 4초, 8초
+      const round = Math.floor(i / chain.length);
+      await new Promise((r) => setTimeout(r, (i + 1) % chain.length ? 500 : Math.min(8000, 2000 * 2 ** round)));
     }
   }
   if (!res) throw new AiBusy("AI 서버가 지금 붐벼요. 잠시 후 다시 눌러 주세요");

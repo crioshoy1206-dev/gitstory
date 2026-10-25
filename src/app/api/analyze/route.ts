@@ -1,5 +1,6 @@
 // 사건 AI 분석. 로그인 확인 → 남은 토큰 확인 → AI 호출 → 쓴 토큰만큼 차감
-export const maxDuration = 60;
+// Vercel Hobby(Fluid compute)는 최대 300초까지 허용. AI 제한(150초)보다 넉넉하게.
+export const maxDuration = 180;
 
 export async function POST(req: Request) {
   // 헤더는 try 밖에서 읽는다 (Next가 동적 렌더링 전환용으로 던지는 신호를 잡지 않도록)

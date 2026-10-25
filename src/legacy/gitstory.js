@@ -523,7 +523,8 @@ function renderEvent(){
     const title=$('#ev-title').value.trim()||'새 사건', text=$('#ev-text').value.trim(), time=$('#ev-time').value.trim();
     if(!text){ $('#ev-result').innerHTML=`<div class="flash flash-warn">${icon('alert')}<div>사건 내용을 입력하세요.</div></div>`; return; }
     const btn=$('#ev-run'); btn.disabled=true;
-    $('#ev-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 사건이 단체·인물에 주는 직접 영향을 판단하고 있습니다</span></div></div>`;
+    $('#ev-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 사건이 단체·인물에 주는 직접 영향을 판단하고 있습니다 <span id="ev-wait"></span></span></div></div>`;
+    const t0=Date.now(), tick=setInterval(()=>{ const w=$('#ev-wait'), s=Math.round((Date.now()-t0)/1000); if(w) w.textContent=`· ${s}초`+(s>=25?' (AI 서버가 붐벼 다른 모델로 다시 시도하는 중이에요)':''); },1000);
     let a, note='';
     try{
       const r=await analyzeEvent({title, description:text, story_time:time}, worldForAi(title+' '+text));
@@ -536,7 +537,7 @@ function renderEvent(){
       else note=`AI 분석을 쓸 수 없어 간단 추정으로 대신했습니다 (${err.message||'연결 실패'})`;
       a = (title===SAMPLE.title) ? {...clone(SAMPLE), description:text} : guessAnalysis(title, text);
     }
-    btn.disabled=false;
+    clearInterval(tick); btn.disabled=false;
     analysis=a; analysis.story_time=time; drawAnalysis();
     if(note) $('#ev-result').insertAdjacentHTML('afterbegin', `<div class="flash flash-warn">${icon('alert')}<div>${esc(note)}</div></div>`);
   };
