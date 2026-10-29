@@ -45,7 +45,7 @@ const RELEVANCE = {"expansionism": {"기회": 0.6, "권력공백": 0.5}, "milita
 let state, commits;
 let pending = [];      // 커밋 전 수동 수정 patches
 let analysis = null;   // 사건 분석 중인 내용
-const ui = {sel:'chr_vi', graphVer:'work', relFilter:'all', showMembers:true, overlay:true, cmpA:null, cmpB:null, confirm:null, open:{}};
+const ui = {sel:null, graphVer:'work', relFilter:'all', showMembers:true, overlay:true, cmpA:null, cmpB:null, confirm:null, open:{}};
 
 const head = () => commits.at(-1);
 
@@ -238,15 +238,18 @@ function wbar(w){ const pct=Math.abs(w)*50; return `<div class="wbar" title="${s
 $$('[role=tab]').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
 function showTab(t){
   $$('[role=tab]').forEach(b=>b.setAttribute('aria-selected', b.dataset.tab===t));
-  ['world','event','manuscript','graph','history'].forEach(x=>$('#tab-'+x).hidden = x!==t);
+  if(t==='graph') t='world';
+  $$('[role=tab]').forEach(b=>b.setAttribute('aria-selected', b.dataset.tab===t));
+  ['world','event','manuscript','history'].forEach(x=>$('#tab-'+x).hidden = x!==t);
   render(t); window.scrollTo({top:0});
 }
 function cur(){ return $('[role=tab][aria-selected=true]').dataset.tab; }
 function render(t=cur()){
-  $('#world-title').textContent=DATA.meta.title; $('#world-slug').textContent=W.slug; $('#world-desc').textContent=DATA.meta.description;
+  $('#world-title').textContent=DATA.meta.title; $('#world-slug').textContent=W.slug; $('#world-desc').textContent=DATA.meta.description||'';
   $('#cnt-world').textContent=state.groups.length+state.characters.length+state.background.length;
-  $('#cnt-rel').textContent=state.relations.length; $('#cnt-commit').textContent=commits.length;
-  ({world:renderWorld,event:renderEvent,manuscript:renderManuscript,graph:renderGraph,history:renderHistory})[t]();
+  $('#cnt-commit').textContent=commits.length;
+  renderSide();
+  ({world:renderWorld,event:renderEvent,manuscript:renderManuscript,history:renderHistory})[t]();
   saveWorld();
 }
 
@@ -278,49 +281,37 @@ function treeGroups(s){
   const out=[]; const walkG=(pid,d)=>s.groups.filter(g=>(g.parent||null)===pid).forEach(g=>{ out.push([g,d]); walkG(g.id,d+1); });
   walkG(null,0); return out;
 }
-function renderWorld(){
-  const s=state; const e=ent(s,ui.sel) || s.characters[0] || s.groups[0] || s.background[0]; ui.sel=e?.id;
-  const cats=[...new Set(s.background.map(b=>b.category))];
-  const btn=(id,label,mark,meta,pad=0)=>`<li><button data-id="${id}" aria-current="${id===ui.sel}" style="padding-left:${8+pad*16}px">${mark}${esc(label)}${meta?`<span class="meta">${esc(meta)}</span>`:''}</button></li>`;
-  const nav = `<nav class="Box" aria-label="세계관 항목">
-    <div class="Box-header" style="gap:6px;flex-wrap:wrap"><button class="btn btn-sm" data-new="chr">+ 인물</button><button class="btn btn-sm" data-new="grp">+ 단체</button><button class="btn btn-sm" data-new="bg">+ 배경</button></div>
-    <ul class="tree">
-    <li class="group"><span>인물</span><span>${s.characters.length}</span></li>
-    ${s.characters.map(c=>btn(c.id,c.name,`<span class="dot" style="background:${nationColor(nationOf(s,c))}${c.situation?.status==='사망'?';opacity:.4':''}"></span>`, c.situation?.status)).join('')}
-    <li class="group"><span>단체</span><span>${s.groups.length}</span></li>
-    ${treeGroups(s).map(([g,d])=>btn(g.id,g.name,`<span class="sq" style="background:${nationColor(nationOf(s,g))}"></span>`, KIND[g.kind], d)).join('')}
-    <li class="group"><span>배경</span><span>${s.background.length}</span></li>
-    ${cats.map(c=>s.background.filter(b=>b.category===c).map(b=>btn(b.id,b.title,`<span class="sq" style="background:var(--border-strong)"></span>`, c)).join('')).join('')}
-  </ul></nav>`;
-  let body;
-  if(!e) body=`<div class="blankslate Box"><div class="Box-body stack" style="text-align:center;padding:40px 16px"><h3 style="margin:0">아직 비어 있는 세계관이에요</h3><p class="caption" style="margin:0">왼쪽 위 <b>+ 인물</b>, <b>+ 단체</b>, <b>+ 배경</b>으로 시작하세요. 추가한 내용은 수동 수정으로 담기고, 커밋하면 버전으로 남습니다.</p></div></div>`;
-  else if(e.id.startsWith('bg_')) body=bgDetail(e); else body=entityDetail(e);
-  $('#tab-world').innerHTML = pendingBanner() + `<div class="split">${nav}<div class="stack">${body}</div></div>`;
-  $$('.tree button').forEach(b=>b.onclick=()=>{ ui.sel=b.dataset.id; renderWorld(); });
-  $$('[data-go]').forEach(b=>b.onclick=()=>{ ui.sel=b.dataset.go; renderWorld(); });
-  $$('input[data-path]').forEach(r=>{
-    r.oninput=()=>{ r.closest('.trait').querySelector('.v').textContent=f2(+r.value); };
-    r.onchange=()=>{ setManual(r.dataset.path, Math.round(+r.value*100)/100); renderWorld(); };
-  });
-  const sv=$('#sit-save'); if(sv) sv.onclick=()=>{
-    const base=`/${coll(e.id)}/${e.id}/situation`;
-    setManual(base+'/status', $('#sit-status').value.trim()); setManual(base+'/current', $('#sit-current').value.trim());
-    toast(pending.length?'수동 수정에 담았습니다':'바뀐 내용이 없습니다'); renderWorld();
-  };
-  const bs=$('#bg-save'); if(bs) bs.onclick=()=>{
-    const t=$('#bg-title').value.trim(); if(!t){ toast('제목을 입력하세요'); return; }
-    setManual(`/background/${e.id}/title`, t); setManual(`/background/${e.id}/category`, $('#bg-cat').value.trim()||'기타');
-    setManual(`/background/${e.id}/content`, $('#bg-content').value.trim()); toast(pending.length?'수동 수정에 담았습니다':'바뀐 내용이 없습니다'); renderWorld(); };
+/* 왼쪽 도구창: 인물·단체·배경 목록과 추가 */
+function renderSide(){
+  const s=state, q=(ui.q||'').trim().toLowerCase();
+  const hit=x=>!q || [x.name||x.title, ...(x.aliases||[]), x.category||''].join(' ').toLowerCase().includes(q);
+  const item=(x,mark,meta,pad=0)=>`<li><button data-side="${x.id}" aria-current="${x.id===ui.sel}" style="padding-left:${8+pad*14}px">${mark}<span class="nm">${esc(x.name||x.title)}</span>${meta?`<span class="meta">${esc(meta)}</span>`:''}</button></li>`;
+  const sec=(key,label,n,body)=>`<section class="side-sec"><div class="side-sec-h"><span>${label}</span><span class="Counter">${n}</span><button class="btn btn-sm" data-new="${key}">+ ${label} 추가</button></div>
+    <ul class="tree">${body||`<li class="caption side-empty">${q?'찾는 항목이 없어요':'아직 없어요'}</li>`}</ul></section>`;
+  const chars=s.characters.filter(hit), grps=q?s.groups.filter(hit).map(g=>[g,0]):treeGroups(s), bgs=s.background.filter(hit);
+  $('#side-list').innerHTML =
+    sec('chr','인물',chars.length, chars.map(c=>item(c,`<span class="dot" style="background:${nationColor(nationOf(s,c))}${c.situation?.status==='사망'?';opacity:.4':''}"></span>`, c.situation?.status)).join('')) +
+    sec('grp','단체',grps.length, grps.map(([g,d])=>item(g,`<span class="sq" style="background:${nationColor(nationOf(s,g))}"></span>`, KIND[g.kind], d)).join('')) +
+    sec('bg','배경',bgs.length, bgs.map(b=>item(b,`<span class="sq" style="background:var(--border-strong)"></span>`, b.category)).join(''));
+  $$('[data-side]').forEach(b=>b.onclick=()=>pick(b.dataset.side));
   $$('[data-new]').forEach(b=>b.onclick=()=>{
     const t=b.dataset.new; const name=(prompt({chr:'새 인물 이름',grp:'새 단체 이름',bg:'새 배경 제목'}[t])||'').trim(); if(!name) return;
     const sit={current:'', status:'', history:[]};
     if(t==='chr'){ const id=newId('chr'); addManual(`/characters/${id}`, {id, name, aliases:[], memberships:[], traits:[], situation:sit}); ui.sel=id; }
     else if(t==='grp'){ const id=newId('grp'); addManual(`/groups/${id}`, {id, name, kind:'organization', parent:null, traits:[], situation:sit}); ui.sel=id; }
     else { const id=newId('bg'); const cat=(prompt('분류 (예: 지리, 역사, 기술)','기타')||'기타').trim(); addManual(`/background/${id}`, {id, category:cat, title:name, content:'', introduced_in:null}); ui.sel=id; }
-    ui.editing=null; toast('추가했습니다. 위 노란 상자에서 커밋하면 버전으로 남아요'); renderWorld(); });
-  if(e && !e.id.startsWith('bg_')) wireEntityEdit(e);
-  const sg=$('#see-graph'); if(sg) sg.onclick=()=>{ ui.graphVer='work'; showTab('graph'); };
-  wirePending();
+    ui.editing=null; ui.graphVer='work'; toast('추가했어요. 위 노란 상자에서 커밋하면 버전으로 남아요'); sideOpen(false); showTab('world'); focusDetail(); });
+}
+/* 인물·단체·배경을 골라 오른쪽 상세 패널로 연다 */
+function pick(id){
+  ui.sel=id; ui.editing=null; sideOpen(false);
+  if(cur()!=='world') showTab('world'); else render('world');
+  focusDetail();
+}
+function focusDetail(){ if(window.innerWidth<1200) $('#detail')?.scrollIntoView({behavior:'smooth', block:'start'}); }
+function sideOpen(open){
+  $('#side').classList.toggle('open', open); $('#side-backdrop').hidden=!open;
+  $('#side-toggle').setAttribute('aria-expanded', open);
 }
 function bgDetail(b){
   return `<div class="Subhead"><h2>${esc(b.title)}</h2><span class="Label">배경</span><span class="Label">${esc(b.category)}</span>
@@ -369,9 +360,9 @@ function addRelRow(e){
 }
 function wireEntityEdit(e){
   const c=coll(e.id), base=`/${c}/${e.id}`;
-  const done=msg=>{ toast(msg); renderWorld(); };
-  $('#ent-edit').onclick=()=>{ ui.editing = ui.editing===e.id?null:e.id; renderWorld(); if(ui.editing) $('#ed-name')?.focus(); };
-  const cc=$('#ed-cancel'); if(cc) cc.onclick=()=>{ ui.editing=null; renderWorld(); };
+  const done=msg=>{ toast(msg); render('world'); };
+  $('#ent-edit').onclick=()=>{ ui.editing = ui.editing===e.id?null:e.id; render('world'); if(ui.editing) $('#ed-name')?.focus(); };
+  const cc=$('#ed-cancel'); if(cc) cc.onclick=()=>{ ui.editing=null; render('world'); };
   const sv=$('#ed-save'); if(sv) sv.onclick=()=>{
     const name=$('#ed-name').value.trim(); if(!name){ toast('이름을 입력하세요'); return; }
     const before=pending.length;
@@ -422,7 +413,7 @@ function entityDetail(e){
       ${isG?`<span class="Label">${KIND[e.kind]}</span>`:'<span class="Label">인물</span>'}
       ${nat?`<span class="Label" style="color:${nationColor(nat)};border-color:${nationColor(nat)}">${esc(nm(s,nat))}</span>`:''}
       ${e.aliases?.length?`<span class="caption">다른 이름: ${esc(e.aliases.join(', '))}</span>`:''}
-      <div class="actions"><button class="btn btn-sm" id="ent-edit" aria-pressed="${ui.editing===e.id}">이름·기본 정보 수정</button><button class="btn btn-sm" id="see-graph">${icon('graph')}관계도에서 보기</button></div></div>
+      <div class="actions"><button class="btn btn-sm" id="ent-edit" aria-pressed="${ui.editing===e.id}">이름·기본 정보 수정</button></div></div>
     ${ui.editing===e.id?editBox(e):''}
     <div class="cols2">
       <div class="stack">
@@ -770,11 +761,13 @@ function overlayMap(){
   list.forEach(i=>{ if(!m[i.target]||Math.abs(i.magnitude)>Math.abs(m[i.target])) m[i.target]=i.magnitude; });
   return m;
 }
-function renderGraph(){
+function renderWorld(){
   const s=graphState(); const ov=ui.overlay?overlayMap():{};
   const first=(s.characters[0]||s.groups[0])?.id;
-  if(!first){ $('#tab-graph').innerHTML = pendingBanner() + `<div class="Subhead"><h2>관계도</h2></div><div class="Box"><div class="Box-body caption" style="text-align:center;padding:40px 16px">세계관 탭에서 인물이나 단체를 추가하면 관계도가 그려져요.</div></div>`; wirePending(); return; }
-  const sel=ui.sel && ent(s,ui.sel) && !ui.sel.startsWith('bg_') ? ui.sel : first; ui.sel=sel;
+  const editable=ui.graphVer==='work';
+  if(ui.sel && !ent(editable?state:s, ui.sel)) ui.sel=null;
+  const pe=ui.sel ? ent(editable?state:s, ui.sel) : null;
+  const sel=pe && !pe.id.startsWith('bg_') ? pe.id : null;
   const filt={all:null, conflict:['hostile','rival'], coop:['coexist','alliance'], dominate:['dominate'], personal:['family','personal']}[ui.relFilter];
   const rels=s.relations.filter(r=>!filt||filt.includes(r.type));
   const pairs={}; rels.forEach(r=>{ const k=[r.from,r.to].sort().join('|'); (pairs[k]=pairs[k]||[]).push(r); });
@@ -785,7 +778,7 @@ function renderGraph(){
     missing.forEach((x,i)=>{ const c=i%cols, r=Math.floor(i/cols); auto[x.id]= empty ? [Math.round((c+0.5)*1100/cols), Math.round(70+(r+0.5)*400/rows)] : [Math.round((c+0.5)*1100/cols), 470-r*60]; });
   }
   const pos=id=>POS[id]||auto[id]||[430,300];
-  const linked=new Set([sel]); s.relations.forEach(r=>{ if(r.from===sel) linked.add(r.to); if(r.to===sel) linked.add(r.from); });
+  const linked=new Set(sel?[sel]:[]); s.relations.forEach(r=>{ if(r.from===sel) linked.add(r.to); if(r.to===sel) linked.add(r.from); });
   const isNode=id=>id.startsWith('grp_')||id.startsWith('chr_');
   const edge=(r)=>{
     const k=[r.from,r.to].sort().join('|'); const grp=pairs[k]; const i=grp.indexOf(r), n=grp.length;
@@ -794,7 +787,7 @@ function renderGraph(){
     const sgn = r.from<r.to?1:-1;
     const cx=(x1+x2)/2 - dy/L*off*sgn, cy=(y1+y2)/2 + dx/L*off*sgn;
     if(r.directed){ const ex=x2-cx, ey=y2-cy, el=Math.hypot(ex,ey)||1; x2-=ex/el*30; y2-=ey/el*30; }
-    const R=REL[r.type]||REL.personal; const dim = !(r.from===sel||r.to===sel);
+    const R=REL[r.type]||REL.personal; const dim = sel && !(r.from===sel||r.to===sel);
     const w=1+r.intensity*3.5;
     const lx=(x1+2*cx+x2)/4, ly=(y1+2*cy+y2)/4;
     return `<g opacity="${dim?.35:1}"><path d="M${x1},${y1} Q${cx},${cy} ${x2},${y2}" style="fill:none;stroke:${R.c};stroke-width:${w};${R.dash?`stroke-dasharray:${R.dash}`:''}" stroke-linecap="round" ${r.directed?'marker-end="url(#arrow)"':''}><title>${esc(nm(s,r.from))} ${r.directed?'→':'↔'} ${esc(nm(s,r.to))} · ${R.l} ${f2(r.intensity)}${r.note?' · '+esc(r.note):''}</title></path>
@@ -803,11 +796,11 @@ function renderGraph(){
   const memberLines = ui.showMembers ? [
     ...s.groups.filter(g=>g.parent).map(g=>({a:g.id,b:g.parent,bond:g.parent_bond??0.6,active:true})),
     ...s.characters.flatMap(c=>(c.memberships||[]).map(m=>({a:c.id,b:m.group,bond:m.bond,active:m.active!==false})))
-  ].map(m=>{ const [x1,y1]=pos(m.a),[x2,y2]=pos(m.b); const dim=!(m.a===sel||m.b===sel);
+  ].map(m=>{ const [x1,y1]=pos(m.a),[x2,y2]=pos(m.b); const dim=sel && !(m.a===sel||m.b===sel);
     return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" style="stroke:var(--border-strong);stroke-width:${0.6+m.bond*1.6};stroke-dasharray:2 4" opacity="${m.active?(dim?.35:.9):.2}"><title>${esc(nm(s,m.a))} → ${esc(nm(s,m.b))} 소속 · 결속도 ${f2(m.bond)}</title></line>`; }).join('') : '';
   const node=e=>{
     const [x,y]=pos(e.id); const col=nationColor(nationOf(s,e)); const isSel=e.id===sel; const dead=e.situation?.status==='사망';
-    const dim = !linked.has(e.id) && !(ui.showMembers && memberOf(s,e.id,sel));
+    const dim = sel && !linked.has(e.id) && !(ui.showMembers && memberOf(s,e.id,sel));
     const w=ov[e.id]; let halo='';
     if(w!==undefined && Math.abs(w)>=0.25){ const hc=w<0?'var(--danger)':'var(--success)';
       halo = e.id.startsWith('chr_') ? `<circle cx="${x}" cy="${y}" r="${27+Math.abs(w)*8}" style="fill:${hc};opacity:.16"/><circle cx="${x}" cy="${y}" r="${27+Math.abs(w)*8}" style="fill:none;stroke:${hc};stroke-width:1.5"/>`
@@ -827,22 +820,14 @@ function renderGraph(){
     }
     return `<g class="node" data-id="${e.id}" tabindex="0" role="button" aria-label="${esc(e.name)}" opacity="${dead?.5:dim?.45:1}">${shape}${badge}</g>`;
   };
-  const e=ent(s,sel); const myRels=s.relations.filter(r=>r.from===sel||r.to===sel);
   const verLabel = ui.graphVer==='preview'?'AI 제안 미리보기':ui.graphVer==='work'?`지금 · ${cname(head().id)}`:cnum(ui.graphVer)+cname(ui.graphVer);
   const ovSrc = ui.graphVer==='preview'?'미리보기 사건':(ui.graphVer==='work'?head():byId(ui.graphVer))?.message;
   const other = !['work','preview'].includes(ui.graphVer) && !commits.some(c=>c.id===ui.graphVer) ? byId(ui.graphVer) : null;
-  $('#tab-graph').innerHTML = pendingBanner() + `
-  <div class="Subhead"><h2>관계도</h2><span class="muted">${esc(verLabel)}</span>${ui.graphVer==='preview'?'<span class="Label Label--done">아직 커밋 안 됨</span>':''}
-    <div class="actions">
-      <select class="form-control" id="g-ver" style="width:auto;padding:3px 8px;font-size:12px" aria-label="버전">
-        <option value="work" ${ui.graphVer==='work'?'selected':''}>지금 (${esc(cname(head().id))}${pending.length?' + 수동 수정':''})</option>
-        ${analysis?`<option value="preview" ${ui.graphVer==='preview'?'selected':''}>AI 제안 미리보기</option>`:''}
-        ${other?`<option value="${other.id}" selected>${esc(cname(other.id))} (다른 갈래)</option>`:''}
-        ${commits.slice().reverse().map(c=>`<option value="${c.id}" ${ui.graphVer===c.id?'selected':''}>${cnum(c.id)}${esc(cname(c.id))}</option>`).join('')}
-      </select>
-    </div></div>
-  <div class="split-r">
-    <div class="Box">
+  const panel = pe ? `<aside class="detail" id="detail" aria-label="${esc(pe.name||pe.title)} 자세히">
+      <div class="detail-bar"><span class="caption">${editable?'여기서 바로 고칠 수 있어요':'지난 시점이라 보기만 할 수 있어요'}</span><button class="btn btn-sm" id="detail-close">닫기</button></div>
+      ${editable ? (pe.id.startsWith('bg_')?bgDetail(pe):entityDetail(pe)) : pastDetail(s,pe,ov,ovSrc)}</aside>` : '';
+  const graph = first ? graphBox() : `<div class="Box"><div class="Box-body caption" style="text-align:center;padding:48px 16px">아직 인물이나 단체가 없어요.<br>왼쪽 도구창의 <b>+ 인물 추가</b>, <b>+ 단체 추가</b>로 시작하면 여기에 관계도가 그려져요.</div></div>`;
+  function graphBox(){ return `<div class="Box">
       <div class="Box-header" style="gap:12px">
         <div class="seg" role="group" aria-label="관계 필터">${[['all','전체'],['conflict','대립·경쟁'],['coop','공존·동맹'],['dominate','지배'],['personal','가족·개인']].map(([k,l])=>`<button aria-pressed="${ui.relFilter===k}" data-f="${k}">${l}</button>`).join('')}</div>
         <label class="check"><input type="checkbox" id="g-mem" ${ui.showMembers?'checked':''}>소속 선</label>
@@ -862,8 +847,34 @@ function renderGraph(){
         <span><span class="dot" style="background:var(--danger);opacity:.6"></span>피해 w</span><span><span class="dot" style="background:var(--success);opacity:.6"></span>이득 w</span>
       </div></div>
     </div>
-    <aside class="stack">
-      <div class="Box">
+`; }
+  $('#tab-world').innerHTML = pendingBanner() + `<div class="Subhead"><h2>세계관</h2><span class="muted">${esc(verLabel)}</span>${ui.graphVer==='preview'?'<span class="Label Label--done">아직 커밋 안 됨</span>':''}
+    <div class="actions">
+      <select class="form-control" id="g-ver" style="width:auto;padding:3px 8px;font-size:12px" aria-label="버전">
+        <option value="work" ${ui.graphVer==='work'?'selected':''}>지금 (${esc(cname(head().id))}${pending.length?' + 수동 수정':''})</option>
+        ${analysis?`<option value="preview" ${ui.graphVer==='preview'?'selected':''}>AI 제안 미리보기</option>`:''}
+        ${other?`<option value="${other.id}" selected>${esc(cname(other.id))} (다른 갈래)</option>`:''}
+        ${commits.slice().reverse().map(c=>`<option value="${c.id}" ${ui.graphVer===c.id?'selected':''}>${cnum(c.id)}${esc(cname(c.id))}</option>`).join('')}
+      </select>
+    </div></div>
+  <div class="ws${pe?' has-detail':''}"><div class="ws-graph">${graph}</div>${panel}</div>`;
+  $$('[data-f]').forEach(b=>b.onclick=()=>{ ui.relFilter=b.dataset.f; renderWorld(); });
+  $('#g-ver').onchange=ev=>{ ui.graphVer=ev.target.value; ui.editing=null; renderWorld(); };
+  const gm=$('#g-mem'); if(gm) gm.onchange=ev=>{ ui.showMembers=ev.target.checked; renderWorld(); };
+  const go_=$('#g-ov'); if(go_) go_.onchange=ev=>{ ui.overlay=ev.target.checked; renderWorld(); };
+  $$('.node').forEach(n=>{ const go=()=>pick(n.dataset.id); n.onclick=go; n.onkeydown=ev=>{ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); go(); } }; });
+  $$('[data-pick],[data-go]').forEach(b=>b.onclick=()=>pick(b.dataset.pick||b.dataset.go));
+  const dc=$('#detail-close'); if(dc) dc.onclick=()=>{ ui.sel=null; ui.editing=null; render('world'); };
+  const gn=$('#g-now'); if(gn) gn.onclick=()=>{ ui.graphVer='work'; render('world'); };
+  if(pe && editable) wireDetail(pe);
+  wirePending();
+}
+/* 지난 시점을 보고 있을 때의 상세 (보기 전용) */
+function pastDetail(s,e,ov,ovSrc){
+  if(e.id.startsWith('bg_')) return `<div class="Box"><div class="Box-header"><h3>${esc(e.title)}</h3><span class="Label">${esc(e.category)}</span></div><div class="Box-body">${esc(e.content)}</div>
+    <div class="Box-row"><button class="btn btn-sm" id="g-now">지금 시점으로 돌아가 고치기</button></div></div>`;
+  const myRels=s.relations.filter(r=>r.from===e.id||r.to===e.id);
+  return `<div class="Box">
         <div class="Box-header">${e.id.startsWith('chr_')?`<span class="dot" style="background:${nationColor(nationOf(s,e))}"></span>`:`<span class="sq" style="background:${nationColor(nationOf(s,e))}"></span>`}<h3>${esc(e.name)}</h3>
           <span class="Label">${e.id.startsWith('grp_')?KIND[e.kind]:'인물'}</span>${e.situation?.status?`<span class="Label ${statusCls(e.situation.status)}">${esc(e.situation.status)}</span>`:''}</div>
         <div class="Box-body stack" style="gap:12px">
@@ -871,19 +882,26 @@ function renderGraph(){
           ${ov[e.id]!==undefined?`<div style="display:flex;gap:8px;align-items:center"><span class="caption" style="flex:none">이 사건의 영향</span>${wbar(ov[e.id])}<span class="num ${ov[e.id]<0?'neg':'pos'}">${sf2(ov[e.id])}</span></div><div class="caption">${esc(ovSrc||'')}</div>`:''}
           <div>${(e.traits||[]).map(t=>`<div style="display:grid;grid-template-columns:minmax(0,1fr) 80px 32px;gap:8px;align-items:center;font-size:12px;padding:2px 0"><span>${esc(t.label)}</span><div class="meter"><i style="width:${t.value*100}%"></i></div><span class="num" style="text-align:right">${f2(t.value)}</span></div>`).join('')}</div>
         </div>
-        ${myRels.map(r=>{const o=r.from===sel?r.to:r.from; const R=REL[r.type]; return `<div class="Box-row"><div style="flex:1;min-width:0"><button class="btn-link" data-pick="${o}">${esc(nm(s,o))}</button>${r.note?`<div class="caption">${esc(r.note)}</div>`:''}</div><span class="Label" style="color:${R.c};border-color:${R.c}">${R.l}${r.directed?(r.from===sel?' →':' ←'):''}</span><span class="num">${f2(r.intensity)}</span></div>`}).join('')}
-        <div class="Box-row"><button class="btn btn-sm" id="g-edit">세계관에서 편집</button></div>
-      </div>
-    </aside>
-  </div>`;
-  $$('[data-f]').forEach(b=>b.onclick=()=>{ ui.relFilter=b.dataset.f; renderGraph(); });
-  $('#g-ver').onchange=ev=>{ ui.graphVer=ev.target.value; renderGraph(); };
-  $('#g-mem').onchange=ev=>{ ui.showMembers=ev.target.checked; renderGraph(); };
-  $('#g-ov').onchange=ev=>{ ui.overlay=ev.target.checked; renderGraph(); };
-  $$('.node').forEach(n=>{ const go=()=>{ ui.sel=n.dataset.id; renderGraph(); }; n.onclick=go; n.onkeydown=ev=>{ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); go(); } }; });
-  $$('[data-pick]').forEach(b=>b.onclick=()=>{ ui.sel=b.dataset.pick; renderGraph(); });
-  $('#g-edit').onclick=()=>showTab('world');
-  wirePending();
+        ${myRels.map(r=>{const o=r.from===e.id?r.to:r.from; const R=REL[r.type]||REL.personal; return `<div class="Box-row"><div style="flex:1;min-width:0"><button class="btn-link" data-pick="${o}">${esc(nm(s,o))}</button>${r.note?`<div class="caption">${esc(r.note)}</div>`:''}</div><span class="Label" style="color:${R.c};border-color:${R.c}">${R.l}${r.directed?(r.from===e.id?' →':' ←'):''}</span><span class="num">${f2(r.intensity)}</span></div>`}).join('')}
+        <div class="Box-row"><button class="btn btn-sm" id="g-now">지금 시점으로 돌아가 고치기</button></div>
+      </div>`;
+}
+/* 오른쪽 상세 패널의 수정 동작 */
+function wireDetail(e){
+  $$('input[data-path]').forEach(r=>{
+    r.oninput=()=>{ r.closest('.trait').querySelector('.v').textContent=f2(+r.value); };
+    r.onchange=()=>{ setManual(r.dataset.path, Math.round(+r.value*100)/100); render('world'); };
+  });
+  const sv=$('#sit-save'); if(sv) sv.onclick=()=>{
+    const base=`/${coll(e.id)}/${e.id}/situation`;
+    setManual(base+'/status', $('#sit-status').value.trim()); setManual(base+'/current', $('#sit-current').value.trim());
+    toast(pending.length?'수동 수정에 담았어요':'바뀐 내용이 없어요'); render('world');
+  };
+  const bs=$('#bg-save'); if(bs) bs.onclick=()=>{
+    const t=$('#bg-title').value.trim(); if(!t){ toast('제목을 입력하세요'); return; }
+    setManual(`/background/${e.id}/title`, t); setManual(`/background/${e.id}/category`, $('#bg-cat').value.trim()||'기타');
+    setManual(`/background/${e.id}/content`, $('#bg-content').value.trim()); toast(pending.length?'수동 수정에 담았어요':'바뀐 내용이 없어요'); render('world'); };
+  if(!e.id.startsWith('bg_')) wireEntityEdit(e);
 }
 const SURNAMES='김이박최정강조윤장임한오서신권황안송류홍전고문양손배백허유남심노하곽성차주우구민진나지엄채원천방공현함변염여추도소석선설마길연위표명기반왕금옥육인맹제모봉';
 function initial(n){ return /^[가-힣]{3}$/.test(n) && SURNAMES.includes(n[0]) ? n[1] : n[0]; }
@@ -1200,9 +1218,14 @@ function loadWorld(k, fresh=false){
     }catch(e){ savedAt=0; }
   } else savedAt=0;
   lastJson=JSON.stringify(snapshot());
-  Object.assign(ui, {sel:W.sel, treeSel:null, editing:null, graphVer:'work', relFilter:'all', cmpA:null, cmpB:null, confirm:null, open:{}});
+  Object.assign(ui, {sel:null, treeSel:null, editing:null, graphVer:'work', relFilter:'all', cmpA:null, cmpB:null, confirm:null, open:{}});
   try{ localStorage.setItem('gitstory-world', k); }catch(e){}
 }
+$('#side-q').oninput=ev=>{ ui.q=ev.target.value; renderSide(); };
+$('#side-toggle').onclick=()=>sideOpen(!$('#side').classList.contains('open'));
+$('#side-close').onclick=()=>sideOpen(false);
+$('#side-backdrop').onclick=()=>sideOpen(false);
+document.addEventListener('keydown',ev=>{ if(ev.key==='Escape' && $('#side').classList.contains('open')) sideOpen(false); });
 $('#world-pick').onchange=ev=>{ loadWorld(ev.target.value); render(); syncFromCloud(worldKey); toast(`${DATA.meta.title} 세계관을 불러왔습니다`); };
 $('#world-reset').onclick=()=>{
   if(!confirm(`${DATA.meta.title}의 모든 변경을 지우고 처음 상태로 되돌릴까요?${worldKey.startsWith('p_')?' (직접 만든 프로젝트는 빈 상태가 됩니다)':''}`)) return;
@@ -1261,11 +1284,10 @@ else av.textContent=(USER.name||'?').slice(0,1).toUpperCase();
 $('#sign-out').onclick=()=>signOutUser().then(()=>location.reload());
 /* ---------- 사용 안내 (처음 한 번, 이후 도움말 버튼) ---------- */
 const TOUR=[
-  ['world','세계관','인물, 단체, 배경을 정리하는 곳이에요. 왼쪽 위 + 인물, + 단체로 추가하고 성격과 소속 결속도를 정해 두면 사건 영향을 계산할 때 쓰여요. 지금은 예시 세계관이 열려 있어요.'],
+  ['world','세계관','오른쪽에 세계관 전체가 관계도로 보여요. 인물이나 단체를 누르면 상황, 성격, 관계가 옆에 열리고 바로 고칠 수 있어요. 왼쪽 도구창에서 + 인물 추가, + 단체 추가로 새로 만들어요. 위쪽에서 시점을 고르면 그때의 관계도로 바뀌어요.'],
   ['event','사건 입력','이야기에서 일어난 일을 적고 AI 영향 분석을 누르면, 누가 직접 영향을 받고 소속을 따라 어떻게 퍼지는지 보여줘요. 확인한 뒤 사건 커밋을 누르면 버전으로 남아요.'],
   ['manuscript','원고 붙여넣기','쓴 원고를 한 화씩 붙여넣으면 AI가 새 인물, 바뀐 상황, 새 관계, 큰 사건을 후보로 골라줘요. 체크한 것만 반영돼요.'],
-  ['graph','관계도','단체와 인물의 관계를 한눈에 봐요. 위쪽에서 버전을 고르면 그 시점의 관계도로 바뀌어요.'],
-  ['history','버전 기록','모든 변화가 커밋 트리로 쌓여요. 과거 커밋에서 \'만약에\' 갈래를 만들어 다른 전개를 시험하고, 언제든 되돌릴 수 있어요. 내 이야기는 위쪽 + 새 프로젝트로 시작하세요.']
+  ['history','버전 기록','모든 변화가 커밋 트리로 쌓여요. 과거 커밋에서 \'만약에\' 갈래를 만들어 다른 전개를 시험하고, 언제든 되돌릴 수 있어요. 내 이야기는 왼쪽 도구창의 + 새 프로젝트로 시작하세요.']
 ];
 function tour(i=0){
   $('#tour')?.remove(); $$('.tour-hl').forEach(el=>el.classList.remove('tour-hl'));
