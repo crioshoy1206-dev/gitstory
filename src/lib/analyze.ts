@@ -19,7 +19,7 @@ const EFFORT = (process.env.AI_EFFORT || "low") as "low" | "medium" | "high";
 export const ESTIMATE = 3000;
 
 export const TAGS = ["위협", "분노", "상실", "권력공백", "보복위협", "탄압", "기회", "이익", "동원", "정체성"];
-const REL_TYPES = ["hostile", "rival", "dominate", "coexist", "alliance", "family", "personal"];
+export const REL_TYPES = ["hostile", "rival", "dominate", "coexist", "alliance", "family", "personal"];
 
 export class AiNotConfigured extends Error {}
 export class AiRefused extends Error {}
@@ -116,17 +116,19 @@ function clamp(x: number, lo: number, hi: number) {
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
 type Raw = { text: string; tokens: number; refused: boolean; stop: string; model: string };
+/** AI 호출 한 번에 필요한 것: 지시문, 응답 형식, 사용자 입력, 최대 출력 토큰 */
+export type Prompt = { system: string; schema: object; user: string; maxTokens: number };
 
-async function callClaude(model: string, user: string): Promise<Raw> {
+async function callClaude(model: string, { system, schema, user, maxTokens }: Prompt): Promise<Raw> {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: AI_TIMEOUT_MS, maxRetries: 0 });
   // 서버측 거절 대체(fallbacks)는 Opus·Fable 계열에서만 켠다
   const fb = /^claude-(opus|fable)/.test(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {};
   const res = await client.beta.messages.create({
     model,
-    max_tokens: 4000,
+    max_tokens: maxTokens,
     ...fb,
-    output_config: { effort: EFFORT, format: { type: "json_schema", schema: SCHEMA } },
-    system: SYSTEM,
+    output_config: { effort: EFFORT, format: { type: "json_schema", schema: schema as Record<string, unknown> } },
+    system,
     messages: [{ role: "user", content: user }],
   });
   return {
@@ -138,16 +140,16 @@ async function callClaude(model: string, user: string): Promise<Raw> {
   };
 }
 
-async function callGemini(model: string, user: string): Promise<Raw> {
+async function callGemini(model: string, { system, schema, user, maxTokens }: Prompt): Promise<Raw> {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const res = await ai.models.generateContent({
     model,
     contents: user,
     config: {
-      systemInstruction: SYSTEM,
+      systemInstruction: system,
       responseMimeType: "application/json",
-      responseJsonSchema: SCHEMA,
-      maxOutputTokens: 4000,
+      responseJsonSchema: schema,
+      maxOutputTokens: maxTokens,
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
       thinkingConfig: { thinkingLevel: EFFORT === "high" ? ThinkingLevel.HIGH : EFFORT === "medium" ? ThinkingLevel.MEDIUM : ThinkingLevel.LOW },
     },
@@ -172,9 +174,10 @@ function pickModel(plan: Plan): { provider: "claude" | "gemini"; model: string }
   throw new AiNotConfigured("AI 키(GEMINI_API_KEY 또는 ANTHROPIC_API_KEY)가 서버에 등록되지 않았습니다");
 }
 
-export async function analyzeEvent(event: EventInput, world: WorldInput, plan: Plan = "free") {
+/** 요금제 모델로 JSON 응답을 받는다. 붐비면 모델을 돌려가며 재시도하고, 거절·형식 오류는 쓴 토큰과 함께 던진다. */
+export async function generate<T>(plan: Plan, prompt: Prompt, label: string): Promise<{ data: T; tokens: number; model: string; provider: "claude" | "gemini" }> {
   const { provider, model } = pickModel(plan);
-  const user = `## 세계관\n${JSON.stringify(world)}\n\n## 사건\n제목: ${event.title}\n작중 시점: ${event.story_time || "(미정)"}\n내용: ${event.description}`;
+  const user = prompt.user;
   const t0 = Date.now();
   const deadline = t0 + AI_TIMEOUT_MS;
   // 붐빔(503·429)이면 잠깐 쉬고 같은 모델 한 번, 그다음 대체 모델 순서로 시도한다
@@ -193,7 +196,7 @@ export async function analyzeEvent(event: EventInput, world: WorldInput, plan: P
     try {
       // SDK 시간 제한이 안 먹는 경우를 대비해 직접 경주시킨다
       res = await Promise.race([
-        (provider === "claude" ? callClaude : callGemini)(used, user),
+        (provider === "claude" ? callClaude : callGemini)(used, prompt),
         new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timed out")), left)),
       ]);
       if (provider === "gemini") lastGoodGemini = used;
@@ -204,7 +207,7 @@ export async function analyzeEvent(event: EventInput, world: WorldInput, plan: P
         throw new AiTimeout(`AI 응답이 ${Math.round(AI_TIMEOUT_MS / 1000)}초 안에 오지 않았습니다 (${used})`);
       }
       const busy = status === 503 || status === 429 || status === 529 || /\b(503|429|529)\b|high demand|overloaded|UNAVAILABLE|RESOURCE_EXHAUSTED/i.test(msg);
-      console.warn(`analyze ${provider}/${used} 실패 (${busy ? "붐빔" : "오류"}, ${Date.now() - t0}ms): ${msg.slice(0, 160)}`);
+      console.warn(`${label} ${provider}/${used} 실패 (${busy ? "붐빔" : "오류"}, ${Date.now() - t0}ms): ${msg.slice(0, 160)}`);
       if (!busy) throw e;
       if (used === lastGoodGemini) lastGoodGemini = "";
       // 한 바퀴 돌 때마다 더 길게 쉰다: 0.5초, 2초, 4초, 8초
@@ -213,21 +216,25 @@ export async function analyzeEvent(event: EventInput, world: WorldInput, plan: P
     }
   }
   if (!res) throw new AiBusy("AI 서버가 지금 붐벼요. 잠시 후 다시 눌러 주세요");
-  console.log(`analyze ${provider}/${used} ${Date.now() - t0}ms tokens=${res.tokens} chars=${user.length}`);
+  console.log(`${label} ${provider}/${used} ${Date.now() - t0}ms tokens=${res.tokens} chars=${user.length}`);
   const tokens = res.tokens;
-  if (res.refused) throw Object.assign(new AiRefused("AI가 이 사건 분석을 거절했습니다"), { tokens });
-  const text = res.text;
-  let raw: {
+  if (res.refused) throw Object.assign(new AiRefused("AI가 이 요청을 거절했습니다"), { tokens });
+  try {
+    return { data: JSON.parse(res.text) as T, tokens, model: res.model, provider };
+  } catch {
+    throw Object.assign(new Error(`AI 응답을 읽지 못했습니다 (${res.stop})`), { tokens });
+  }
+}
+
+export async function analyzeEvent(event: EventInput, world: WorldInput, plan: Plan = "free") {
+  const user = `## 세계관\n${JSON.stringify(world)}\n\n## 사건\n제목: ${event.title}\n작중 시점: ${event.story_time || "(미정)"}\n내용: ${event.description}`;
+  type Out = {
     direct: { target: string; M: number; tags: string[]; summary: string }[];
     relevance: { trait: string; tag: string; rel: number }[];
     rewrite: { id: string; status: string; text: string }[];
     relations: { op: string; id: string; from: string; to: string; type: string; intensity: number; why: string }[];
   };
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    throw Object.assign(new Error(`AI 응답을 읽지 못했습니다 (${res.stop})`), { tokens });
-  }
+  const { data: raw, tokens, model, provider } = await generate<Out>(plan, { system: SYSTEM, schema: SCHEMA, user, maxTokens: 4000 }, "analyze");
 
   // 검증: 세계관에 있는 id·태그만 남기고 숫자 범위를 자른다
   const ids = new Set([...world.groups, ...world.characters].map((e) => e.id));
@@ -258,5 +265,5 @@ export async function analyzeEvent(event: EventInput, world: WorldInput, plan: P
     }
     return [];
   });
-  return { analysis: { title: event.title, description: event.description, story_time: event.story_time ?? "", direct, relevance, rewrite, relations }, tokens, model: res.model, provider };
+  return { analysis: { title: event.title, description: event.description, story_time: event.story_time ?? "", direct, relevance, rewrite, relations }, tokens, model, provider };
 }

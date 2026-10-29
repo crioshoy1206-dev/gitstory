@@ -3,7 +3,7 @@
 import DATA_ARCANE from "@/data/arcane.json";
 import DATA_HP from "@/data/harry-potter.json";
 import DATA_JG from "@/data/janggu.json";
-import { loadCloud, saveCloud, signOutUser, fetchUsage, analyzeEvent, listProjects } from "@/legacy/cloud";
+import { loadCloud, saveCloud, signOutUser, fetchUsage, analyzeEvent, extractManuscript, listProjects } from "@/legacy/cloud";
 
 let started = false;
 let USER;
@@ -48,6 +48,21 @@ let analysis = null;   // 사건 분석 중인 내용
 const ui = {sel:'chr_vi', graphVer:'work', relFilter:'all', showMembers:true, overlay:true, cmpA:null, cmpB:null, confirm:null, open:{}};
 
 const head = () => commits.at(-1);
+
+/* ---------- 갈래(branch) ----------
+   allCommits: 모든 갈래의 커밋(만든 순서). branches: [{id, name, head}], branchId: 지금 갈래.
+   commits는 지금 갈래의 줄기(첫 커밋 → head)라서 기존 화면 코드가 그대로 쓴다. 합치기(merge)는 아직 없다. */
+let allCommits=[], branches=[], branchId='main';
+const byId = id => allCommits.find(c=>c.id===id);
+function lineOf(id){ const out=[]; let c=byId(id), n=0; while(c && n++<5000){ out.push(c); c=c.parent?byId(c.parent):null; } return out.reverse(); }
+function curBranch(){ return branches.find(b=>b.id===branchId); }
+function addCommit(c){ commits.push(c); allCommits.push(c); curBranch().head=c.id; }
+function setTree(cs, brs, bid){
+  allCommits=cs; branches=brs?.length ? brs : [{id:'main', name:'main', head:cs.at(-1).id}];
+  branchId=branches.some(b=>b.id===bid) ? bid : branches[0].id;
+  commits=lineOf(curBranch().head);
+}
+const snapshot = () => ({state, commits:allCommits, pending, branches, branch:branchId});
 function all(s){ return [...s.groups, ...s.characters, ...s.background]; }
 function ent(s,id){ return all(s).find(x=>x.id===id); }
 function nm(s,id){ const e=ent(s,id)||ent(state,id); return e ? (e.name||e.title) : id; }
@@ -89,6 +104,8 @@ function applyPatch(s,p,back){
   const r=walk(s,p.path); if(!r) return;
   if(p.op==='replace'){ if(r.obj) r.obj[r.key]=clone(back?p.before:p.after); return; }
   const insert = (p.op==='add') !== !!back;
+  // 객체 속성에 붙는 add/remove (예: 소속의 active)
+  if(r.obj){ if(insert) r.obj[r.key]=clone(p.op==='add'?p.after:p.before); else delete r.obj[r.key]; return; }
   if(insert){ r.arr.push(clone(p.op==='add'?p.after:p.before)); }
   else if(r.append) r.arr.pop(); else if(r.idx>-1) r.arr.splice(r.idx,1);
 }
@@ -100,6 +117,34 @@ function stateAt(idx, withPending=false){
   [...s.groups,...s.characters].forEach(e=>{ if(e.situation) e.situation.history=e.situation.history.filter(h=>keep.has(h.commit)); });
   s.background=s.background.filter(b=>!b.introduced_in||keep.has(b.introduced_in));
   return s;
+}
+/* 아무 커밋(다른 갈래 포함) 시점의 상태: 공통 조상까지 되감고 그 커밋의 줄기를 다시 적용 */
+function stateOf(id){
+  const i=commits.findIndex(c=>c.id===id); if(i>-1) return stateAt(i);
+  const s=stateAt(commits.length-1), tgt=lineOf(id);
+  let k=0; while(k<commits.length && k<tgt.length && commits[k].id===tgt[k].id) k++;
+  for(let j=commits.length-1;j>=k;j--) commits[j].patches.slice().reverse().forEach(p=>applyPatch(s,p,true));
+  for(let j=k;j<tgt.length;j++) tgt[j].patches.forEach(p=>applyPatch(s,p));
+  return s;
+}
+function switchBranch(id){
+  const b=branches.find(x=>x.id===id); if(!b || id===branchId) return false;
+  if(pending.length){ toast('수동 수정을 먼저 커밋하거나 버려야 갈래를 옮길 수 있어요'); return false; }
+  state=stateOf(b.head); branchId=id; commits=lineOf(b.head); analysis=null;
+  Object.assign(ui, {graphVer:'work', cmpA:null, cmpB:null, confirm:null, open:{}});
+  return true;
+}
+function createBranch(fromId, name){
+  if(pending.length){ toast('수동 수정을 먼저 커밋하거나 버려야 갈래를 만들 수 있어요'); return; }
+  const id='b_'+Date.now().toString(36);
+  branches.push({id, name, head:fromId, created_at:new Date().toISOString()});
+  switchBranch(id); ui.treeSel=fromId;
+  toast(`'${name}' 갈래를 만들었어요. 이제 사건을 커밋하면 이 갈래에 쌓여요`);
+}
+function deleteBranch(id){
+  branches=branches.filter(b=>b.id!==id);
+  const keep=new Set(branches.flatMap(b=>lineOf(b.head).map(c=>c.id)));
+  allCommits=allCommits.filter(c=>keep.has(c.id));
 }
 function describePath(s,path){
   const seg=path.split('/').slice(1); const [c,id]=seg; const rest=seg.slice(2).join('/');
@@ -191,7 +236,7 @@ function wbar(w){ const pct=Math.abs(w)*50; return `<div class="wbar" title="${s
 $$('[role=tab]').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
 function showTab(t){
   $$('[role=tab]').forEach(b=>b.setAttribute('aria-selected', b.dataset.tab===t));
-  ['world','event','graph','history'].forEach(x=>$('#tab-'+x).hidden = x!==t);
+  ['world','event','manuscript','graph','history'].forEach(x=>$('#tab-'+x).hidden = x!==t);
   render(t); window.scrollTo({top:0});
 }
 function cur(){ return $('[role=tab][aria-selected=true]').dataset.tab; }
@@ -199,7 +244,7 @@ function render(t=cur()){
   $('#world-title').textContent=DATA.meta.title; $('#world-slug').textContent=W.slug; $('#world-desc').textContent=DATA.meta.description;
   $('#cnt-world').textContent=state.groups.length+state.characters.length+state.background.length;
   $('#cnt-rel').textContent=state.relations.length; $('#cnt-commit').textContent=commits.length;
-  ({world:renderWorld,event:renderEvent,graph:renderGraph,history:renderHistory})[t]();
+  ({world:renderWorld,event:renderEvent,manuscript:renderManuscript,graph:renderGraph,history:renderHistory})[t]();
   saveWorld();
 }
 
@@ -220,7 +265,7 @@ function wirePending(){
     const id=newSha();
     pending.forEach(p=>{ const m=p.path.match(/^\/(groups|characters)\/([^/]+)\//); if(m){ const hp={op:'add', path:`/${m[1]}/${m[2]}/situation/history/-`, after:{commit:id, summary:describePath(state,p.path).split(' · ')[1]+' 수정', source:'manual'}}; applyPatch(state,hp); p.__h=hp; } });
     const patches=pending.flatMap(p=>p.__h?[{op:p.op,path:p.path,before:p.before,after:p.after}, p.__h]:[{op:p.op,path:p.path,before:p.before,after:p.after}]);
-    commits.push({id, parent:head().id, kind:'manual', message:$('#pend-msg').value.trim()||'수동 수정', created_at:new Date().toISOString(), impacts:[], patches});
+    addCommit({id, parent:head().id, kind:'manual', message:$('#pend-msg').value.trim()||'수동 수정', created_at:new Date().toISOString(), impacts:[], patches});
     pending=[]; toast(`커밋 ${id} 생성`); render();
   };
   $('#pend-discard').onclick=()=>{ pending.slice().reverse().forEach(p=>applyPatch(state,p,true)); pending=[]; toast('수동 수정을 버렸습니다'); render(); };
@@ -496,13 +541,13 @@ function buildPatches(a, cid, s=state){
 function renderEvent(){
   const blocked=pending.length>0;
   $('#tab-event').innerHTML = pendingBanner() + `
-  <div class="Subhead"><h2>새 사건</h2><span class="muted">HEAD <span class="sha">${head().id}</span> 위에 커밋됩니다</span></div>
+  <div class="Subhead"><h2>새 사건</h2><span class="muted">${branches.length>1?`'${esc(curBranch().name)}' 갈래의 `:''}HEAD <span class="sha">${head().id}</span> 위에 커밋됩니다</span></div>
   <div class="split-r">
     <div class="stack">
       <div class="Box"><div class="Box-body stack">
-        <div class="form-group"><label for="ev-title">사건 제목</label><input class="form-control" id="ev-title" value="${esc(analysis?.title ?? SAMPLE.title)}"></div>
-        <div class="form-group"><label for="ev-text">무슨 일이 일어나나요?</label><textarea class="form-control" id="ev-text" rows="3">${esc(analysis?.description ?? SAMPLE.description)}</textarea></div>
-        <div class="form-group" style="max-width:260px"><label for="ev-time">작중 시점</label><input class="form-control" id="ev-time" value="${esc(analysis?.story_time ?? SAMPLE.story_time)}"></div>
+        <div class="form-group"><label for="ev-title">사건 제목</label><input class="form-control" id="ev-title" value="${esc(analysis?.title ?? ui.evDraft?.title ?? SAMPLE.title)}"></div>
+        <div class="form-group"><label for="ev-text">무슨 일이 일어나나요?</label><textarea class="form-control" id="ev-text" rows="3">${esc(analysis?.description ?? ui.evDraft?.description ?? SAMPLE.description)}</textarea></div>
+        <div class="form-group" style="max-width:260px"><label for="ev-time">작중 시점</label><input class="form-control" id="ev-time" value="${esc(analysis?.story_time ?? ui.evDraft?.story_time ?? SAMPLE.story_time)}"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="ev-run">${icon('spark')}AI 영향 분석</button>${W.sample?'<button class="btn" id="ev-sample">예시 사건 넣기</button>':''}</div>
       </div></div>
       <div id="ev-result" class="stack"></div>
@@ -601,11 +646,94 @@ function drawProp(){
   $('#ev-commit').onclick=()=>{
     const id=newSha(); const ps=buildPatches(a,id); const {items:its}=finals(a);
     ps.forEach(p=>applyPatch(state,p));
-    commits.push({id, parent:head().id, kind:'event', message:$('#ev-msg').value.trim()||'사건: '+a.title, created_at:new Date().toISOString(),
+    addCommit({id, parent:head().id, kind:'event', message:$('#ev-msg').value.trim()||'사건: '+a.title, created_at:new Date().toISOString(),
       event:{title:a.title, description:a.description, story_time:a.story_time, involved:a.direct.map(d=>d.target)},
       impacts:its.map(it=>({target:it.target, source:it.source, via:it.via, tags:it.tags, magnitude:Math.round(it.w*100)/100, summary:it.summary||''})), patches:ps});
-    analysis=null; ui.graphVer='work'; ui.open={[id]:true}; toast(`커밋 ${id} 생성 · 변경 ${ps.length}건`); showTab('history');
+    analysis=null; ui.evDraft=null; ui.graphVer='work'; ui.open={[id]:true}; toast(`커밋 ${id} 생성 · 변경 ${ps.length}건`); showTab('history');
   };
+}
+
+/* ---------- 원고 붙여넣기 ----------
+   원고 한 화를 AI가 읽고 새 인물·단체, 상황 변화, 새 관계, 사건 후보를 뽑는다. 체크한 것만 수동 수정으로 담고,
+   사건 후보는 사건 입력 탭으로 보내 하나씩 분석한다. 원고 원문은 저장하지 않는다(이 화면에만 둔다). */
+const MS_MAX=12000;
+let msText='', msResult=null;
+function renderManuscript(){
+  $('#tab-manuscript').innerHTML = pendingBanner() + `<div class="Subhead"><h2>원고 붙여넣기</h2><span class="muted">한 화씩 붙여넣으면 AI가 설정에 반영할 후보를 골라줘요</span></div>
+  <div class="split-r"><div class="stack">
+    <div class="Box"><div class="Box-body stack">
+      <div class="form-group"><label for="ms-text">원고 한 화 (최대 ${MS_MAX.toLocaleString()}자)</label>
+        <textarea class="form-control" id="ms-text" rows="10" maxlength="${MS_MAX}" placeholder="여기에 원고를 붙여넣으세요">${esc(msText)}</textarea><span class="caption" id="ms-count"></span></div>
+      <div><button class="btn btn-primary" id="ms-run">${icon('spark')}AI로 읽기</button></div>
+    </div></div>
+    <div id="ms-result" class="stack"></div>
+  </div>
+  <aside class="stack"><div class="Box"><div class="Box-header"><h3>이렇게 반영돼요</h3></div><div class="Box-body stack" style="gap:8px">
+    <div>1. AI가 새 인물·단체, 상황이 바뀐 인물, 새 관계, 큰 사건을 후보로 골라요.</div>
+    <div>2. 체크한 후보만 수동 수정으로 담겨요. 노란 상자에서 커밋하면 버전으로 남아요.</div>
+    <div>3. 사건 후보는 사건 입력 탭으로 보내 영향 분석을 따로 해요.</div>
+    <div class="caption">이미 있는 이름이나 다른 이름과 겹치는 인물은 새로 만들지 않아요. 원고 원문은 저장하지 않아요.</div>
+  </div></div></aside></div>`;
+  const ta=$('#ms-text'), cnt=()=>{ $('#ms-count').textContent=`${ta.value.length.toLocaleString()} / ${MS_MAX.toLocaleString()}자`; };
+  ta.oninput=()=>{ msText=ta.value; cnt(); }; cnt();
+  $('#ms-run').onclick=async ()=>{
+    const text=ta.value.trim(); if(!text){ toast('원고를 붙여넣으세요'); return; }
+    const btn=$('#ms-run'); btn.disabled=true; let note='';
+    $('#ms-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 원고를 읽고 있어요 <span id="ms-wait"></span></span></div></div>`;
+    const t0=Date.now(), tick=setInterval(()=>{ const w=$('#ms-wait'), sec=Math.round((Date.now()-t0)/1000); if(w) w.textContent=`· ${sec}초`; },1000);
+    try{
+      // 겹치는 인물을 걸러야 하니 세계관 전체를 보낸다
+      const r=await extractManuscript(text, worldForAi(''));
+      const on=a=>a.map(x=>({...x, on:true}));
+      msResult={characters:on(r.result.characters), groups:on(r.result.groups), updates:on(r.result.updates), relations:on(r.result.relations), events:r.result.events};
+      showUsage(r.usage); toast(`원고 읽기 완료 (${r.provider==='claude'?'Claude':'Gemini'}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
+    }catch(err){
+      console.warn('원고 읽기 실패', err); msResult=null;
+      if(err.status===429){ if(err.body?.usage) showUsage(err.body.usage); note='오늘 쓸 수 있는 토큰을 다 썼어요. 한국 시간 자정에 다시 채워집니다.'; }
+      else note=`원고를 읽지 못했어요 (${err.message||'연결 실패'})`;
+    }
+    clearInterval(tick); btn.disabled=false; drawMs();
+    if(note) $('#ms-result').innerHTML=`<div class="flash flash-warn">${icon('alert')}<div>${esc(note)}</div></div>`;
+  };
+  if(msResult) drawMs();
+  wirePending();
+}
+function drawMs(){
+  const r=msResult, box=$('#ms-result'); if(!box||!r) return;
+  const who=x=>ent(state,x)?nm(state,x):x;
+  const row=(k,i,x,body)=>`<label class="Box-row" style="cursor:pointer;align-items:flex-start"><input type="checkbox" data-ms="${k}|${i}" ${x.on?'checked':''} style="margin-top:4px"><div style="flex:1;min-width:0">${body}</div></label>`;
+  const sec=(k,title,items,fn)=>items.length?`<div class="Box"><div class="Box-header"><h3>${title}</h3><span class="Counter">${items.length}</span></div>${items.map((x,i)=>row(k,i,x,fn(x))).join('')}</div>`:'';
+  const total=['characters','groups','updates','relations'].reduce((a,k)=>a+r[k].length,0);
+  const picked=['characters','groups','updates','relations'].reduce((a,k)=>a+r[k].filter(x=>x.on).length,0);
+  box.innerHTML = (total||r.events.length ? '' : '<div class="Box"><div class="Box-body caption">반영할 만한 새 내용을 찾지 못했어요.</div></div>')
+    + sec('characters','새 인물',r.characters,c=>`<b>${esc(c.name)}</b>${c.aliases.length?` <span class="caption">(${esc(c.aliases.join(', '))})</span>`:''}${c.group?` <span class="Label">${esc(who(c.group))}${c.role?' · '+esc(c.role):''}</span>`:''}<div class="caption">${esc(c.summary)}</div>`)
+    + sec('groups','새 단체',r.groups,g=>`<b>${esc(g.name)}</b> <span class="Label">${KIND[g.kind]||'조직'}</span>${g.parent?` <span class="caption">${esc(nm(state,g.parent))} 소속</span>`:''}<div class="caption">${esc(g.summary)}</div>`)
+    + sec('updates','상황 변화',r.updates,u=>{ const e=ent(state,u.id); return `<b>${esc(nm(state,u.id))}</b> <span class="Label Label--attention">${esc(u.status)}</span><div class="diffline del" style="margin-top:4px">- ${esc(e?.situation?.current||'(없음)')}</div><div class="diffline add">+ ${esc(u.text)}</div>`; })
+    + sec('relations','새 관계',r.relations,x=>{ const R=REL[x.type]||REL.personal; return `<b>${esc(who(x.from))}</b> ↔ <b>${esc(who(x.to))}</b> <span class="Label" style="color:${R.c};border-color:${R.c}">${R.l} ${f2(x.intensity)}</span>${x.note?`<div class="caption">${esc(x.note)}</div>`:''}`; })
+    + (total?`<div class="Box"><div class="Box-row" style="background:var(--bg-subtle);flex-wrap:wrap"><span class="caption" style="flex:1">${picked}개 선택됨. 새 인물이 들어간 관계는 그 인물도 체크해야 담겨요.</span><button class="btn btn-primary" id="ms-apply" ${picked?'':'disabled'}>선택한 후보 담기</button></div></div>`:'')
+    + (r.events.length?`<div class="Box"><div class="Box-header"><h3>사건 후보</h3><span class="Counter">${r.events.length}</span><span class="caption right">하나씩 영향 분석해요</span></div>
+      ${r.events.map((e,i)=>`<div class="Box-row" style="align-items:flex-start;flex-wrap:wrap"><div style="flex:1 1 220px;min-width:0"><b>${esc(e.title)}</b>${e.story_time?` <span class="caption">${esc(e.story_time)}</span>`:''}<div class="caption">${esc(e.description)}</div></div>
+        <button class="btn btn-sm" data-msev="${i}">${icon('bolt')}사건 입력으로 보내기</button></div>`).join('')}</div>`:'');
+  $$('[data-ms]').forEach(c=>c.onchange=()=>{ const [k,i]=c.dataset.ms.split('|'); r[k][i].on=c.checked; drawMs(); });
+  $$('[data-msev]').forEach(b=>b.onclick=()=>{
+    if(pending.length){ toast('담은 수정을 먼저 커밋하면 사건을 분석·커밋할 수 있어요'); }
+    ui.evDraft=r.events[+b.dataset.msev]; analysis=null; showTab('event'); });
+  const ap=$('#ms-apply'); if(ap) ap.onclick=applyMs;
+}
+function applyMs(){
+  const r=msResult, made={}; let n=0;
+  const idOf=x=>ent(state,x)?x:made[x];
+  r.groups.filter(g=>g.on).forEach(g=>{ const id=newId('grp'); made[g.name]=id; n++;
+    addManual(`/groups/${id}`, {id, name:g.name, kind:g.kind, parent:g.parent||null, traits:[], situation:{current:g.summary||'', status:'', history:[]}}); });
+  r.characters.filter(c=>c.on).forEach(c=>{ const id=newId('chr'); made[c.name]=id; n++;
+    const gid=c.group?idOf(c.group):null; const m=gid?[{group:gid, bond:0.6, ...(c.role?{role:c.role}:{})}]:[];
+    addManual(`/characters/${id}`, {id, name:c.name, aliases:c.aliases, memberships:m, traits:[], situation:{current:c.summary||'', status:'', history:[]}}); });
+  r.updates.filter(u=>u.on).forEach(u=>{ const e=ent(state,u.id); if(!e?.situation) return; n++;
+    const base=`/${coll(u.id)}/${u.id}/situation`; setManual(base+'/status', u.status); setManual(base+'/current', u.text); });
+  r.relations.filter(x=>x.on).forEach(x=>{ const from=idOf(x.from), to=idOf(x.to); if(!from||!to) return; n++;
+    const id=newId('rel'), rel={id, from, to, type:x.type, intensity:x.intensity}; if(x.note) rel.note=x.note; addManual(`/relations/${id}`, rel); });
+  ['characters','groups','updates','relations'].forEach(k=>{ r[k]=r[k].filter(x=>!x.on); });
+  toast(`${n}개를 담았어요. 위 노란 상자에서 커밋하면 버전으로 남아요`); render();
 }
 
 /* ---------- 관계도 ---------- */
@@ -619,13 +747,14 @@ const POS_ARCANE = {
 function graphState(){
   if(ui.graphVer==='preview' && analysis){ const s=clone(state); buildPatches(analysis,'preview',state).forEach(p=>applyPatch(s,p)); return s; }
   if(ui.graphVer==='work' || ui.graphVer==='preview'){ ui.graphVer='work'; return state; }
-  return stateAt(commits.findIndex(c=>c.id===ui.graphVer));
+  if(!byId(ui.graphVer)){ ui.graphVer='work'; return state; }
+  return stateOf(ui.graphVer);
 }
 function overlayMap(){
   const m={};
   let list=[];
   if(ui.graphVer==='preview' && analysis) list=finals(analysis).items.map(i=>({target:i.target, magnitude:i.w}));
-  else { const c=ui.graphVer==='work'?head():commits.find(c=>c.id===ui.graphVer); list=c?.impacts||[]; }
+  else { const c=ui.graphVer==='work'?head():byId(ui.graphVer); list=c?.impacts||[]; }
   list.forEach(i=>{ if(!m[i.target]||Math.abs(i.magnitude)>Math.abs(m[i.target])) m[i.target]=i.magnitude; });
   return m;
 }
@@ -688,13 +817,15 @@ function renderGraph(){
   };
   const e=ent(s,sel); const myRels=s.relations.filter(r=>r.from===sel||r.to===sel);
   const verLabel = ui.graphVer==='preview'?'AI 제안 미리보기':ui.graphVer==='work'?`HEAD ${head().id}`:ui.graphVer;
-  const ovSrc = ui.graphVer==='preview'?'미리보기 사건':(ui.graphVer==='work'?head():commits.find(c=>c.id===ui.graphVer))?.message;
+  const ovSrc = ui.graphVer==='preview'?'미리보기 사건':(ui.graphVer==='work'?head():byId(ui.graphVer))?.message;
+  const other = !['work','preview'].includes(ui.graphVer) && !commits.some(c=>c.id===ui.graphVer) ? byId(ui.graphVer) : null;
   $('#tab-graph').innerHTML = pendingBanner() + `
   <div class="Subhead"><h2>관계도</h2><span class="sha">${esc(verLabel)}</span>${ui.graphVer==='preview'?'<span class="Label Label--done">아직 커밋 안 됨</span>':''}
     <div class="actions">
       <select class="form-control" id="g-ver" style="width:auto;padding:3px 8px;font-size:12px" aria-label="버전">
         <option value="work" ${ui.graphVer==='work'?'selected':''}>현재 (HEAD${pending.length?' + 수동 수정':''})</option>
         ${analysis?`<option value="preview" ${ui.graphVer==='preview'?'selected':''}>AI 제안 미리보기</option>`:''}
+        ${other?`<option value="${other.id}" selected>${other.id} · ${esc(other.message)} (다른 갈래)</option>`:''}
         ${commits.slice().reverse().map(c=>`<option value="${c.id}" ${ui.graphVer===c.id?'selected':''}>${c.id} · ${esc(c.message)}</option>`).join('')}
       </select>
     </div></div>
@@ -766,7 +897,74 @@ function impactTable(c){
       <td class="caption">${esc((i.tags||[]).join(', '))}</td><td class="r num ${i.magnitude<0?'neg':'pos'}">${sf2(i.magnitude)}</td><td style="width:90px">${wbar(i.magnitude)}</td><td class="caption" style="min-width:160px">${esc(i.summary)}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
+const LANE_C=['var(--accent)','var(--done)','var(--success)','var(--severe)','var(--sponsor)','var(--attention)'];
+function histHead(){
+  return `<div class="Subhead"><h2>버전 기록</h2>
+    <select class="form-control" id="h-branch" style="width:auto;padding:3px 8px;font-size:12px" aria-label="갈래">${branches.map(b=>`<option value="${b.id}" ${b.id===branchId?'selected':''}>${esc(b.name)}</option>`).join('')}</select>
+    <span class="muted">커밋 ${commits.length}개${branches.length>1?` · 갈래 ${branches.length}개`:''}</span>
+    <div class="actions"><div class="seg" role="group" aria-label="보기 방식">${[['tree','트리'],['list','목록']].map(([k,l])=>`<button aria-pressed="${(ui.histView||'tree')===k}" data-hv="${k}">${l}</button>`).join('')}</div></div></div>`;
+}
+function wireHistHead(){
+  $('#h-branch').onchange=ev=>{ if(switchBranch(ev.target.value)) toast(`'${curBranch().name}' 갈래로 옮겼어요`); render(); };
+  $$('[data-hv]').forEach(b=>b.onclick=()=>{ ui.histView=b.dataset.hv; renderHistory(); });
+}
+/* 커밋 트리: 갈래 순서대로 줄기를 훑어 처음 만난 갈래의 칸에 커밋을 둔다(main이 맨 왼쪽). 최신이 위. */
+function renderTree(){
+  const ROW=44, GAP=20, X0=14;
+  const laneOf={}; branches.forEach((b,bi)=>lineOf(b.head).forEach(c=>{ if(laneOf[c.id]===undefined) laneOf[c.id]=bi; }));
+  const used=[...new Set(Object.values(laneOf))].sort((x,y)=>x-y), lx=l=>X0+used.indexOf(l)*GAP, col=c=>LANE_C[laneOf[c.id]%LANE_C.length];
+  const rows=allCommits.slice().reverse(), rowOf={}; rows.forEach((c,i)=>rowOf[c.id]=i);
+  const SW=X0*2+(used.length-1)*GAP, y=i=>i*ROW+ROW/2;
+  const heads={}; branches.forEach(b=>(heads[b.head]=heads[b.head]||[]).push(b));
+  const onLine=new Set(commits.map(c=>c.id));
+  const sel=ui.treeSel && byId(ui.treeSel) ? ui.treeSel : head().id; ui.treeSel=sel;
+  const lines=rows.filter(c=>c.parent && rowOf[c.parent]!==undefined).map(c=>{
+    const x1=lx(laneOf[c.id]), y1=y(rowOf[c.id]), x2=lx(laneOf[c.parent]), y2=y(rowOf[c.parent]);
+    const d = x1===x2 ? `M${x1},${y1} L${x2},${y2}` : `M${x1},${y1} L${x1},${y2-ROW/2} Q${x1},${y2} ${x2},${y2}`;
+    return `<path d="${d}" style="fill:none;stroke:${col(c)};stroke-width:2" opacity="${onLine.has(c.id)?1:.5}"/>`;
+  }).join('');
+  const dots=rows.map((c,i)=>{ const hd=c.id===head().id;
+    return `<circle cx="${lx(laneOf[c.id])}" cy="${y(i)}" r="${hd?6:5}" style="fill:${hd?'var(--bg)':col(c)};stroke:${col(c)};stroke-width:${hd?3:0}"/>`; }).join('');
+  const list=rows.map(c=>`<button class="tree-row" data-tc="${c.id}" aria-current="${c.id===sel}" style="height:${ROW}px;padding-left:${SW+6}px;${onLine.has(c.id)?'':'color:var(--fg-muted)'}">
+      <span class="tree-msg">${esc(c.message)}</span>
+      ${(heads[c.id]||[]).map(b=>`<span class="Label ${b.id===branchId?'Label--accent':''}">${esc(b.name)}</span>`).join('')}
+      <span class="sha">${c.id}</span></button>`).join('');
+  const c=byId(sel);
+  $('#tab-history').innerHTML = pendingBanner() + histHead() + `
+  <div class="split-r">
+    <div class="Box"><div class="Box-header"><h3>커밋 트리</h3><span class="caption right">커밋을 누르면 오른쪽에 자세히 보여요</span></div>
+      <div class="tree-graph"><svg width="${SW}" height="${rows.length*ROW}" aria-hidden="true">${lines}${dots}</svg>${list}</div></div>
+    <aside class="stack">
+      <div class="Box"><div class="Box-header"><h3>${esc(c.message)}</h3></div>
+        <div class="Box-body stack" style="gap:8px">
+          <div class="caption" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="Label">${COMMIT_KIND[c.kind]||c.kind}</span>${fmtDate(c.created_at)}<span class="sha">${c.id}</span>${c.patches.length?`변경 ${c.patches.length}건`:''}</div>
+          ${c.event?`<div style="padding:8px 12px;background:var(--bg-subtle);border-radius:6px">${esc(c.event.description)}${c.event.story_time?`<div class="caption" style="margin-top:4px">작중 시점: ${esc(c.event.story_time)}</div>`:''}</div>`:''}
+          ${onLine.has(c.id)?'':`<div class="caption">지금 갈래('${esc(curBranch().name)}')에는 없는 커밋이에요.</div>`}
+        </div>
+        <div class="Box-row" style="flex-wrap:wrap;gap:8px">
+          ${(heads[c.id]||[]).filter(b=>b.id!==branchId).map(b=>`<button class="btn btn-sm btn-primary" data-sw="${b.id}">'${esc(b.name)}' 갈래로 이동</button>`).join('')}
+          <button class="btn btn-sm" id="t-branch">${icon('commit')}여기서 '만약에' 갈래 만들기</button>
+          <button class="btn btn-sm" id="t-graph">${icon('graph')}이 시점 관계도</button>
+        </div></div>
+      <div class="Box"><div class="Box-header"><h3>갈래</h3><span class="Counter">${branches.length}</span></div>
+        ${branches.map((b,bi)=>`<div class="Box-row"><span class="dot" style="background:${LANE_C[bi%LANE_C.length]}"></span>
+          <div style="flex:1;min-width:0"><b>${esc(b.name)}</b>${b.id===branchId?' <span class="Label Label--accent">지금</span>':''}<div class="caption">커밋 ${lineOf(b.head).length}개 · 끝 <span class="sha">${b.head}</span></div></div>
+          ${b.id===branchId?'':`<button class="btn btn-sm" data-sw="${b.id}">이동</button>${b.id==='main'?'':`<button class="btn btn-sm btn-danger" data-delb="${b.id}">지우기</button>`}`}</div>`).join('')}
+        <div class="Box-row caption">과거 커밋에서 '만약에' 갈래를 만들면 원래 이야기는 그대로 두고 다른 전개를 시험해 볼 수 있어요. 갈래 합치기는 준비 중이에요.</div></div>
+    </aside>
+  </div>`;
+  wireHistHead();
+  $$('[data-tc]').forEach(b=>b.onclick=()=>{ ui.treeSel=b.dataset.tc; renderHistory(); });
+  $$('[data-sw]').forEach(b=>b.onclick=()=>{ if(switchBranch(b.dataset.sw)) toast(`'${curBranch().name}' 갈래로 옮겼어요`); render(); });
+  $('#t-branch').onclick=()=>{ const name=(prompt('새 갈래 이름 (예: 만약 바이가 떠나지 않았다면)')||'').trim(); if(!name) return; createBranch(sel, name); render(); };
+  $('#t-graph').onclick=()=>{ ui.graphVer = sel===head().id?'work':sel; showTab('graph'); };
+  $$('[data-delb]').forEach(b=>b.onclick=()=>{ const br=branches.find(x=>x.id===b.dataset.delb);
+    if(!confirm(`'${br.name}' 갈래를 지울까요? 이 갈래에만 있는 커밋도 함께 지워져요.`)) return;
+    deleteBranch(br.id); toast('갈래를 지웠어요'); render(); });
+  wirePending();
+}
 function renderHistory(){
+  if((ui.histView||'tree')==='tree') return renderTree();
   const n=commits.length;
   if(!commits.some(c=>c.id===ui.cmpA)) ui.cmpA=commits[Math.max(0,n-2)].id;
   if(!commits.some(c=>c.id===ui.cmpB)) ui.cmpB=commits[n-1].id;
@@ -774,7 +972,7 @@ function renderHistory(){
   const diff=coalesce(ia,ib); const lines=diff.flatMap(p=>patchLines(stateAt(ib),p));
   const cnt={add:0,chg:0,del:0}; lines.forEach(([c])=>cnt[c]++);
   $('#tab-history').innerHTML = pendingBanner() + `
-  <div class="Subhead"><h2>버전 기록</h2><span class="muted">main · 커밋 ${n}개</span></div>
+  ${histHead()}
   <div class="split-r">
     <div class="timeline">
       ${commits.map((c,i)=>({c,i})).reverse().map(({c,i})=>{ const open=ui.open[c.id] ?? (i===n-1);
@@ -822,10 +1020,11 @@ function renderHistory(){
       else q={op:'add', path:p.path, after:p.before};
       applyPatch(state,q); inv.push(q);
     });
-    const id=newSha(); commits.push({id, parent:head().id, kind:'manual', message:`되돌리기: ${b.dataset.ok} 시점으로 복원`, created_at:new Date().toISOString(), impacts:[], patches:inv});
+    const id=newSha(); addCommit({id, parent:head().id, kind:'manual', message:`되돌리기: ${b.dataset.ok} 시점으로 복원`, created_at:new Date().toISOString(), impacts:[], patches:inv});
     ui.confirm=null; ui.cmpA=b.dataset.ok; ui.cmpB=id; ui.open={[id]:true}; analysis=null; toast(`${b.dataset.ok} 시점으로 되돌렸습니다`); render();
   });
   $('#h-graph').onclick=()=>{ ui.graphVer=commits[ib].id===head().id?'work':commits[ib].id; showTab('graph'); };
+  wireHistHead();
   wirePending();
 }
 
@@ -941,12 +1140,12 @@ function setCloud(st){
   el.textContent=m[0]; el.className='Label '+m[1];
 }
 function saveWorld(){
-  const json=JSON.stringify({state, commits, pending});
+  const json=JSON.stringify(snapshot());
   if(json===lastJson) return;
   lastJson=json; savedAt=Date.now();
-  try{ localStorage.setItem(saveKey(worldKey), JSON.stringify({state, commits, pending, savedAt})); }catch(e){}
+  try{ localStorage.setItem(saveKey(worldKey), JSON.stringify({...snapshot(), savedAt})); }catch(e){}
   clearTimeout(cloudTimer);
-  const key=worldKey, at=savedAt, data={state, commits, pending, meta:DATA.meta};
+  const key=worldKey, at=savedAt, data={...snapshot(), meta:DATA.meta};
   setCloud('saving');
   cloudTimer=setTimeout(()=>{
     saveCloud(key, data, at).then(()=>setCloud('synced')).catch(err=>{ console.warn('Firestore 저장 실패', err); setCloud('offline'); });
@@ -968,9 +1167,9 @@ function syncFromCloud(k){
   loadCloud(k).then(remote=>{
     if(k!==worldKey) return;
     if(remote && remote.updatedAt>savedAt && remote.data?.state){
-      state=remote.data.state; commits=remote.data.commits; pending=remote.data.pending||[];
-      savedAt=remote.updatedAt; lastJson=JSON.stringify({state, commits, pending});
-      try{ localStorage.setItem(saveKey(k), JSON.stringify({state, commits, pending, savedAt})); }catch(e){}
+      state=remote.data.state; setTree(remote.data.commits, remote.data.branches, remote.data.branch); pending=remote.data.pending||[];
+      savedAt=remote.updatedAt; lastJson=JSON.stringify(snapshot());
+      try{ localStorage.setItem(saveKey(k), JSON.stringify({...snapshot(), savedAt})); }catch(e){}
       render(); toast('클라우드에 저장된 세계관을 불러왔습니다');
     } else if(!remote || remote.updatedAt<savedAt){
       lastJson=null; saveWorld();
@@ -981,16 +1180,16 @@ function syncFromCloud(k){
 function loadWorld(k, fresh=false){
   W=WORLDS[k]; DATA=W.data; POS=W.pos||{}; SAMPLE=W.sample||{title:'', description:'', story_time:'', direct:[], rewrite:{}, relations:[]}; worldKey=k;
   const pe=$('#proj-edit'); if(pe) pe.style.display=k.startsWith('p_')?'':'none';
-  state=clone(DATA.state); commits=clone(DATA.commits); pending=[]; analysis=null;
+  state=clone(DATA.state); setTree(clone(DATA.commits)); pending=[]; analysis=null;
   if(!fresh){
     try{
       const saved=JSON.parse(localStorage.getItem(saveKey(k)));
-      if(saved?.state && saved?.commits){ state=saved.state; commits=saved.commits; pending=saved.pending||[]; }
+      if(saved?.state && saved?.commits){ state=saved.state; setTree(saved.commits, saved.branches, saved.branch); pending=saved.pending||[]; }
       savedAt=saved?.savedAt||0;
     }catch(e){ savedAt=0; }
   } else savedAt=0;
-  lastJson=JSON.stringify({state, commits, pending});
-  Object.assign(ui, {sel:W.sel, editing:null, graphVer:'work', relFilter:'all', cmpA:null, cmpB:null, confirm:null, open:{}});
+  lastJson=JSON.stringify(snapshot());
+  Object.assign(ui, {sel:W.sel, treeSel:null, editing:null, graphVer:'work', relFilter:'all', cmpA:null, cmpB:null, confirm:null, open:{}});
   try{ localStorage.setItem('gitstory-world', k); }catch(e){}
 }
 $('#world-pick').onchange=ev=>{ loadWorld(ev.target.value); render(); syncFromCloud(worldKey); toast(`${DATA.meta.title} 세계관을 불러왔습니다`); };
@@ -1049,7 +1248,27 @@ const av=$('#user-avatar'); av.title=USER.name;
 if(USER.photo){ const img=document.createElement('img'); img.src=USER.photo; img.alt=''; img.referrerPolicy='no-referrer'; img.style.cssText='width:100%;height:100%;border-radius:50%'; av.appendChild(img); }
 else av.textContent=(USER.name||'?').slice(0,1).toUpperCase();
 $('#sign-out').onclick=()=>signOutUser().then(()=>location.reload());
+/* ---------- 사용 안내 (처음 한 번, 이후 도움말 버튼) ---------- */
+const TOUR=[
+  ['world','세계관','인물, 단체, 배경을 정리하는 곳이에요. 왼쪽 위 + 인물, + 단체로 추가하고 성격과 소속 결속도를 정해 두면 사건 영향을 계산할 때 쓰여요. 지금은 예시 세계관이 열려 있어요.'],
+  ['event','사건 입력','이야기에서 일어난 일을 적고 AI 영향 분석을 누르면, 누가 직접 영향을 받고 소속을 따라 어떻게 퍼지는지 보여줘요. 확인한 뒤 사건 커밋을 누르면 버전으로 남아요.'],
+  ['manuscript','원고 붙여넣기','쓴 원고를 한 화씩 붙여넣으면 AI가 새 인물, 바뀐 상황, 새 관계, 큰 사건을 후보로 골라줘요. 체크한 것만 반영돼요.'],
+  ['graph','관계도','단체와 인물의 관계를 한눈에 봐요. 위쪽에서 버전을 고르면 그 시점의 관계도로 바뀌어요.'],
+  ['history','버전 기록','모든 변화가 커밋 트리로 쌓여요. 과거 커밋에서 \'만약에\' 갈래를 만들어 다른 전개를 시험하고, 언제든 되돌릴 수 있어요. 내 이야기는 위쪽 + 새 프로젝트로 시작하세요.']
+];
+function tour(i=0){
+  $('#tour')?.remove(); $$('.tour-hl').forEach(el=>el.classList.remove('tour-hl'));
+  if(i>=TOUR.length){ try{ localStorage.setItem('gitstory-tour-done','1'); }catch(e){} return; }
+  const [tab,title,text]=TOUR[i]; showTab(tab);
+  const tb=$(`[role=tab][data-tab=${tab}]`); tb.classList.add('tour-hl'); tb.scrollIntoView({inline:'center', block:'nearest'});
+  document.body.insertAdjacentHTML('beforeend', `<div class="tour" id="tour" role="dialog" aria-label="사용 안내"><div class="caption">사용 안내 ${i+1} / ${TOUR.length}</div><h3>${title}</h3><p>${text}</p>
+    <div class="tour-actions"><button class="btn btn-sm" id="tour-skip">건너뛰기</button>${i?'<button class="btn btn-sm" id="tour-prev">이전</button>':''}<button class="btn btn-sm btn-primary" id="tour-next">${i===TOUR.length-1?'시작하기':'다음'}</button></div></div>`);
+  $('#tour-next').onclick=()=>tour(i+1); $('#tour-skip').onclick=()=>tour(TOUR.length);
+  const pv=$('#tour-prev'); if(pv) pv.onclick=()=>tour(i-1);
+}
+$('#help-btn').onclick=()=>tour(0);
 refreshUsage();
 render('world');
+try{ if(!localStorage.getItem('gitstory-tour-done')) tour(0); }catch(e){}
 syncFromCloud(startWorld);
 }
