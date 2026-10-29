@@ -801,7 +801,7 @@ function renderGraph(){
       halo = e.id.startsWith('chr_') ? `<circle cx="${x}" cy="${y}" r="${27+Math.abs(w)*8}" style="fill:${hc};opacity:.16"/><circle cx="${x}" cy="${y}" r="${27+Math.abs(w)*8}" style="fill:none;stroke:${hc};stroke-width:1.5"/>`
         : '';
     }
-    const badge = (w!==undefined && Math.abs(w)>=0.25) ? `<g><rect x="${x+16}" y="${y-36}" width="44" height="18" rx="9" style="fill:${w<0?'var(--danger)':'var(--success)'}"/><text x="${x+38}" y="${y-23}" text-anchor="middle" font-size="11" font-weight="600" style="fill:#fff" class="num">${sf2(w)}</text></g>` : '';
+    const badge = (w!==undefined && Math.abs(w)>=0.25) ? `<g><rect x="${x+16}" y="${y-36}" width="44" height="18" rx="9" style="fill:${w<0?'var(--danger)':'var(--success)'}"/><text x="${x+38}" y="${y-23}" text-anchor="middle" font-size="11" font-weight="600" style="fill:var(--bg)" class="num">${sf2(w)}</text></g>` : '';
     let shape;
     if(e.id.startsWith('grp_')){
       const nat=e.kind==='nation'; const wd=e.name.length*(nat?15:13)+(nat?36:26), h=nat?38:32;
@@ -1267,6 +1267,33 @@ function tour(i=0){
   const pv=$('#tour-prev'); if(pv) pv.onclick=()=>tour(i-1);
 }
 $('#help-btn').onclick=()=>tour(0);
+/* ---------- 테마 고르기: 원고지(기본)·밤의 서고·작업 노트 × 시스템·밝게·어둡게. 이 브라우저에 기억한다 ---------- */
+const SKINS=[['paper','원고지',['#fbfbf7','#2f7a5b','#1c211f']],['night','밤의 서고',['#11151f','#d6a84f','#ece3cf']],['note','작업 노트',['#f7f7fb','#4b3fe0','#17172b']]];
+const MODES=[['system','시스템'],['light','밝게'],['dark','어둡게']];
+const pref=(k,d)=>{ try{ return localStorage.getItem(k)||d; }catch(e){ return d; } };
+function applyTheme(skin, mode){
+  const r=document.documentElement;
+  if(skin==='paper') delete r.dataset.skin; else r.dataset.skin=skin;
+  if(mode==='system') delete r.dataset.theme; else r.dataset.theme=mode;
+  try{ localStorage.setItem('gitstory-skin',skin); localStorage.setItem('gitstory-mode',mode); }catch(e){}
+}
+function themePop(){
+  const skin=pref('gitstory-skin','paper'), mode=pref('gitstory-mode','system');
+  return `<div class="theme-pop" id="theme-pop" role="dialog" aria-label="테마">
+    <div class="lab">테마</div><div class="theme-opts">${SKINS.map(([k,l,c])=>`<button type="button" data-skin="${k}" aria-pressed="${skin===k}"><span class="swatch">${c.map(x=>`<i style="background:${x}"></i>`).join('')}</span>${l}</button>`).join('')}</div>
+    <div class="lab">밝기</div><div class="theme-opts">${MODES.map(([k,l])=>`<button type="button" data-mode="${k}" aria-pressed="${mode===k}" ${skin==='night'?'disabled':''}>${l}</button>`).join('')}</div>
+    ${skin==='night'?'<div class="caption">밤의 서고는 어두운 화면 하나만 있어요.</div>':''}</div>`;
+}
+function toggleTheme(open){
+  $('#theme-pop')?.remove(); const btn=$('#theme-btn'); btn.setAttribute('aria-expanded', open);
+  if(!open) return;
+  $('.app-header').insertAdjacentHTML('beforeend', themePop());
+  $$('#theme-pop [data-skin]').forEach(b=>b.onclick=()=>{ const sk=b.dataset.skin; applyTheme(sk, sk==='night'?'system':pref('gitstory-mode','system')); toggleTheme(true); render(); });
+  $$('#theme-pop [data-mode]').forEach(b=>b.onclick=()=>{ applyTheme(pref('gitstory-skin','paper'), b.dataset.mode); toggleTheme(true); render(); });
+}
+$('#theme-btn').onclick=ev=>{ ev.stopPropagation(); toggleTheme(!$('#theme-pop')); };
+document.addEventListener('click', ev=>{ const pop=$('#theme-pop'); if(pop && !ev.target.closest('#theme-pop')) toggleTheme(false); });
+document.addEventListener('keydown', ev=>{ if(ev.key==='Escape' && $('#theme-pop')) toggleTheme(false); });
 refreshUsage();
 render('world');
 try{ if(!localStorage.getItem('gitstory-tour-done')) tour(0); }catch(e){}
