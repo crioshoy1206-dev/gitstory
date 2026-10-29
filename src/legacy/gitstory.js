@@ -45,7 +45,7 @@ const RELEVANCE = {"expansionism": {"기회": 0.6, "권력공백": 0.5}, "milita
 let state, commits;
 let pending = [];      // 커밋 전 수동 수정 patches
 let analysis = null;   // 사건 분석 중인 내용
-const ui = {sel:null, graphVer:'work', relFilter:'all', showMembers:true, overlay:true, cmpA:null, cmpB:null, confirm:null, open:{}};
+const ui = {sel:null, graphVer:'work', relFilter:'all', showMembers:true, overlay:false, cmpA:null, cmpB:null, confirm:null, open:{}};
 
 const head = () => commits.at(-1);
 
@@ -791,7 +791,7 @@ function renderWorld(){
     const w=1+r.intensity*3.5;
     const lx=(x1+2*cx+x2)/4, ly=(y1+2*cy+y2)/4;
     return `<g opacity="${dim?.35:1}"><path d="M${x1},${y1} Q${cx},${cy} ${x2},${y2}" style="fill:none;stroke:${R.c};stroke-width:${w};${R.dash?`stroke-dasharray:${R.dash}`:''}" stroke-linecap="round" ${r.directed?'marker-end="url(#arrow)"':''}><title>${esc(nm(s,r.from))} ${r.directed?'→':'↔'} ${esc(nm(s,r.to))} · ${R.l} ${f2(r.intensity)}${r.note?' · '+esc(r.note):''}</title></path>
-      ${!dim?`<text x="${lx}" y="${ly-5}" text-anchor="middle" font-size="11" style="fill:${R.c};paint-order:stroke;stroke:var(--bg);stroke-width:4px">${R.l} ${f2(r.intensity)}</text>`:''}</g>`;
+      ${sel && !dim?`<text x="${lx}" y="${ly-5}" text-anchor="middle" font-size="11" style="fill:${R.c};paint-order:stroke;stroke:var(--bg);stroke-width:4px">${R.l} ${f2(r.intensity)}</text>`:''}</g>`;
   };
   const memberLines = ui.showMembers ? [
     ...s.groups.filter(g=>g.parent).map(g=>({a:g.id,b:g.parent,bond:g.parent_bond??0.6,active:true})),
@@ -807,25 +807,27 @@ function renderWorld(){
         : '';
     }
     const badge = (w!==undefined && Math.abs(w)>=0.25) ? `<g><rect x="${x+16}" y="${y-36}" width="44" height="18" rx="9" style="fill:${w<0?'var(--danger)':'var(--success)'}"/><text x="${x+38}" y="${y-23}" text-anchor="middle" font-size="11" font-weight="600" style="fill:var(--bg)" class="num">${sf2(w)}</text></g>` : '';
-    let shape;
+    let shape, under;
     if(e.id.startsWith('grp_')){
       const nat=e.kind==='nation'; const wd=e.name.length*(nat?15:13)+(nat?36:26), h=nat?38:32;
       const hb = (w!==undefined && Math.abs(w)>=0.25) ? `<rect x="${x-wd/2-6}" y="${y-h/2-6}" width="${wd+12}" height="${h+12}" rx="10" style="fill:${w<0?'var(--danger)':'var(--success)'};opacity:.16;stroke:${w<0?'var(--danger)':'var(--success)'};stroke-width:1.5"/>` : '';
+      under = `<rect x="${x-wd/2}" y="${y-h/2}" width="${wd}" height="${h}" rx="6" style="fill:var(--bg)"/>`;
       shape = `${hb}<rect class="nshape" x="${x-wd/2}" y="${y-h/2}" width="${wd}" height="${h}" rx="6" style="fill:${nat?'var(--bg-muted)':'var(--bg-subtle)'};stroke:${col};stroke-width:${isSel?3:nat?2:1.5};${e.kind==='solo'?'stroke-dasharray:4 3':''}"/>
         <text x="${x}" y="${y+5}" text-anchor="middle" font-size="${nat?15:13}" font-weight="${nat?700:600}" style="fill:var(--fg)">${esc(e.name)}</text>`;
     } else {
+      under = `<circle cx="${x}" cy="${y}" r="22" style="fill:var(--bg)"/>`;
       shape = `${halo}<circle class="nshape" cx="${x}" cy="${y}" r="22" style="fill:var(--bg);stroke:${col};stroke-width:${isSel?3.5:2}"/>
         <text x="${x}" y="${y+5}" text-anchor="middle" font-size="14" font-weight="700" style="fill:${col}">${esc(initial(e.name))}</text>
         <text x="${x}" y="${y+40}" text-anchor="middle" font-size="12" style="fill:var(--fg);paint-order:stroke;stroke:var(--bg);stroke-width:4px">${esc(e.name)}${dead?' (사망)':''}</text>`;
     }
-    return `<g class="node" data-id="${e.id}" tabindex="0" role="button" aria-label="${esc(e.name)}" opacity="${dead?.5:dim?.45:1}">${shape}${badge}</g>`;
+    return `<g class="node" data-id="${e.id}" tabindex="0" role="button" aria-label="${esc(e.name)}">${under}<g opacity="${dead?.5:dim?.4:1}">${shape}${badge}</g></g>`;
   };
   const verLabel = ui.graphVer==='preview'?'AI 제안 미리보기':ui.graphVer==='work'?`지금 · ${cname(head().id)}`:cnum(ui.graphVer)+cname(ui.graphVer);
   const ovSrc = ui.graphVer==='preview'?'미리보기 사건':(ui.graphVer==='work'?head():byId(ui.graphVer))?.message;
   const other = !['work','preview'].includes(ui.graphVer) && !commits.some(c=>c.id===ui.graphVer) ? byId(ui.graphVer) : null;
   const panel = pe ? `<aside class="detail" id="detail" aria-label="${esc(pe.name||pe.title)} 자세히">
       <div class="detail-bar"><span class="caption">${editable?'여기서 바로 고칠 수 있어요':'지난 시점이라 보기만 할 수 있어요'}</span><button class="btn btn-sm" id="detail-close">닫기</button></div>
-      ${editable ? (pe.id.startsWith('bg_')?bgDetail(pe):entityDetail(pe)) : pastDetail(s,pe,ov,ovSrc)}</aside>` : '';
+      ${editable ? (pe.id.startsWith('bg_')?bgDetail(pe):entityDetail(pe)) : pastDetail(s,pe,ov,ovSrc)}</aside>` : overview(s);
   const graph = first ? graphBox() : `<div class="Box"><div class="Box-body caption" style="text-align:center;padding:48px 16px">아직 인물이나 단체가 없어요.<br>왼쪽 도구창의 <b>+ 인물 추가</b>, <b>+ 단체 추가</b>로 시작하면 여기에 관계도가 그려져요.</div></div>`;
   function graphBox(){ return `<div class="Box">
       <div class="Box-header" style="gap:12px">
@@ -857,7 +859,7 @@ function renderWorld(){
         ${commits.slice().reverse().map(c=>`<option value="${c.id}" ${ui.graphVer===c.id?'selected':''}>${cnum(c.id)}${esc(cname(c.id))}</option>`).join('')}
       </select>
     </div></div>
-  <div class="ws${pe?' has-detail':''}"><div class="ws-graph">${graph}</div>${panel}</div>`;
+  <div class="ws has-detail"><div class="ws-graph">${graph}</div>${panel}</div>`;
   $$('[data-f]').forEach(b=>b.onclick=()=>{ ui.relFilter=b.dataset.f; renderWorld(); });
   $('#g-ver').onchange=ev=>{ ui.graphVer=ev.target.value; ui.editing=null; renderWorld(); };
   const gm=$('#g-mem'); if(gm) gm.onchange=ev=>{ ui.showMembers=ev.target.checked; renderWorld(); };
@@ -865,9 +867,25 @@ function renderWorld(){
   $$('.node').forEach(n=>{ const go=()=>pick(n.dataset.id); n.onclick=go; n.onkeydown=ev=>{ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); go(); } }; });
   $$('[data-pick],[data-go]').forEach(b=>b.onclick=()=>pick(b.dataset.pick||b.dataset.go));
   const dc=$('#detail-close'); if(dc) dc.onclick=()=>{ ui.sel=null; ui.editing=null; render('world'); };
+  const oe=$('#ov-event'); if(oe) oe.onclick=()=>showTab('event');
+  const oh=$('#ov-hist'); if(oh) oh.onclick=()=>showTab('history');
   const gn=$('#g-now'); if(gn) gn.onclick=()=>{ ui.graphVer='work'; render('world'); };
   if(pe && editable) wireDetail(pe);
   wirePending();
+}
+/* 아무것도 고르지 않았을 때 오른쪽 패널: 세계관 한눈에 보기 */
+function overview(s){
+  const recent=commits.slice(-3).reverse();
+  return `<aside class="detail" id="detail" aria-label="세계관 요약">
+    <div class="Box"><div class="Box-header"><h3>세계관 한눈에</h3></div>
+      <div class="Box-body stack" style="gap:12px">
+        <div class="ov-stats">${[['인물',s.characters.length],['단체',s.groups.length],['배경',s.background.length],['관계',s.relations.length]].map(([l,n])=>`<div><b>${n}</b><span>${l}</span></div>`).join('')}</div>
+        <div class="caption">관계도나 왼쪽 목록에서 인물, 단체를 누르면 여기서 상황과 관계를 보고 바로 고칠 수 있어요.</div>
+      </div></div>
+    <div class="Box"><div class="Box-header"><h3>최근 사건</h3><span class="Counter">${commits.length}</span></div>
+      ${recent.map(c=>`<div class="Box-row" style="align-items:flex-start"><span class="ov-n">${cnum(c.id).replace('. ','')}</span><div style="min-width:0"><div>${esc(cname(c.id))}</div>${c.event?.story_time?`<div class="caption">${esc(c.event.story_time)}</div>`:''}</div></div>`).join('')}
+      <div class="Box-row"><button class="btn btn-sm" id="ov-event">${icon('bolt')}새 사건 입력</button><button class="btn btn-sm" id="ov-hist">버전 기록 보기</button></div></div>
+  </aside>`;
 }
 /* 지난 시점을 보고 있을 때의 상세 (보기 전용) */
 function pastDetail(s,e,ov,ovSrc){
