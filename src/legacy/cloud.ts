@@ -86,3 +86,16 @@ export type AnalyzeResult = { analysis: Record<string, unknown>; tokens: number;
 export function analyzeEvent(event: { title: string; description: string; story_time: string }, world: unknown) {
   return callApi<AnalyzeResult>("/api/analyze", { method: "POST", body: JSON.stringify({ event, world }) });
 }
+
+export type ExtractResult = {
+  characters: { name: string; aliases: string[]; summary: string; group: string; role: string }[];
+  groups: { name: string; kind: string; parent: string; summary: string }[];
+  updates: { id: string; status: string; text: string }[];
+  relations: { from: string; to: string; type: string; intensity: number; note: string }[];
+  events: { title: string; description: string; story_time: string }[];
+};
+
+/** 원고 한 화를 AI로 읽어 세계관에 반영할 후보를 받는다. 원고는 서버에 저장되지 않는다. */
+export function extractManuscript(text: string, world: unknown) {
+  return callApi<{ result: ExtractResult; tokens: number; model: string; provider: "claude" | "gemini"; usage: Usage }>("/api/extract", { method: "POST", body: JSON.stringify({ text, world }) });
+}
