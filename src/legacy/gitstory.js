@@ -18,6 +18,7 @@ USER = user;
 
 
 let DATA, POS, SAMPLE, W;
+let LAYOUT = {};       // 사용자가 관계도에서 끌어 옮긴 위치 {id:[x,y]} (버전과 무관하게 저장)
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -34,8 +35,8 @@ const REL = {
   coexist:{l:'공존', c:'var(--accent)', dash:'7 5'}, alliance:{l:'동맹', c:'var(--accent)'},
   dominate:{l:'지배', c:'var(--done)'}, family:{l:'가족', c:'var(--sponsor)'}, personal:{l:'개인 관계', c:'var(--fg-muted)'}
 };
-const SRC = {direct:['직접','Label--danger'], propagated:['전파','Label--done'], manual:['수동','Label--accent']};
-const COMMIT_KIND = {init:'초기 설정', event:'사건', manual:'수동 수정'};
+const SRC = {direct:['직접','Label--danger'], propagated:['전파','Label--done'], manual:['내가 고침','Label--accent']};
+const COMMIT_KIND = {init:'처음 설정', event:'사건', manual:'직접 수정'};
 const TAGS = ['위협','분노','상실','권력공백','보복위협','탄압','기회','이익','동원','정체성'];
 
 /* 성격이 영향(tags)에 얼마나 반응하는지(relevance). 실제 앱에서는 AI가 판단하는 값. */
@@ -43,7 +44,7 @@ const RELEVANCE = {"expansionism": {"기회": 0.6, "권력공백": 0.5}, "milita
 
 /* ---------- 상태 ---------- */
 let state, commits;
-let pending = [];      // 커밋 전 수동 수정 patches
+let pending = [];      // 아직 기록에 넣지 않은 직접 수정 patches (render 때 flushPending이 바로 기록)
 let analysis = null;   // 사건 분석 중인 내용
 const ui = {sel:null, graphVer:'work', relFilter:'all', showMembers:true, overlay:false, cmpA:null, cmpB:null, confirm:null, open:{}};
 
@@ -58,11 +59,12 @@ function lineOf(id){ const out=[]; let c=byId(id), n=0; while(c && n++<5000){ ou
 function curBranch(){ return branches.find(b=>b.id===branchId); }
 function addCommit(c){ commits.push(c); allCommits.push(c); curBranch().head=c.id; }
 function setTree(cs, brs, bid){
-  allCommits=cs; branches=brs?.length ? brs : [{id:'main', name:'main', head:cs.at(-1).id}];
+  allCommits=cs; branches=brs?.length ? brs : [{id:'main', name:'본편', head:cs.at(-1).id}];
+  branches.forEach(b=>{ if(b.id==='main' && b.name==='main') b.name='본편'; });
   branchId=branches.some(b=>b.id===bid) ? bid : branches[0].id;
   commits=lineOf(curBranch().head);
 }
-const snapshot = () => ({state, commits:allCommits, pending, branches, branch:branchId});
+const snapshot = () => ({state, commits:allCommits, pending, branches, branch:branchId, layout:LAYOUT});
 function all(s){ return [...s.groups, ...s.characters, ...s.background]; }
 function ent(s,id){ return all(s).find(x=>x.id===id); }
 function nm(s,id){ const e=ent(s,id)||ent(state,id); return e ? (e.name||e.title) : id; }
@@ -131,17 +133,17 @@ function stateOf(id){
 }
 function switchBranch(id){
   const b=branches.find(x=>x.id===id); if(!b || id===branchId) return false;
-  if(pending.length){ toast('수동 수정을 먼저 커밋하거나 버려야 갈래를 옮길 수 있어요'); return false; }
+  flushPending();
   state=stateOf(b.head); branchId=id; commits=lineOf(b.head); analysis=null;
   Object.assign(ui, {graphVer:'work', cmpA:null, cmpB:null, confirm:null, open:{}});
   return true;
 }
 function createBranch(fromId, name){
-  if(pending.length){ toast('수동 수정을 먼저 커밋하거나 버려야 갈래를 만들 수 있어요'); return; }
+  flushPending();
   const id='b_'+Date.now().toString(36);
   branches.push({id, name, head:fromId, created_at:new Date().toISOString()});
   switchBranch(id); ui.treeSel=fromId;
-  toast(`'${name}' 갈래를 만들었어요. 이제 사건을 커밋하면 이 갈래에 쌓여요`);
+  toast(`'${name}' 전개를 만들었어요. 이제 사건을 기록하면 이 전개에 쌓여요`);
 }
 function deleteBranch(id){
   branches=branches.filter(b=>b.id!==id);
@@ -150,28 +152,30 @@ function deleteBranch(id){
 }
 function describePath(s,path){
   const seg=path.split('/').slice(1); const [c,id]=seg; const rest=seg.slice(2).join('/');
-  if(c==='relations'){ const r=ent2rel(s,id); const who=r?`${nm(s,r.from)} ↔ ${nm(s,r.to)} ${REL[r.type]?.l||''}`:id; return rest?`관계 ${who} · ${rest==='intensity'?'강도':rest==='note'?'메모':rest==='type'?'유형':rest}`:`관계 ${who}`; }
+  if(c==='relations'){ const r=ent2rel(s,id); const who=r?`${nm(s,r.from)} ↔ ${nm(s,r.to)} ${REL[r.type]?.l||''}`:id; return rest?`관계 ${who} · ${rest==='intensity'?'세기':rest==='note'?'메모':rest==='type'?'유형':rest}`:`관계 ${who}`; }
   const n=nm(s,id);
   if(c==='background') return `배경 '${n}'${rest==='content'?' 내용':rest==='title'?' 제목':rest==='category'?' 분류':''}`;
   if(!rest) return `${c==='characters'?'인물':'단체'} '${n}'`;
   if(rest==='name') return `${n} · 이름`;
   if(rest==='aliases') return `${n} · 다른 이름`;
+  if(rest==='notes') return `${n} · 메모`;
+  if(rest==='photo') return `${n} · 사진`;
   if(rest==='kind') return `${n} · 단체 종류`;
   if(rest==='parent') return `${n} · 상위 단체`;
   if(rest==='traits') return `${n} · 성격 목록`;
   if(rest==='situation/status') return `${n} · 상황 태그`;
   if(rest==='situation/current') return `${n} · 현재 상황`;
   if(rest==='situation/history/-') return `${n} · 상황 이력`;
-  if(rest==='parent_bond') return `${n} · 상위 단체 결속도`;
+  if(rest==='parent_bond') return `${n} · 상위 단체 소속감`;
   let m=rest.match(/^traits\/([^/]+)\/value$/); if(m){ const e=ent(s,id)||ent(state,id); const t=e?.traits?.find(t=>t.key===m[1]); return `${n} · 성격 '${t?.label||m[1]}'`; }
   m=rest.match(/^traits\/([^/]+)$/); if(m){ const e=ent(s,id)||ent(state,id); const t=e?.traits?.find(t=>t.key===m[1]); return `${n} · 성격 '${t?.label||m[1]}'`; }
   m=rest.match(/^memberships\/([^/]+)$/); if(m) return `${n} · '${nm(s,m[1])}' 소속`;
-  m=rest.match(/^memberships\/([^/]+)\/bond$/); if(m) return `${n} · '${nm(s,m[1])}' 결속도`;
+  m=rest.match(/^memberships\/([^/]+)\/bond$/); if(m) return `${n} · '${nm(s,m[1])}' 소속감`;
   m=rest.match(/^memberships\/([^/]+)\/active$/); if(m) return `${n} · '${nm(s,m[1])}' 소속 활성`;
   return `${n} · ${rest}`;
 }
 function ent2rel(s,id){ return s.relations.find(r=>r.id===id) || state.relations.find(r=>r.id===id); }
-function showVal(v){ if(v==null) return '(없음)'; if(Array.isArray(v)) return v.length?v.join(', '):'(없음)'; if(typeof v==='object' && v.group && v.bond!=null) return `결속도 ${f2(v.bond)}${v.role?' · '+v.role:''}`; if(typeof v==='object' && v.key && v.value!=null) return f2(v.value); if(typeof v==='number') return f2(v); if(typeof v==='boolean') return v?'예':'아니오'; if(typeof v==='object') return v.type&&REL[v.type] ? `${REL[v.type].l} ${f2(v.intensity)}${v.note?' · '+v.note:''}` : (v.summary || v.title || v.name || v.label || '항목'); return v; }
+function showVal(v){ if(v==null) return '(없음)'; if(typeof v==='string' && v.startsWith('data:image')) return '(사진)'; if(Array.isArray(v)) return v.length?v.join(', '):'(없음)'; if(typeof v==='object' && v.group && v.bond!=null) return `소속감 ${lvOf(v.bond)}${v.role?' · '+v.role:''}`; if(typeof v==='object' && v.key && v.value!=null) return lvOf(v.value); if(typeof v==='number') return v>=0&&v<=1?lvOf(v):f2(v); if(typeof v==='boolean') return v?'예':'아니오'; if(typeof v==='object') return v.type&&REL[v.type] ? `${REL[v.type].l} · ${lvOf(v.intensity)}${v.note?' · '+v.note:''}` : (v.summary || v.title || v.name || v.label || '항목'); return v; }
 function patchLines(s,p){
   const label=(p.op!=='replace' && p.path.startsWith('/relations/') && (p.after||p.before)?.from) ? `관계 ${nm(s,(p.after||p.before).from)} ↔ ${nm(s,(p.after||p.before).to)}` : describePath(s,p.path);
   if(p.op==='replace') return [['chg',`~ ${label}: ${showVal(p.before)} → ${showVal(p.after)}`]];
@@ -189,6 +193,23 @@ function setManual(path, value){
   if(JSON.stringify(p.before)===JSON.stringify(p.after)) pending=pending.filter(x=>x!==p);
 }
 
+/* 직접 고친 내용은 바로 기록한다. 방금(30분 안) 만든 '세계관 직접 수정' 기록이 맨 끝이고 그 뒤로 갈라진 전개가 없으면 거기에 이어 붙인다. */
+function flushPending(){
+  if(!pending.length) return;
+  const h=head(), now=new Date().toISOString();
+  const merge = h.kind==='manual' && h.auto && Date.now()-new Date(h.updated_at||h.created_at) < 30*60e3
+    && !allCommits.some(c=>c.parent===h.id) && !branches.some(b=>b.id!==branchId && b.head===h.id);
+  const id = merge ? h.id : newSha();
+  pending.forEach(p=>{ const m=p.path.match(/^\/(groups|characters)\/([^/]+)\//); if(!m) return;
+    const e=ent(state,m[2]); if(!e?.situation?.history) return;
+    const summary=describePath(state,p.path).split(' · ')[1]+' 수정'; const last=e.situation.history.at(-1);
+    if(last && last.commit===id && last.summary===summary) return;
+    const hp={op:'add', path:`/${m[1]}/${m[2]}/situation/history/-`, after:{commit:id, summary, source:'manual'}}; applyPatch(state,hp); p.__h=hp; });
+  const patches=pending.flatMap(p=>p.__h?[{op:p.op,path:p.path,before:p.before,after:p.after}, p.__h]:[{op:p.op,path:p.path,before:p.before,after:p.after}]);
+  if(merge){ h.patches.push(...patches); h.updated_at=now; }
+  else addCommit({id, parent:h.id, kind:'manual', auto:true, message:'세계관 직접 수정', created_at:now, updated_at:now, impacts:[], patches});
+  pending=[];
+}
 /* 새 항목 추가 → pending (id로 가리키는 경로라 되돌리기도 그 항목만 뺀다) */
 function addManual(path, obj){ const p={op:'add', path, after:clone(obj)}; pending.push(p); applyPatch(state,p); }
 /* gid가 anc의 하위 단체인지 (상위 단체 지정 시 순환 방지) */
@@ -245,6 +266,7 @@ function showTab(t){
 }
 function cur(){ return $('[role=tab][aria-selected=true]').dataset.tab; }
 function render(t=cur()){
+  flushPending();
   $('#world-title').textContent=DATA.meta.title; $('#world-slug').textContent=W.slug; $('#world-desc').textContent=DATA.meta.description||'';
   $('#cnt-world').textContent=state.groups.length+state.characters.length+state.background.length;
   $('#cnt-commit').textContent=commits.length;
@@ -253,28 +275,8 @@ function render(t=cur()){
   saveWorld();
 }
 
-function pendingBanner(){
-  if(!pending.length) return '';
-  return `<div class="flash flash-warn" style="margin-bottom:16px">${icon('alert')}
-    <div style="flex:1;min-width:0"><b>커밋하지 않은 수동 수정 ${pending.length}개</b>
-      <div style="display:flex;flex-direction:column;gap:2px;margin:6px 0">${pending.flatMap(p=>patchLines(state,p)).map(([c,l])=>`<span class="diffline ${c}">${esc(l)}</span>`).join('')}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <input class="form-control" id="pend-msg" style="flex:1 1 220px;width:auto" value="수동 수정: 세계관 값 조정" aria-label="커밋 메시지">
-        <button class="btn btn-primary" id="pend-commit">${icon('commit')}수동 수정 커밋</button>
-        <button class="btn" id="pend-discard">버리기</button>
-      </div></div></div>`;
-}
-function wirePending(){
-  const c=$('#pend-commit'); if(!c) return;
-  c.onclick=()=>{
-    const id=newSha();
-    pending.forEach(p=>{ const m=p.path.match(/^\/(groups|characters)\/([^/]+)\//); if(m){ const hp={op:'add', path:`/${m[1]}/${m[2]}/situation/history/-`, after:{commit:id, summary:describePath(state,p.path).split(' · ')[1]+' 수정', source:'manual'}}; applyPatch(state,hp); p.__h=hp; } });
-    const patches=pending.flatMap(p=>p.__h?[{op:p.op,path:p.path,before:p.before,after:p.after}, p.__h]:[{op:p.op,path:p.path,before:p.before,after:p.after}]);
-    addCommit({id, parent:head().id, kind:'manual', message:$('#pend-msg').value.trim()||'수동 수정', created_at:new Date().toISOString(), impacts:[], patches});
-    pending=[]; toast('수동 수정을 기록했어요'); render();
-  };
-  $('#pend-discard').onclick=()=>{ pending.slice().reverse().forEach(p=>applyPatch(state,p,true)); pending=[]; toast('수동 수정을 버렸습니다'); render(); };
-}
+function pendingBanner(){ return ''; }
+function wirePending(){}
 
 /* ---------- 세계관 ---------- */
 function treeGroups(s){
@@ -290,7 +292,7 @@ function renderSide(){
     <ul class="tree">${body||`<li class="caption side-empty">${q?'찾는 항목이 없어요':'아직 없어요'}</li>`}</ul></section>`;
   const chars=s.characters.filter(hit), grps=q?s.groups.filter(hit).map(g=>[g,0]):treeGroups(s), bgs=s.background.filter(hit);
   $('#side-list').innerHTML =
-    sec('chr','인물',chars.length, chars.map(c=>item(c,`<span class="dot" style="background:${nationColor(nationOf(s,c))}${c.situation?.status==='사망'?';opacity:.4':''}"></span>`, c.situation?.status)).join('')) +
+    sec('chr','인물',chars.length, chars.map(c=>item(c, c.photo?`<img class="side-photo" src="${esc(c.photo)}" alt="" style="border-color:${nationColor(nationOf(s,c))}">`:`<span class="dot" style="background:${nationColor(nationOf(s,c))}${c.situation?.status==='사망'?';opacity:.4':''}"></span>`, c.situation?.status)).join('')) +
     sec('grp','단체',grps.length, grps.map(([g,d])=>item(g,`<span class="sq" style="background:${nationColor(nationOf(s,g))}"></span>`, KIND[g.kind], d)).join('')) +
     sec('bg','배경',bgs.length, bgs.map(b=>item(b,`<span class="sq" style="background:var(--border-strong)"></span>`, b.category)).join(''));
   $$('[data-side]').forEach(b=>b.onclick=()=>pick(b.dataset.side));
@@ -300,7 +302,7 @@ function renderSide(){
     if(t==='chr'){ const id=newId('chr'); addManual(`/characters/${id}`, {id, name, aliases:[], memberships:[], traits:[], situation:sit}); ui.sel=id; }
     else if(t==='grp'){ const id=newId('grp'); addManual(`/groups/${id}`, {id, name, kind:'organization', parent:null, traits:[], situation:sit}); ui.sel=id; }
     else { const id=newId('bg'); const cat=(prompt('분류 (예: 지리, 역사, 기술)','기타')||'기타').trim(); addManual(`/background/${id}`, {id, category:cat, title:name, content:'', introduced_in:null}); ui.sel=id; }
-    ui.editing=null; ui.graphVer='work'; toast('추가했어요. 위 노란 상자에서 커밋하면 버전으로 남아요'); sideOpen(false); showTab('world'); focusDetail(); });
+    ui.editing=null; ui.graphVer='work'; toast('추가했어요'); sideOpen(false); showTab('world'); focusDetail(); });
 }
 /* 인물·단체·배경을 골라 오른쪽 상세 패널로 연다 */
 function pick(id){
@@ -320,32 +322,38 @@ function bgDetail(b){
       <div style="display:flex;gap:8px;flex-wrap:wrap"><div class="form-group" style="flex:2 1 200px"><label for="bg-title">제목</label><input class="form-control" id="bg-title" value="${esc(b.title)}"></div>
         <div class="form-group" style="flex:1 1 120px"><label for="bg-cat">분류</label><input class="form-control" id="bg-cat" value="${esc(b.category)}"></div></div>
       <div class="form-group"><label for="bg-content">내용</label><textarea class="form-control" id="bg-content" rows="5">${esc(b.content)}</textarea>
-      <span class="caption">배경은 소속·성격·상황이 없는 기초 정보입니다. 사건으로 새 배경이 생기면 그 커밋이 기록됩니다.</span></div>
-      <div><button class="btn btn-primary" id="bg-save">수정 담기</button></div>
+      <span class="caption">배경은 지리, 역사, 기술처럼 이야기의 바탕이 되는 정보예요.</span></div>
+      <div><button class="btn btn-primary" id="bg-save">저장</button></div>
     </div></div>`;
 }
+/* 세기는 숫자 대신 네 단계 말로 고른다 (안에서는 0.25~1 값으로 계산) */
+const LEVELS=[['약함',0.25],['보통',0.5],['강함',0.75],['아주 강함',1]];
+const lvOf=v=>LEVELS.reduce((a,b)=>Math.abs(b[1]-(v??0))<Math.abs(a[1]-(v??0))?b:a)[0];
+function levelPick(path, v, label){
+  return `<div class="lv" role="group" aria-label="${esc(label)}">${LEVELS.map(([l,x])=>`<button type="button" data-lv="${path}" data-v="${x}" aria-pressed="${lvOf(v)===l}">${l}</button>`).join('')}</div>`;
+}
+const levelSelect=(id, v, label)=>`<select class="form-control" id="${id}" style="width:auto" aria-label="${esc(label)}">${LEVELS.map(([l,x])=>`<option value="${x}" ${lvOf(v)===l?'selected':''}>${l}</option>`).join('')}</select>`;
+const lvTag=v=>`<span class="lv-tag">${lvOf(v)}</span>`;
 function traitRows(e){
   const c=coll(e.id);
   return (e.traits||[]).map(t=>`<div class="trait Box-row" style="display:grid">
     <div class="lab">${esc(t.label)} ${t.target?`<span class="Label">${icon('graph')}${esc(nm(state,t.target))}</span>`:''}${t.key.startsWith('t_')?'':`<small class="num">${esc(t.key)}</small>`}</div>
-    <input type="range" min="0" max="1" step="0.05" value="${t.value}" data-path="/${c}/${e.id}/traits/${t.key}/value" aria-label="${esc(t.label)} 강도">
-    <span class="num v" style="text-align:right">${f2(t.value)}</span></div>`).join('');
+    ${levelPick(`/${c}/${e.id}/traits/${t.key}/value`, t.value, t.label+' 세기')}</div>`).join('');
 }
 function bondRow(label, sub, path, v, goId, extra=''){
   return `<div class="trait Box-row" style="display:grid">
     <div class="lab"><button class="btn-link" data-go="${goId}">${esc(label)}</button> ${extra}${sub?`<small>${esc(sub)}</small>`:''}</div>
-    <input type="range" min="0" max="1" step="0.05" value="${v}" data-path="${path}" aria-label="${esc(label)} 결속도">
-    <span class="num v" style="text-align:right">${f2(v)}</span></div>`;
+    ${levelPick(path, v, label+' 소속감')}</div>`;
 }
 function editBox(e){
   const s=state, isG=e.id.startsWith('grp_');
-  return `<div class="Box" style="margin-bottom:16px"><div class="Box-header"><h3>기본 정보 수정</h3><span class="caption right">고친 내용은 수동 수정으로 담기고, 커밋하면 버전으로 남아요</span></div><div class="Box-body stack">
+  return `<div class="Box" style="margin-bottom:16px"><div class="Box-header"><h3>기본 정보 수정</h3><span class="caption right">고치면 바로 저장돼요</span></div><div class="Box-body stack">
     <div class="form-group"><label for="ed-name">이름</label><input class="form-control" id="ed-name" value="${esc(e.name)}"></div>
     ${isG?`<div style="display:flex;gap:8px;flex-wrap:wrap">
       <div class="form-group" style="flex:1 1 140px"><label for="ed-kind">종류</label><select class="form-control" id="ed-kind">${Object.entries(KIND).map(([k,l])=>`<option value="${k}" ${e.kind===k?'selected':''}>${l}</option>`).join('')}</select></div>
       <div class="form-group" style="flex:1 1 180px"><label for="ed-parent">상위 단체</label><select class="form-control" id="ed-parent"><option value="">없음 (최상위)</option>${s.groups.filter(g=>!isUnder(s,g.id,e.id)).map(g=>`<option value="${g.id}" ${e.parent===g.id?'selected':''}>${esc(g.name)}</option>`).join('')}</select></div></div>`
     :`<div class="form-group"><label for="ed-alias">다른 이름 (쉼표로 구분)</label><input class="form-control" id="ed-alias" value="${esc((e.aliases||[]).join(', '))}"></div>`}
-    <div style="display:flex;gap:8px"><button class="btn btn-primary" id="ed-save">수정 담기</button><button class="btn" id="ed-cancel">취소</button></div>
+    <div style="display:flex;gap:8px"><button class="btn btn-primary" id="ed-save">저장</button><button class="btn" id="ed-cancel">취소</button></div>
   </div></div>`;
 }
 function addRelRow(e){
@@ -354,7 +362,7 @@ function addRelRow(e){
   return `<div class="Box-row" style="flex-wrap:wrap;gap:8px;background:var(--bg-subtle)">
     <select class="form-control" id="rel-to" style="flex:1 1 130px;width:auto" aria-label="관계 대상">${others.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>
     <select class="form-control" id="rel-type" style="width:auto" aria-label="관계 유형">${Object.entries(REL).map(([k,R])=>`<option value="${k}">${R.l}</option>`).join('')}</select>
-    <input class="form-control" id="rel-int" type="number" min="0" max="1" step="0.05" value="0.6" style="width:76px" aria-label="강도">
+    ${levelSelect('rel-int',0.5,'관계 세기')}
     <input class="form-control" id="rel-note" placeholder="메모 (선택)" style="flex:1 1 120px;width:auto" aria-label="메모">
     <button class="btn btn-sm" id="rel-add">+ 관계 추가</button></div>`;
 }
@@ -370,7 +378,7 @@ function wireEntityEdit(e){
     const al=$('#ed-alias'); if(al){ const v=al.value.split(',').map(x=>x.trim()).filter(Boolean); if(v.length || e.aliases?.length) setManual(base+'/aliases', v); }
     const kd=$('#ed-kind'); if(kd) setManual(base+'/kind', kd.value);
     const pr=$('#ed-parent'); if(pr) setManual(base+'/parent', pr.value||null);
-    ui.editing=null; done(pending.length!==before||pending.length?'수동 수정에 담았습니다. 위 노란 상자에서 커밋하세요':'바뀐 내용이 없습니다');
+    ui.editing=null; done(pending.length!==before||pending.length?'저장했어요':'바뀐 내용이 없어요');
   };
   const ta=$('#tr-add'); if(ta) ta.onclick=()=>{
     const label=$('#tr-label').value.trim(); if(!label){ toast('성격 이름을 입력하세요'); return; }
@@ -398,46 +406,50 @@ function entityDetail(e){
   if(isG){
     const subs=s.groups.filter(g=>g.parent===e.id);
     const members=s.characters.flatMap(ch=>(ch.memberships||[]).filter(m=>m.group===e.id).map(m=>({ch,m})));
-    belong = `<div class="Box"><div class="Box-header"><h3>소속</h3><span class="caption right">결속도 = 영향이 전달되는 배율</span></div>
+    belong = `<div class="Box"><div class="Box-header"><h3>소속</h3><span class="caption right">소속감이 클수록 단체가 받은 영향이 크게 전해져요</span></div>
       ${e.parent?bondRow(nm(s,e.parent),'상위 단체',`/groups/${e.id}/parent_bond`,e.parent_bond??0.6,e.parent):'<div class="Box-row caption">최상위 단체입니다.</div>'}</div>
       <div class="Box"><div class="Box-header"><h3>하위 단체 · 구성원</h3><span class="Counter">${subs.length+members.length}</span></div>
-      ${subs.map(g=>`<div class="Box-row"><span class="sq" style="background:${nationColor(nat)}"></span><button class="btn-link" data-go="${g.id}">${esc(g.name)}</button><span class="Label">${KIND[g.kind]}</span><span class="num right" style="margin-left:auto">${f2(g.parent_bond??0.6)}</span></div>`).join('')}
-      ${members.map(({ch,m})=>`<div class="Box-row"><span class="dot" style="background:${nationColor(nationOf(s,ch))}"></span><button class="btn-link" data-go="${ch.id}">${esc(ch.name)}</button>${m.role?`<span class="caption">${esc(m.role)}</span>`:''}${m.active===false?'<span class="Label">비활성</span>':''}<span class="num" style="margin-left:auto">${f2(m.bond)}</span></div>`).join('') || ''}
+      ${subs.map(g=>`<div class="Box-row"><span class="sq" style="background:${nationColor(nat)}"></span><button class="btn-link" data-go="${g.id}">${esc(g.name)}</button><span class="Label">${KIND[g.kind]}</span><span style="margin-left:auto">${lvTag(g.parent_bond??0.6)}</span></div>`).join('')}
+      ${members.map(({ch,m})=>`<div class="Box-row"><span class="dot" style="background:${nationColor(nationOf(s,ch))}"></span><button class="btn-link" data-go="${ch.id}">${esc(ch.name)}</button>${m.role?`<span class="caption">${esc(m.role)}</span>`:''}${m.active===false?'<span class="Label">비활성</span>':''}<span style="margin-left:auto">${lvTag(m.bond)}</span></div>`).join('') || ''}
       ${!subs.length&&!members.length?'<div class="Box-row caption">아직 없습니다.</div>':''}</div>`;
   } else {
-    belong = `<div class="Box"><div class="Box-header"><h3>소속</h3><span class="Counter">${e.memberships.length}</span><span class="caption right">결속도 = 영향이 전달되는 배율</span></div>
+    belong = `<div class="Box"><div class="Box-header"><h3>소속</h3><span class="Counter">${e.memberships.length}</span><span class="caption right">소속감이 클수록 단체가 받은 영향이 크게 전해져요</span></div>
       ${e.memberships.map(m=>bondRow(nm(s,m.group), m.role, `/characters/${e.id}/memberships/${m.group}/bond`, m.bond, m.group, m.active===false?'<span class="Label">비활성</span>':'')).join('')}
-      ${(()=>{ const cand=s.groups.filter(g=>!e.memberships.some(m=>m.group===g.id)); return cand.length?`<div class="Box-row" style="flex-wrap:wrap;gap:8px;background:var(--bg-subtle)"><select class="form-control" id="mem-group" style="flex:1 1 140px;width:auto" aria-label="소속 단체">${cand.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')}</select><input class="form-control" id="mem-role" placeholder="역할 (선택)" style="flex:1 1 110px;width:auto" aria-label="역할"><input class="form-control" id="mem-bond" type="number" min="0" max="1" step="0.05" value="0.7" style="width:76px" aria-label="결속도"><button class="btn btn-sm" id="mem-add">+ 소속 추가</button></div>`:`<div class="Box-row caption">${s.groups.length?'추가할 수 있는 단체가 더 없어요.':'소속을 추가하려면 먼저 단체를 만드세요.'}</div>`; })()}</div>`;
+      ${(()=>{ const cand=s.groups.filter(g=>!e.memberships.some(m=>m.group===g.id)); return cand.length?`<div class="Box-row" style="flex-wrap:wrap;gap:8px;background:var(--bg-subtle)"><select class="form-control" id="mem-group" style="flex:1 1 140px;width:auto" aria-label="소속 단체">${cand.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')}</select><input class="form-control" id="mem-role" placeholder="역할 (선택)" style="flex:1 1 110px;width:auto" aria-label="역할">${levelSelect('mem-bond',0.75,'소속감')}<button class="btn btn-sm" id="mem-add">+ 소속 추가</button></div>`:`<div class="Box-row caption">${s.groups.length?'추가할 수 있는 단체가 더 없어요.':'소속을 추가하려면 먼저 단체를 만드세요.'}</div>`; })()}</div>`;
   }
-  return `<div class="Subhead"><h2>${esc(e.name)}</h2>
+  return `<div class="Subhead">${e.photo?`<img class="ent-photo" src="${esc(e.photo)}" alt="${esc(e.name)} 사진">`:''}<h2>${esc(e.name)}</h2>
       ${isG?`<span class="Label">${KIND[e.kind]}</span>`:'<span class="Label">인물</span>'}
       ${nat?`<span class="Label" style="color:${nationColor(nat)};border-color:${nationColor(nat)}">${esc(nm(s,nat))}</span>`:''}
       ${e.aliases?.length?`<span class="caption">다른 이름: ${esc(e.aliases.join(', '))}</span>`:''}
-      <div class="actions"><button class="btn btn-sm" id="ent-edit" aria-pressed="${ui.editing===e.id}">이름·기본 정보 수정</button></div></div>
+      <div class="actions"><button class="btn btn-sm" id="ent-edit" aria-pressed="${ui.editing===e.id}">이름·기본 정보 수정</button>
+        <label class="btn btn-sm">${e.photo?'사진 바꾸기':'사진 넣기'}<input type="file" accept="image/*" id="ent-photo" hidden></label>${e.photo?'<button class="btn btn-sm" id="ent-photo-del">사진 빼기</button>':''}</div></div>
     ${ui.editing===e.id?editBox(e):''}
     <div class="cols2">
       <div class="stack">
+        <div class="Box"><div class="Box-header"><h3>메모</h3><span class="caption right">다른 곳을 누르면 저장돼요</span></div>
+          <div class="Box-body"><textarea class="form-control" id="ent-notes" rows="4" placeholder="${isG?'목표, 세력 규모, 근거지, 숨은 사정 등 자유롭게 적어요':'외모, 나이, 말투, 목표, 비밀 등 자유롭게 적어요'}">${esc(e.notes||'')}</textarea></div></div>
         <div class="Box"><div class="Box-header"><h3>상황</h3>${sit.status?`<span class="Label ${statusCls(sit.status)}">${esc(sit.status)}</span>`:''}</div>
           <div class="Box-body stack">
             <div class="form-group"><label for="sit-current">현재</label><textarea class="form-control" id="sit-current" rows="3">${esc(sit.current)}</textarea></div>
             <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap"><div class="form-group" style="flex:1 1 140px"><label for="sit-status">상황 태그</label><input class="form-control" id="sit-status" value="${esc(sit.status)}"></div>
-              <button class="btn" id="sit-save">수정 담기</button></div>
+              <button class="btn" id="sit-save">저장</button></div>
             <div><div style="font-weight:600;margin-bottom:8px">이력 <span class="Counter">${sit.history.length}</span></div>
             ${sit.history.length?`<ul class="log">${sit.history.slice().reverse().map(h=>`<li class="${h.source||''}">
               <div>${esc(h.summary)}</div>
               <div class="meta"><span>${esc(cname(h.commit))}</span>${h.source?`<span class="Label ${SRC[h.source][1]}">${SRC[h.source][0]}</span>`:''}
-              ${h.via?`<span>${esc(nm(s,h.via))} 경유</span>`:''}${h.weight!=null?`<span class="num ${h.weight<0?'neg':'pos'}">w ${sf2(h.weight)}</span>`:''}</div></li>`).join('')}</ul>`:'<span class="caption">아직 이력이 없습니다.</span>'}</div>
+              ${h.via?`<span>${esc(nm(s,h.via))} 경유</span>`:''}${h.weight!=null?`<span class="num ${h.weight<0?'neg':'pos'}">${h.weight<0?'피해':'이득'} ${lvOf(Math.abs(h.weight))}</span>`:''}</div></li>`).join('')}</ul>`:'<span class="caption">아직 이력이 없습니다.</span>'}</div>
           </div></div>
         <div class="Box"><div class="Box-header"><h3>관계</h3><span class="Counter">${rels.length}</span></div>
           ${rels.map(r=>{const o=r.from===e.id?r.to:r.from; const R=REL[r.type]||REL.personal; return `<div class="Box-row"><i style="display:inline-block;width:18px;border-top:2px ${R.dash?'dashed':'solid'} ${R.c}"></i>
             <div style="flex:1;min-width:0"><button class="btn-link" data-go="${o}">${esc(nm(s,o))}</button>${r.note?`<div class="caption">${esc(r.note)}</div>`:''}</div>
-            <span class="Label" style="color:${R.c};border-color:${R.c}">${R.l}${r.directed?(r.from===e.id?' →':' ←'):''}</span><span class="num">${f2(r.intensity)}</span></div>`}).join('') || '<div class="Box-row caption">관계가 없습니다.</div>'}
+            <span class="Label" style="color:${R.c};border-color:${R.c}">${R.l}${r.directed?(r.from===e.id?' →':' ←'):''}</span>
+            <div class="rel-lv">${levelPick(`/relations/${r.id}/intensity`, r.intensity, nm(s,o)+' 관계 세기')}</div></div>`}).join('') || '<div class="Box-row caption">관계가 없습니다.</div>'}
           ${addRelRow(e)}
         </div>
       </div>
       <div class="stack">
-        <div class="Box"><div class="Box-header"><h3>성격</h3><span class="Counter">${(e.traits||[]).length}</span><span class="caption right">항목 + 강도(0~1)</span></div>${traitRows(e)}
-          <div class="Box-row" style="flex-wrap:wrap;gap:8px;background:var(--bg-subtle)"><input class="form-control" id="tr-label" placeholder="새 성격 (예: 복수심)" style="flex:1 1 150px;width:auto" aria-label="새 성격 이름"><input class="form-control" id="tr-val" type="number" min="0" max="1" step="0.05" value="0.7" style="width:76px" aria-label="강도"><button class="btn btn-sm" id="tr-add">+ 성격 추가</button></div></div>
+        <div class="Box"><div class="Box-header"><h3>성격</h3><span class="Counter">${(e.traits||[]).length}</span><span class="caption right">성격마다 세기를 골라요</span></div>${traitRows(e)}
+          <div class="Box-row" style="flex-wrap:wrap;gap:8px;background:var(--bg-subtle)"><input class="form-control" id="tr-label" placeholder="새 성격 (예: 복수심)" style="flex:1 1 150px;width:auto" aria-label="새 성격 이름">${levelSelect('tr-val',0.75,'성격 세기')}<button class="btn btn-sm" id="tr-add">+ 성격 추가</button></div></div>
         ${belong}
       </div>
     </div>`;
@@ -536,33 +548,35 @@ function evPosition(){
   return `<div class="Box"><div class="Box-header"><h3>이 사건이 들어갈 자리</h3>${branches.length>1?`<span class="Label">${esc(curBranch().name)}</span>`:''}</div>
     <ol class="ev-pos">${skip?`<li class="more">앞선 사건 ${skip}개</li>`:''}
       ${recent.map(c=>`<li><span class="n">${cnum(c.id).replace('. ','')}</span><div><div>${esc(cname(c.id))}</div>${c.event?.story_time?`<div class="caption">${esc(c.event.story_time)}</div>`:''}</div></li>`).join('')}
-      <li class="here"><span class="n">${commits.length+1}</span><div><div id="ev-pos-title">${esc(analysis?.title ?? ui.evDraft?.title ?? SAMPLE.title)}</div><div class="caption">새 사건이 여기에 들어가요</div></div></li></ol>
-    <div class="Box-row caption">더 앞 시점에 넣고 싶으면 버전 기록에서 그 사건을 고르고 '만약에' 갈래를 만들어 주세요.</div></div>`;
+      <li class="here"><span class="n">${commits.length+1}</span><div><div id="ev-pos-title">${esc(analysis?.title || ui.evDraft?.title || '새 사건')}</div><div class="caption">새 사건이 여기에 들어가요</div></div></li></ol>
+    <div class="Box-row caption">더 앞 시점에 넣고 싶으면 버전 기록에서 그 사건을 고르고 '만약에' 전개를 만들어 주세요.</div></div>`;
 }
 function renderEvent(){
   const blocked=pending.length>0;
   $('#tab-event').innerHTML = pendingBanner() + `
-  <div class="Subhead"><h2>새 사건</h2><span class="muted">${branches.length>1?`'${esc(curBranch().name)}' 갈래 · `:''}'${esc(cname(head().id))}' 다음에 이어집니다</span></div>
+  <div class="Subhead"><h2>새 사건</h2><span class="muted">${branches.length>1?`'${esc(curBranch().name)}' 전개 · `:''}'${esc(cname(head().id))}' 다음에 이어집니다</span></div>
   <div class="split-r">
     <div class="stack">
       ${evPosition()}
       <div class="Box"><div class="Box-body stack">
-        <div class="form-group"><label for="ev-title">사건 제목</label><input class="form-control" id="ev-title" value="${esc(analysis?.title ?? ui.evDraft?.title ?? SAMPLE.title)}"></div>
-        <div class="form-group"><label for="ev-text">무슨 일이 일어나나요?</label><textarea class="form-control" id="ev-text" rows="3">${esc(analysis?.description ?? ui.evDraft?.description ?? SAMPLE.description)}</textarea></div>
-        <div class="form-group" style="max-width:260px"><label for="ev-time">작중 시점</label><input class="form-control" id="ev-time" value="${esc(analysis?.story_time ?? ui.evDraft?.story_time ?? SAMPLE.story_time)}"></div>
+        <div class="form-group"><label for="ev-title">사건 제목</label><input class="form-control" id="ev-title" value="${esc(analysis?.title ?? ui.evDraft?.title ?? '')}" placeholder="예: ${esc(SAMPLE.title||'왕국에 전쟁이 선포된다')}"></div>
+        <div class="form-group"><label for="ev-text">무슨 일이 일어나나요?</label><textarea class="form-control" id="ev-text" rows="3" placeholder="누가 무엇을 했고, 어떤 단체와 인물이 엮이는지 적어 주세요">${esc(analysis?.description ?? ui.evDraft?.description ?? '')}</textarea></div>
+        <div class="form-group" style="max-width:260px"><label for="ev-time">작중 시점</label><input class="form-control" id="ev-time" value="${esc(analysis?.story_time ?? ui.evDraft?.story_time ?? '')}" placeholder="예: ${esc(SAMPLE.story_time||'2부 초반')}"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="ev-run">${icon('spark')}AI 영향 분석</button>${W.sample?'<button class="btn" id="ev-sample">예시 사건 넣기</button>':''}</div>
       </div></div>
       <div id="ev-result" class="stack"></div>
     </div>
     <aside class="stack">
-      <div class="Box"><div class="Box-header"><h3>영향 전파 규칙</h3></div>
+      <div class="Box"><div class="Box-header"><h3>영향은 이렇게 퍼져요</h3></div>
         <div class="Box-body stack" style="gap:10px">
-          <div style="font-family:var(--mono);font-size:13px;padding:8px 12px;background:var(--bg-subtle);border-radius:6px">w = M × 결속도 × S<br><span class="muted">S = 1 + Σ(성격 강도 × 반응도)</span></div>
-          <dl class="kv"><dt>M</dt><dd>단체가 받은 영향 (−1 피해 ~ +1 이득)</dd><dt>결속도</dt><dd>인물의 소속 bond, 하위 단체의 parent_bond</dd><dt>반응도</dt><dd>이 성격이 영향 태그에 얼마나 반응하는지 (AI 판단, −1~1)</dd></dl>
-          <div class="caption">S는 −1~2, w는 −1~1로 자릅니다. S가 음수면 영향이 뒤집힙니다. 여러 경로로 받으면 |w|가 가장 큰 경로가 대표값입니다.</div>
-          <div class="summary-tiles"><span><b>&lt;0.25</b>변화 없음</span><span><b>0.25~0.6</b>이력 한 줄</span><span><b>≥0.6</b>상황 다시 쓰기</span></div>
+          <p style="margin:0">사건은 먼저 단체에 영향을 주고, 소속을 따라 하위 단체와 구성원에게 퍼져요. 소속감이 클수록, 그 영향에 민감한 성격일수록 더 크게 받아요.</p>
+          <details class="calc"><summary>계산 방식 자세히</summary>
+          <div style="font-family:var(--mono);font-size:13px;padding:8px 12px;background:var(--bg-subtle);border-radius:6px;margin-top:8px">최종 영향 = 단체가 받은 영향 × 소속감 × 성격 배율<br><span class="muted">성격 배율 = 1 + Σ(성격 세기 × 반응)</span></div>
+          <dl class="kv"><dt>단체가 받은 영향</dt><dd>−1 피해 ~ +1 이득</dd><dt>소속감</dt><dd>인물이 단체에, 하위 단체가 상위 단체에 얼마나 묶여 있는지</dd><dt>반응</dt><dd>이 성격이 위협, 기회 같은 영향에 얼마나 반응하는지 (AI 판단, −1~1)</dd></dl>
+          <div class="caption">성격 배율은 −1~2, 최종 영향은 −1~1 안으로 맞춰요. 배율이 음수면 영향이 뒤집혀요. 여러 경로로 받으면 가장 큰 쪽을 써요.</div>
+          <div class="caption">어떤 성격이 얼마나 반응하는지와 상황 문장은 AI가 정하고, 숫자 계산은 앱이 해요.</div></details>
+          <div class="summary-tiles"><span><b>약함</b>변화 없음</span><span><b>보통</b>이력 한 줄</span><span><b>강함</b>상황 다시 쓰기</span></div>
         </div></div>
-      <div class="flash">${icon('info')}<div class="caption" style="color:var(--fg)">반응도 판단과 상황 문장은 AI가, 숫자 계산은 앱이 합니다. 그래서 M이나 성격 강도를 고치면 결과가 바로 다시 계산됩니다.</div></div>
     </aside>
   </div>`;
   const evs=$('#ev-sample'); if(evs) evs.onclick=()=>{ $('#ev-title').value=SAMPLE.title; $('#ev-text').value=SAMPLE.description; $('#ev-time').value=SAMPLE.story_time; $('#ev-pos-title').textContent=SAMPLE.title; };
@@ -597,7 +611,7 @@ function drawAnalysis(){
   const cand=[...state.groups, ...state.characters].filter(e=>!a.direct.some(d=>d.target===e.id));
   box.innerHTML = `
   <div class="Box">
-    <div class="Box-header"><span class="step-badge">1</span><h3>직접 영향</h3><span class="ai-badge">${icon('spark')}AI 판단</span><span class="caption right">M과 태그는 고칠 수 있습니다</span></div>
+    <div class="Box-header"><span class="step-badge">1</span><h3>직접 영향</h3><span class="ai-badge">${icon('spark')}AI 판단</span><span class="caption right">영향 크기와 태그는 고칠 수 있어요</span></div>
     ${a.direct.length?'':'<div class="Box-body caption">사건에서 세계관 항목을 찾지 못했습니다. 아래에서 대상을 추가하세요.</div>'}
     ${a.direct.map((d,i)=>`<div class="direct-row">
       <div><b>${esc(nm(state,d.target))}</b><div class="caption">${d.target.startsWith('grp_')?KIND[ent(state,d.target).kind]:'인물'}</div></div>
@@ -626,7 +640,7 @@ function drawProp(){
   const a=analysis; const {rows, items}=finals(a);
   const ordered=rows.slice().sort((x,y)=>(y.rep-x.rep)||Math.abs(y.w)-Math.abs(x.w));
   $('#prop-box').innerHTML = `<div class="Box-header"><span class="step-badge">2</span><h3>소속을 따라 전파</h3><span class="code-badge">${icon('calc')}앱 계산</span><span class="caption right">${rows.length}개 경로</span></div>
-    ${rows.length?`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>대상</th><th>경로</th><th class="r">M</th><th class="r">결속도</th><th>성격 반응</th><th class="r">S</th><th class="r">w</th><th></th><th>판정</th></tr></thead><tbody>
+    ${rows.length?`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>대상</th><th>경로</th><th class="r">단체 영향</th><th class="r">소속감</th><th>성격 반응</th><th class="r">배율</th><th class="r">최종 영향</th><th></th><th>판정</th></tr></thead><tbody>
     ${ordered.map(r=>{ const [lv,cls]=level(r.w); return `<tr class="${r.rep?'':'dimmed'}">
       <td><b>${esc(nm(state,r.target))}</b></td><td class="muted">${esc(nm(state,r.via))} 경유</td>
       <td class="r num">${sf2(r.M)}</td><td class="r num">${f2(r.bond)}</td>
@@ -638,13 +652,13 @@ function drawProp(){
   items.forEach(it=>{ if(!maxW[it.target]||Math.abs(it.w)>Math.abs(maxW[it.target])) maxW[it.target]=it.w; });
   Object.values(maxW).forEach(w=>{ const x=Math.abs(w); x>=0.6?cnt.big++:x>=0.25?cnt.minor++:cnt.none++; });
   const patches=buildPatches(a,'(새 커밋)');
-  $('#commit-box').innerHTML = `<div class="Box-header"><h3>커밋될 변경</h3><div class="summary-tiles right"><span><b class="neg">${cnt.big}</b>큰 변화</span><span><b>${cnt.minor}</b>경미</span><span><b class="muted">${cnt.none}</b>변화 없음</span></div></div>
+  $('#commit-box').innerHTML = `<div class="Box-header"><h3>기록될 변경</h3><div class="summary-tiles right"><span><b class="neg">${cnt.big}</b>큰 변화</span><span><b>${cnt.minor}</b>경미</span><span><b class="muted">${cnt.none}</b>변화 없음</span></div></div>
     <div class="Box-body stack" style="gap:4px">${patches.length?patches.flatMap(p=>patchLines(state,p)).map(([c,l])=>`<span class="diffline ${c}">${esc(l)}</span>`).join(''):'<span class="caption">반영될 변경이 없습니다.</span>'}</div>
     <div class="Box-row" style="background:var(--bg-subtle);flex-wrap:wrap">
-      <input class="form-control" id="ev-msg" style="flex:1 1 240px;width:auto" value="사건: ${esc(a.title)}" aria-label="커밋 메시지">
+      <input class="form-control" id="ev-msg" style="flex:1 1 240px;width:auto" value="사건: ${esc(a.title)}" aria-label="기록 이름">
       <button class="btn" id="ev-preview">${icon('graph')}관계도에서 미리보기</button>
-      <button class="btn btn-primary" id="ev-commit" ${pending.length||!patches.length?'disabled':''}>${icon('commit')}사건 커밋</button>
-    </div>${pending.length?'<div class="Box-row caption">수동 수정을 먼저 커밋하거나 버려야 사건을 커밋할 수 있습니다.</div>':''}`;
+      <button class="btn btn-primary" id="ev-commit" ${pending.length||!patches.length?'disabled':''}>${icon('commit')}사건 기록하기</button>
+    </div>`;
   $('#ev-preview').onclick=()=>{ ui.graphVer='preview'; showTab('graph'); };
   $('#ev-commit').onclick=()=>{
     const id=newSha(); const ps=buildPatches(a,id); const {items:its}=finals(a);
@@ -673,7 +687,7 @@ function renderManuscript(){
   </div>
   <aside class="stack"><div class="Box"><div class="Box-header"><h3>이렇게 반영돼요</h3></div><div class="Box-body stack" style="gap:8px">
     <div>1. AI가 새 인물·단체, 상황이 바뀐 인물, 새 관계, 큰 사건을 후보로 골라요.</div>
-    <div>2. 체크한 후보만 수동 수정으로 담겨요. 노란 상자에서 커밋하면 버전으로 남아요.</div>
+    <div>2. 체크한 후보만 세계관에 반영되고 바로 저장돼요.</div>
     <div>3. 사건 후보는 사건 입력 탭으로 보내 영향 분석을 따로 해요.</div>
     <div class="caption">이미 있는 이름이나 다른 이름과 겹치는 인물은 새로 만들지 않아요. 원고 원문은 저장하지 않아요.</div>
   </div></div></aside></div>`;
@@ -712,14 +726,13 @@ function drawMs(){
     + sec('characters','새 인물',r.characters,c=>`<b>${esc(c.name)}</b>${c.aliases.length?` <span class="caption">(${esc(c.aliases.join(', '))})</span>`:''}${c.group?` <span class="Label">${esc(who(c.group))}${c.role?' · '+esc(c.role):''}</span>`:''}<div class="caption">${esc(c.summary)}</div>`)
     + sec('groups','새 단체',r.groups,g=>`<b>${esc(g.name)}</b> <span class="Label">${KIND[g.kind]||'조직'}</span>${g.parent?` <span class="caption">${esc(nm(state,g.parent))} 소속</span>`:''}<div class="caption">${esc(g.summary)}</div>`)
     + sec('updates','상황 변화',r.updates,u=>{ const e=ent(state,u.id); return `<b>${esc(nm(state,u.id))}</b> <span class="Label Label--attention">${esc(u.status)}</span><div class="diffline del" style="margin-top:4px">- ${esc(e?.situation?.current||'(없음)')}</div><div class="diffline add">+ ${esc(u.text)}</div>`; })
-    + sec('relations','새 관계',r.relations,x=>{ const R=REL[x.type]||REL.personal; return `<b>${esc(who(x.from))}</b> ↔ <b>${esc(who(x.to))}</b> <span class="Label" style="color:${R.c};border-color:${R.c}">${R.l} ${f2(x.intensity)}</span>${x.note?`<div class="caption">${esc(x.note)}</div>`:''}`; })
-    + (total?`<div class="Box"><div class="Box-row" style="background:var(--bg-subtle);flex-wrap:wrap"><span class="caption" style="flex:1">${picked}개 선택됨. 새 인물이 들어간 관계는 그 인물도 체크해야 담겨요.</span><button class="btn btn-primary" id="ms-apply" ${picked?'':'disabled'}>선택한 후보 담기</button></div></div>`:'')
+    + sec('relations','새 관계',r.relations,x=>{ const R=REL[x.type]||REL.personal; return `<b>${esc(who(x.from))}</b> ↔ <b>${esc(who(x.to))}</b> <span class="Label" style="color:${R.c};border-color:${R.c}">${R.l} · ${lvOf(x.intensity)}</span>${x.note?`<div class="caption">${esc(x.note)}</div>`:''}`; })
+    + (total?`<div class="Box"><div class="Box-row" style="background:var(--bg-subtle);flex-wrap:wrap"><span class="caption" style="flex:1">${picked}개 선택됨. 새 인물이 들어간 관계는 그 인물도 체크해야 담겨요.</span><button class="btn btn-primary" id="ms-apply" ${picked?'':'disabled'}>선택한 후보 반영</button></div></div>`:'')
     + (r.events.length?`<div class="Box"><div class="Box-header"><h3>사건 후보</h3><span class="Counter">${r.events.length}</span><span class="caption right">하나씩 영향 분석해요</span></div>
       ${r.events.map((e,i)=>`<div class="Box-row" style="align-items:flex-start;flex-wrap:wrap"><div style="flex:1 1 220px;min-width:0"><b>${esc(e.title)}</b>${e.story_time?` <span class="caption">${esc(e.story_time)}</span>`:''}<div class="caption">${esc(e.description)}</div></div>
         <button class="btn btn-sm" data-msev="${i}">${icon('bolt')}사건 입력으로 보내기</button></div>`).join('')}</div>`:'');
   $$('[data-ms]').forEach(c=>c.onchange=()=>{ const [k,i]=c.dataset.ms.split('|'); r[k][i].on=c.checked; drawMs(); });
   $$('[data-msev]').forEach(b=>b.onclick=()=>{
-    if(pending.length){ toast('담은 수정을 먼저 커밋하면 사건을 분석·커밋할 수 있어요'); }
     ui.evDraft=r.events[+b.dataset.msev]; analysis=null; showTab('event'); });
   const ap=$('#ms-apply'); if(ap) ap.onclick=applyMs;
 }
@@ -736,7 +749,7 @@ function applyMs(){
   r.relations.filter(x=>x.on).forEach(x=>{ const from=idOf(x.from), to=idOf(x.to); if(!from||!to) return; n++;
     const id=newId('rel'), rel={id, from, to, type:x.type, intensity:x.intensity}; if(x.note) rel.note=x.note; addManual(`/relations/${id}`, rel); });
   ['characters','groups','updates','relations'].forEach(k=>{ r[k]=r[k].filter(x=>!x.on); });
-  toast(`${n}개를 담았어요. 위 노란 상자에서 커밋하면 버전으로 남아요`); render();
+  toast(`${n}개를 반영했어요`); render();
 }
 
 /* ---------- 관계도 ---------- */
@@ -772,12 +785,13 @@ function renderWorld(){
   const rels=s.relations.filter(r=>!filt||filt.includes(r.type));
   const pairs={}; rels.forEach(r=>{ const k=[r.from,r.to].sort().join('|'); (pairs[k]=pairs[k]||[]).push(r); });
   // 위치가 정해지지 않은 항목(새로 추가한 것)은 자동 배치: 빈 세계관이면 화면 전체 격자, 아니면 아래쪽 줄
-  const auto={}; const missing=[...s.groups,...s.characters].filter(x=>!POS[x.id]);
+  const auto={}; const missing=[...s.groups,...s.characters].filter(x=>!POS[x.id] && !LAYOUT[x.id]);
   if(missing.length){
     const empty=!Object.keys(POS).length; const cols=empty?Math.ceil(Math.sqrt(missing.length*2)):Math.min(missing.length,8); const rows=Math.ceil(missing.length/cols);
     missing.forEach((x,i)=>{ const c=i%cols, r=Math.floor(i/cols); auto[x.id]= empty ? [Math.round((c+0.5)*1100/cols), Math.round(70+(r+0.5)*400/rows)] : [Math.round((c+0.5)*1100/cols), 470-r*60]; });
   }
-  const pos=id=>POS[id]||auto[id]||[430,300];
+  const pos=id=>LAYOUT[id]||POS[id]||auto[id]||[430,300];
+  const V=ui.view||(ui.view=fitView(innerWidth<600));
   const linked=new Set(sel?[sel]:[]); s.relations.forEach(r=>{ if(r.from===sel) linked.add(r.to); if(r.to===sel) linked.add(r.from); });
   const isNode=id=>id.startsWith('grp_')||id.startsWith('chr_');
   const edge=(r)=>{
@@ -790,14 +804,14 @@ function renderWorld(){
     const R=REL[r.type]||REL.personal; const dim = sel && !(r.from===sel||r.to===sel);
     const w=1+r.intensity*3.5;
     const lx=(x1+2*cx+x2)/4, ly=(y1+2*cy+y2)/4;
-    return `<g opacity="${dim?.35:1}"><path d="M${x1},${y1} Q${cx},${cy} ${x2},${y2}" style="fill:none;stroke:${R.c};stroke-width:${w};${R.dash?`stroke-dasharray:${R.dash}`:''}" stroke-linecap="round" ${r.directed?'marker-end="url(#arrow)"':''}><title>${esc(nm(s,r.from))} ${r.directed?'→':'↔'} ${esc(nm(s,r.to))} · ${R.l} ${f2(r.intensity)}${r.note?' · '+esc(r.note):''}</title></path>
-      ${sel && !dim?`<text x="${lx}" y="${ly-5}" text-anchor="middle" font-size="11" style="fill:${R.c};paint-order:stroke;stroke:var(--bg);stroke-width:4px">${R.l} ${f2(r.intensity)}</text>`:''}</g>`;
+    return `<g opacity="${dim?.35:1}"><path d="M${x1},${y1} Q${cx},${cy} ${x2},${y2}" style="fill:none;stroke:${R.c};stroke-width:${w};${R.dash?`stroke-dasharray:${R.dash}`:''}" stroke-linecap="round" ${r.directed?'marker-end="url(#arrow)"':''}><title>${esc(nm(s,r.from))} ${r.directed?'→':'↔'} ${esc(nm(s,r.to))} · ${R.l} · ${lvOf(r.intensity)}${r.note?' · '+esc(r.note):''}</title></path>
+      ${sel && !dim?`<text x="${lx}" y="${ly-5}" text-anchor="middle" font-size="11" style="fill:${R.c};paint-order:stroke;stroke:var(--bg);stroke-width:4px">${R.l} · ${lvOf(r.intensity)}</text>`:''}</g>`;
   };
-  const memberLines = ui.showMembers ? [
+  const memberLines = () => ui.showMembers ? [
     ...s.groups.filter(g=>g.parent).map(g=>({a:g.id,b:g.parent,bond:g.parent_bond??0.6,active:true})),
     ...s.characters.flatMap(c=>(c.memberships||[]).map(m=>({a:c.id,b:m.group,bond:m.bond,active:m.active!==false})))
   ].map(m=>{ const [x1,y1]=pos(m.a),[x2,y2]=pos(m.b); const dim=sel && !(m.a===sel||m.b===sel);
-    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" style="stroke:var(--border-strong);stroke-width:${0.6+m.bond*1.6};stroke-dasharray:2 4" opacity="${m.active?(dim?.35:.9):.2}"><title>${esc(nm(s,m.a))} → ${esc(nm(s,m.b))} 소속 · 결속도 ${f2(m.bond)}</title></line>`; }).join('') : '';
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" style="stroke:var(--border-strong);stroke-width:${0.6+m.bond*1.6};stroke-dasharray:2 4" opacity="${m.active?(dim?.35:.9):.2}"><title>${esc(nm(s,m.a))} → ${esc(nm(s,m.b))} 소속 · 소속감 ${lvOf(m.bond)}</title></line>`; }).join('') : '';
   const node=e=>{
     const [x,y]=pos(e.id); const col=nationColor(nationOf(s,e)); const isSel=e.id===sel; const dead=e.situation?.status==='사망';
     const dim = sel && !linked.has(e.id) && !(ui.showMembers && memberOf(s,e.id,sel));
@@ -816,12 +830,15 @@ function renderWorld(){
         <text x="${x}" y="${y+5}" text-anchor="middle" font-size="${nat?15:13}" font-weight="${nat?700:600}" style="fill:var(--fg)">${esc(e.name)}</text>`;
     } else {
       under = `<circle cx="${x}" cy="${y}" r="22" style="fill:var(--bg)"/>`;
+      const face = e.photo ? `<clipPath id="cp-${e.id}"><circle cx="${x}" cy="${y}" r="21"/></clipPath><image href="${esc(e.photo)}" x="${x-21}" y="${y-21}" width="42" height="42" preserveAspectRatio="xMidYMid slice" clip-path="url(#cp-${e.id})"/>`
+        : `<text x="${x}" y="${y+5}" text-anchor="middle" font-size="14" font-weight="700" style="fill:${col}">${esc(initial(e.name))}</text>`;
       shape = `${halo}<circle class="nshape" cx="${x}" cy="${y}" r="22" style="fill:var(--bg);stroke:${col};stroke-width:${isSel?3.5:2}"/>
-        <text x="${x}" y="${y+5}" text-anchor="middle" font-size="14" font-weight="700" style="fill:${col}">${esc(initial(e.name))}</text>
+        ${face}<circle cx="${x}" cy="${y}" r="22" style="fill:none;stroke:${col};stroke-width:${isSel?3.5:2}"/>
         <text x="${x}" y="${y+40}" text-anchor="middle" font-size="12" style="fill:var(--fg);paint-order:stroke;stroke:var(--bg);stroke-width:4px">${esc(e.name)}${dead?' (사망)':''}</text>`;
     }
     return `<g class="node" data-id="${e.id}" tabindex="0" role="button" aria-label="${esc(e.name)}">${under}<g opacity="${dead?.5:dim?.4:1}">${shape}${badge}</g></g>`;
   };
+  const body=()=>`${memberLines()}${rels.map(edge).join('')}${[...s.groups,...s.characters].filter(x=>isNode(x.id)).map(node).join('')}`;
   const verLabel = ui.graphVer==='preview'?'AI 제안 미리보기':ui.graphVer==='work'?`지금 · ${cname(head().id)}`:cnum(ui.graphVer)+cname(ui.graphVer);
   const ovSrc = ui.graphVer==='preview'?'미리보기 사건':(ui.graphVer==='work'?head():byId(ui.graphVer))?.message;
   const other = !['work','preview'].includes(ui.graphVer) && !commits.some(c=>c.id===ui.graphVer) ? byId(ui.graphVer) : null;
@@ -835,27 +852,27 @@ function renderWorld(){
         <label class="check"><input type="checkbox" id="g-mem" ${ui.showMembers?'checked':''}>소속 선</label>
         <label class="check"><input type="checkbox" id="g-ov" ${ui.overlay?'checked':''}>사건 영향 표시</label>
       </div>
-      <div class="graph-wrap"><svg viewBox="0 0 1100 540" role="img" aria-label="단체·인물 관계도">
+      <div class="graph-wrap"><svg id="g-svg" viewBox="${V.x} ${V.y} ${V.w} ${V.h}" role="img" aria-label="단체·인물 관계도">
         <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--done)"/></marker></defs>
         ${W.zones.map((z,i)=>`<rect x="${z.x}" y="0" width="${z.w}" height="540" style="fill:var(${z.fill})"/>${i?`<line x1="${z.x}" y1="0" x2="${z.x}" y2="540" style="stroke:var(--border);stroke-dasharray:2 6"/>`:''}<text x="${z.x+14}" y="528" font-size="11" font-weight="600" letter-spacing="1" style="fill:var(${z.c})">${esc(z.label)}</text>`).join('')}
-        ${memberLines}${rels.map(edge).join('')}
-        ${[...s.groups,...s.characters].filter(x=>isNode(x.id)).map(node).join('')}
-      </svg></div>
+        <g id="g-body">${body()}</g>
+      </svg><div class="zoom" role="group" aria-label="확대와 축소"><button type="button" data-zoom="in" aria-label="확대">+</button><button type="button" data-zoom="out" aria-label="축소">−</button><button type="button" data-zoom="fit">전체</button></div></div>
+      <div class="Box-row caption graph-tip">인물이나 단체를 끌어서 자리를 옮길 수 있어요. 빈 곳을 끌면 화면이 움직이고, + − 로 확대해요.</div>
       <div class="Box-row" style="flex-wrap:wrap"><div class="legend">
         ${Object.values(REL).map(R=>`<span><i style="border-top:2px ${R.dash?'dashed':'solid'} ${R.c}"></i>${R.l}</span>`).join('')}
         <span><i style="border-top:2px dotted var(--border-strong)"></i>소속</span>
         <span>선 굵기 = 강도</span>
         ${W.zones.map(z=>`<span><span class="sq" style="background:var(${z.c})"></span>${esc(nm(state,z.id))}</span>`).join('')}
-        <span><span class="dot" style="background:var(--danger);opacity:.6"></span>피해 w</span><span><span class="dot" style="background:var(--success);opacity:.6"></span>이득 w</span>
+        <span><span class="dot" style="background:var(--danger);opacity:.6"></span>피해</span><span><span class="dot" style="background:var(--success);opacity:.6"></span>이득</span>
       </div></div>
     </div>
 `; }
-  $('#tab-world').innerHTML = pendingBanner() + `<div class="Subhead"><h2>세계관</h2><span class="muted">${esc(verLabel)}</span>${ui.graphVer==='preview'?'<span class="Label Label--done">아직 커밋 안 됨</span>':''}
+  $('#tab-world').innerHTML = pendingBanner() + `<div class="Subhead"><h2>세계관</h2><span class="muted">${esc(verLabel)}</span>${ui.graphVer==='preview'?'<span class="Label Label--done">아직 기록 안 됨</span>':''}
     <div class="actions">
       <select class="form-control" id="g-ver" style="width:auto;padding:3px 8px;font-size:12px" aria-label="버전">
-        <option value="work" ${ui.graphVer==='work'?'selected':''}>지금 (${esc(cname(head().id))}${pending.length?' + 수동 수정':''})</option>
+        <option value="work" ${ui.graphVer==='work'?'selected':''}>지금 (${esc(cname(head().id))})</option>
         ${analysis?`<option value="preview" ${ui.graphVer==='preview'?'selected':''}>AI 제안 미리보기</option>`:''}
-        ${other?`<option value="${other.id}" selected>${esc(cname(other.id))} (다른 갈래)</option>`:''}
+        ${other?`<option value="${other.id}" selected>${esc(cname(other.id))} (다른 전개)</option>`:''}
         ${commits.slice().reverse().map(c=>`<option value="${c.id}" ${ui.graphVer===c.id?'selected':''}>${cnum(c.id)}${esc(cname(c.id))}</option>`).join('')}
       </select>
     </div></div>
@@ -864,7 +881,8 @@ function renderWorld(){
   $('#g-ver').onchange=ev=>{ ui.graphVer=ev.target.value; ui.editing=null; renderWorld(); };
   const gm=$('#g-mem'); if(gm) gm.onchange=ev=>{ ui.showMembers=ev.target.checked; renderWorld(); };
   const go_=$('#g-ov'); if(go_) go_.onchange=ev=>{ ui.overlay=ev.target.checked; renderWorld(); };
-  $$('.node').forEach(n=>{ const go=()=>pick(n.dataset.id); n.onclick=go; n.onkeydown=ev=>{ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); go(); } }; });
+  const svg=$('#g-svg');
+  if(svg) wireGraph(svg, body);
   $$('[data-pick],[data-go]').forEach(b=>b.onclick=()=>pick(b.dataset.pick||b.dataset.go));
   const dc=$('#detail-close'); if(dc) dc.onclick=()=>{ ui.sel=null; ui.editing=null; render('world'); };
   const oe=$('#ov-event'); if(oe) oe.onclick=()=>showTab('event');
@@ -872,6 +890,27 @@ function renderWorld(){
   const gn=$('#g-now'); if(gn) gn.onclick=()=>{ ui.graphVer='work'; render('world'); };
   if(pe && editable) wireDetail(pe);
   wirePending();
+}
+/* 휴대폰에서는 관계도를 세로로 길게 보여 준다 (왼쪽 절반쯤 확대해서 시작) */
+const fitView=tall=>tall?{x:0,y:-10,w:600,h:560}:{x:0,y:0,w:1100,h:540};
+/* 관계도 조작: 노드 끌어 옮기기(위치 저장), 빈 곳 끌어 이동, 확대·축소. 4px 안 움직이면 클릭으로 본다. */
+function wireGraph(svg, body){
+  const V=ui.view, setVB=()=>svg.setAttribute('viewBox', `${V.x} ${V.y} ${V.w} ${V.h}`);
+  const pt=ev=>{ const p=new DOMPoint(ev.clientX, ev.clientY).matrixTransform(svg.getScreenCTM().inverse()); return [p.x, p.y]; };
+  const wire=()=>svg.querySelectorAll('.node').forEach(n=>n.onkeydown=ev=>{ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); pick(n.dataset.id); } });
+  const zoom=(k,c=[V.x+V.w/2, V.y+V.h/2])=>{ const w=clamp(V.w*k, 280, 2200), f=w/V.w; V.x=c[0]-(c[0]-V.x)*f; V.y=c[1]-(c[1]-V.y)*f; V.h=w*V.h/V.w; V.w=w; setVB(); };
+  let d=null;
+  svg.onpointerdown=ev=>{ if(ev.button) return; const n=ev.target.closest('.node');
+    d={id:n?.dataset.id, sx:ev.clientX, sy:ev.clientY, vx:V.x, vy:V.y, moved:false}; svg.setPointerCapture(ev.pointerId); };
+  svg.onpointermove=ev=>{ if(!d) return;
+    if(!d.moved && Math.hypot(ev.clientX-d.sx, ev.clientY-d.sy)<5) return; d.moved=true;
+    if(d.id){ const [x,y]=pt(ev); LAYOUT[d.id]=[Math.round(clamp(x,20,1080)), Math.round(clamp(y,20,520))]; $('#g-body').innerHTML=body(); wire(); }
+    else { const k=V.w/svg.clientWidth; V.x=d.vx-(ev.clientX-d.sx)*k; V.y=d.vy-(ev.clientY-d.sy)*k; setVB(); } };
+  svg.onpointerup=ev=>{ const x=d; d=null; if(!x) return; if(!x.moved){ if(x.id) pick(x.id); return; } if(x.id) saveWorld(); };
+  svg.onpointercancel=()=>{ d=null; };
+  svg.onwheel=ev=>{ if(!ev.ctrlKey && !ev.metaKey) return; ev.preventDefault(); zoom(ev.deltaY<0?0.88:1/0.88, pt(ev)); };
+  $$('[data-zoom]').forEach(b=>b.onclick=()=>{ const z=b.dataset.zoom; if(z==='fit'){ Object.assign(V, fitView(V.h/V.w>0.6)); setVB(); } else zoom(z==='in'?0.8:1.25); });
+  wire();
 }
 /* 아무것도 고르지 않았을 때 오른쪽 패널: 세계관 한눈에 보기 */
 function overview(s){
@@ -898,28 +937,37 @@ function pastDetail(s,e,ov,ovSrc){
         <div class="Box-body stack" style="gap:12px">
           <p style="margin:0">${esc(e.situation?.current)}</p>
           ${ov[e.id]!==undefined?`<div style="display:flex;gap:8px;align-items:center"><span class="caption" style="flex:none">이 사건의 영향</span>${wbar(ov[e.id])}<span class="num ${ov[e.id]<0?'neg':'pos'}">${sf2(ov[e.id])}</span></div><div class="caption">${esc(ovSrc||'')}</div>`:''}
-          <div>${(e.traits||[]).map(t=>`<div style="display:grid;grid-template-columns:minmax(0,1fr) 80px 32px;gap:8px;align-items:center;font-size:12px;padding:2px 0"><span>${esc(t.label)}</span><div class="meter"><i style="width:${t.value*100}%"></i></div><span class="num" style="text-align:right">${f2(t.value)}</span></div>`).join('')}</div>
+          <div>${(e.traits||[]).map(t=>`<div style="display:grid;grid-template-columns:minmax(0,1fr) 80px 56px;gap:8px;align-items:center;font-size:12px;padding:2px 0"><span>${esc(t.label)}</span><div class="meter"><i style="width:${t.value*100}%"></i></div><span style="text-align:right">${lvOf(t.value)}</span></div>`).join('')}</div>
         </div>
-        ${myRels.map(r=>{const o=r.from===e.id?r.to:r.from; const R=REL[r.type]||REL.personal; return `<div class="Box-row"><div style="flex:1;min-width:0"><button class="btn-link" data-pick="${o}">${esc(nm(s,o))}</button>${r.note?`<div class="caption">${esc(r.note)}</div>`:''}</div><span class="Label" style="color:${R.c};border-color:${R.c}">${R.l}${r.directed?(r.from===e.id?' →':' ←'):''}</span><span class="num">${f2(r.intensity)}</span></div>`}).join('')}
+        ${myRels.map(r=>{const o=r.from===e.id?r.to:r.from; const R=REL[r.type]||REL.personal; return `<div class="Box-row"><div style="flex:1;min-width:0"><button class="btn-link" data-pick="${o}">${esc(nm(s,o))}</button>${r.note?`<div class="caption">${esc(r.note)}</div>`:''}</div><span class="Label" style="color:${R.c};border-color:${R.c}">${R.l}${r.directed?(r.from===e.id?' →':' ←'):''}</span>${lvTag(r.intensity)}</div>`}).join('')}
         <div class="Box-row"><button class="btn btn-sm" id="g-now">지금 시점으로 돌아가 고치기</button></div>
       </div>`;
 }
 /* 오른쪽 상세 패널의 수정 동작 */
 function wireDetail(e){
-  $$('input[data-path]').forEach(r=>{
-    r.oninput=()=>{ r.closest('.trait').querySelector('.v').textContent=f2(+r.value); };
-    r.onchange=()=>{ setManual(r.dataset.path, Math.round(+r.value*100)/100); render('world'); };
-  });
+  $$('[data-lv]').forEach(b=>b.onclick=()=>{ setManual(b.dataset.lv, +b.dataset.v); render('world'); });
   const sv=$('#sit-save'); if(sv) sv.onclick=()=>{
     const base=`/${coll(e.id)}/${e.id}/situation`;
     setManual(base+'/status', $('#sit-status').value.trim()); setManual(base+'/current', $('#sit-current').value.trim());
-    toast(pending.length?'수동 수정에 담았어요':'바뀐 내용이 없어요'); render('world');
+    toast(pending.length?'저장했어요':'바뀐 내용이 없어요'); render('world');
   };
   const bs=$('#bg-save'); if(bs) bs.onclick=()=>{
     const t=$('#bg-title').value.trim(); if(!t){ toast('제목을 입력하세요'); return; }
     setManual(`/background/${e.id}/title`, t); setManual(`/background/${e.id}/category`, $('#bg-cat').value.trim()||'기타');
-    setManual(`/background/${e.id}/content`, $('#bg-content').value.trim()); toast(pending.length?'수동 수정에 담았어요':'바뀐 내용이 없어요'); render('world'); };
+    setManual(`/background/${e.id}/content`, $('#bg-content').value.trim()); toast(pending.length?'저장했어요':'바뀐 내용이 없어요'); render('world'); };
   if(!e.id.startsWith('bg_')) wireEntityEdit(e);
+  const base=`/${coll(e.id)}/${e.id}`;
+  const nt=$('#ent-notes'); if(nt) nt.onchange=()=>{ const v=nt.value.trim(); if(v===(e.notes||'')) return; setManual(base+'/notes', v); flushPending(); saveWorld(); toast('메모를 저장했어요'); };
+  const ph=$('#ent-photo'); if(ph) ph.onchange=async()=>{ const f=ph.files?.[0]; if(!f) return;
+    try{ setManual(base+'/photo', await shrinkPhoto(f)); toast('사진을 넣었어요'); render('world'); }catch(err){ toast('사진을 읽지 못했어요'); } };
+  const pd=$('#ent-photo-del'); if(pd) pd.onclick=()=>{ setManual(base+'/photo', null); toast('사진을 뺐어요'); render('world'); };
+}
+/* 사진은 가운데를 정사각형으로 잘라 160px JPEG로 줄여 저장한다 (세계관 문서 크기를 작게 유지) */
+function shrinkPhoto(file){
+  return new Promise((ok, fail)=>{ const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{ const n=Math.min(img.width,img.height), c=document.createElement('canvas'); c.width=c.height=160;
+      c.getContext('2d').drawImage(img,(img.width-n)/2,(img.height-n)/2,n,n,0,0,160,160); URL.revokeObjectURL(url); ok(c.toDataURL('image/jpeg',0.82)); };
+    img.onerror=()=>{ URL.revokeObjectURL(url); fail(new Error('image')); }; img.src=url; });
 }
 const SURNAMES='김이박최정강조윤장임한오서신권황안송류홍전고문양손배백허유남심노하곽성차주우구민진나지엄채원천방공현함변염여추도소석선설마길연위표명기반왕금옥육인맹제모봉';
 function initial(n){ return /^[가-힣]{3}$/.test(n) && SURNAMES.includes(n[0]) ? n[1] : n[0]; }
@@ -948,13 +996,39 @@ function impactTable(c){
 const LANE_C=['var(--accent)','var(--done)','var(--success)','var(--severe)','var(--sponsor)','var(--attention)'];
 function histHead(){
   return `<div class="Subhead"><h2>버전 기록</h2>
-    <select class="form-control" id="h-branch" style="width:auto;padding:3px 8px;font-size:12px" aria-label="갈래">${branches.map(b=>`<option value="${b.id}" ${b.id===branchId?'selected':''}>${esc(b.name)}</option>`).join('')}</select>
-    <span class="muted">커밋 ${commits.length}개${branches.length>1?` · 갈래 ${branches.length}개`:''}</span>
-    <div class="actions"><div class="seg" role="group" aria-label="보기 방식">${[['tree','트리'],['list','목록']].map(([k,l])=>`<button aria-pressed="${(ui.histView||'tree')===k}" data-hv="${k}">${l}</button>`).join('')}</div></div></div>`;
+    <select class="form-control" id="h-branch" style="width:auto;padding:3px 8px;font-size:12px" aria-label="전개">${branches.map(b=>`<option value="${b.id}" ${b.id===branchId?'selected':''}>${esc(b.name)}</option>`).join('')}</select>
+    <span class="muted">기록 ${commits.length}개${branches.length>1?` · 전개 ${branches.length}개`:''}</span>
+    <div class="actions"><div class="seg" role="group" aria-label="보기 방식">${[['tree','이야기 흐름'],['time','타임라인'],['list','비교·되돌리기']].map(([k,l])=>`<button aria-pressed="${(ui.histView||'tree')===k}" data-hv="${k}">${l}</button>`).join('')}</div></div></div>`;
 }
 function wireHistHead(){
-  $('#h-branch').onchange=ev=>{ if(switchBranch(ev.target.value)) toast(`'${curBranch().name}' 갈래로 옮겼어요`); render(); };
+  $('#h-branch').onchange=ev=>{ if(switchBranch(ev.target.value)) toast(`'${curBranch().name}' 전개로 옮겼어요`); render(); };
   $$('[data-hv]').forEach(b=>b.onclick=()=>{ ui.histView=b.dataset.hv; renderHistory(); });
+}
+/* 타임라인: 지금 전개의 사건을 순서대로, 작중 시점과 함께. 인물·단체를 고르면 그 항목이 겪은 일만 모아 본다. */
+function renderTimeline(){
+  const f=ui.tlFocus && ent(state,ui.tlFocus) ? ui.tlFocus : '';
+  const hist=id=>{ const e=ent(state,id); return e?.situation?.history||[]; };
+  const touches=c=> c.event?.involved?.includes(f) || (c.impacts||[]).some(i=>i.target===f) || c.patches.some(p=>p.path.split('/')[2]===f);
+  const rows=commits.filter(c=> f ? (c.kind!=='init' && touches(c)) : c.kind!=='manual');
+  const opts=[...state.characters,...state.groups].map(x=>`<option value="${x.id}" ${f===x.id?'selected':''}>${esc(x.name)}</option>`).join('');
+  $('#tab-history').innerHTML = histHead() + `
+  <div class="tl-bar"><label for="tl-focus" class="caption">누구의 이야기를 볼까요?</label>
+    <select class="form-control" id="tl-focus" style="width:auto"><option value="">모든 사건</option>${opts}</select>
+    ${f?`<span class="caption">엮인 기록 ${rows.length}개</span>`:''}</div>
+  <ol class="tl2">${rows.map(c=>{ const i=commits.indexOf(c);
+    const imp=(c.impacts||[]).filter(x=>Math.abs(x.magnitude)>=0.25).sort((a,b)=>Math.abs(b.magnitude)-Math.abs(a.magnitude));
+    const mine=f?hist(f).filter(h=>h.commit===c.id):[];
+    return `<li><div class="tl2-when"><span class="tl2-n">${i+1}</span><span>${esc(c.event?.story_time||(c.kind==='init'?'시작':''))}</span></div>
+      <div class="Box tl2-card"><div class="Box-body stack" style="gap:8px">
+        <div><b>${esc(cname(c.id))}</b> <span class="Label">${COMMIT_KIND[c.kind]||c.kind}</span></div>
+        ${c.event?.description?`<div class="muted">${esc(c.event.description)}</div>`:''}
+        ${mine.length?`<div class="tl2-mine">${mine.map(h=>`<div><b>${esc(nm(state,f))}</b> ${esc(h.summary)}${h.weight!=null?` <span class="num ${h.weight<0?'neg':'pos'}">${h.weight<0?'피해':'이득'} ${lvOf(Math.abs(h.weight))}</span>`:''}</div>`).join('')}</div>`:''}
+        ${!f && imp.length?`<div class="chips">${imp.slice(0,8).map(x=>`<button class="chip tl2-imp ${x.magnitude<0?'neg':'pos'}" data-tlgo="${x.target}">${esc(nm(state,x.target))} ${x.magnitude<0?'피해':'이득'}</button>`).join('')}${imp.length>8?`<span class="caption">외 ${imp.length-8}</span>`:''}</div>`:''}
+        ${!f && c.event?.involved?.length && !imp.length?`<div class="chips">${c.event.involved.map(id=>`<button class="chip" data-tlgo="${id}">${esc(nm(state,id))}</button>`).join('')}</div>`:''}
+      </div></div></li>`; }).join('') || '<li class="caption">아직 기록된 사건이 없어요. 사건 입력 탭에서 첫 사건을 적어 보세요.</li>'}</ol>`;
+  wireHistHead();
+  $('#tl-focus').onchange=ev=>{ ui.tlFocus=ev.target.value; renderTimeline(); };
+  $$('[data-tlgo]').forEach(b=>b.onclick=()=>{ ui.tlFocus=b.dataset.tlgo; renderTimeline(); });
 }
 /* 커밋 트리: 갈래 순서대로 줄기를 훑어 처음 만난 갈래의 칸에 커밋을 둔다(main이 맨 왼쪽). 최신이 위. */
 function renderTree(){
@@ -980,39 +1054,40 @@ function renderTree(){
   const c=byId(sel);
   $('#tab-history').innerHTML = pendingBanner() + histHead() + `
   <div class="split-r">
-    <div class="Box"><div class="Box-header"><h3>커밋 트리</h3><span class="caption right">커밋을 누르면 오른쪽에 자세히 보여요</span></div>
+    <div class="Box"><div class="Box-header"><h3>이야기 흐름</h3><span class="caption right">기록을 누르면 오른쪽에 자세히 보여요</span></div>
       <div class="tree-graph"><svg width="${SW}" height="${rows.length*ROW}" aria-hidden="true">${lines}${dots}</svg>${list}</div></div>
     <aside class="stack">
       <div class="Box"><div class="Box-header"><h3>${esc(c.message)}</h3></div>
         <div class="Box-body stack" style="gap:8px">
           <div class="caption" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="Label">${COMMIT_KIND[c.kind]||c.kind}</span>${fmtDate(c.created_at)}${c.patches.length?` · 변경 ${c.patches.length}건`:''}</div>
           ${c.event?`<div style="padding:8px 12px;background:var(--bg-subtle);border-radius:6px">${esc(c.event.description)}${c.event.story_time?`<div class="caption" style="margin-top:4px">작중 시점: ${esc(c.event.story_time)}</div>`:''}</div>`:''}
-          ${onLine.has(c.id)?'':`<div class="caption">지금 갈래('${esc(curBranch().name)}')에는 없는 커밋이에요.</div>`}
+          ${onLine.has(c.id)?'':`<div class="caption">지금 전개('${esc(curBranch().name)}')에는 없는 기록이에요.</div>`}
         </div>
         <div class="Box-row" style="flex-wrap:wrap;gap:8px">
-          ${(heads[c.id]||[]).filter(b=>b.id!==branchId).map(b=>`<button class="btn btn-sm btn-primary" data-sw="${b.id}">'${esc(b.name)}' 갈래로 이동</button>`).join('')}
-          <button class="btn btn-sm" id="t-branch">${icon('commit')}여기서 '만약에' 갈래 만들기</button>
+          ${(heads[c.id]||[]).filter(b=>b.id!==branchId).map(b=>`<button class="btn btn-sm btn-primary" data-sw="${b.id}">'${esc(b.name)}' 전개로 이동</button>`).join('')}
+          <button class="btn btn-sm" id="t-branch">${icon('commit')}여기서 '만약에' 전개 만들기</button>
           <button class="btn btn-sm" id="t-graph">${icon('graph')}이 시점 관계도</button>
         </div></div>
-      <div class="Box"><div class="Box-header"><h3>갈래</h3><span class="Counter">${branches.length}</span></div>
+      <div class="Box"><div class="Box-header"><h3>전개</h3><span class="Counter">${branches.length}</span></div>
         ${branches.map((b,bi)=>`<div class="Box-row"><span class="dot" style="background:${LANE_C[bi%LANE_C.length]}"></span>
           <div style="flex:1;min-width:0"><b>${esc(b.name)}</b>${b.id===branchId?' <span class="Label Label--accent">지금</span>':''}<div class="caption">사건 ${lineOf(b.head).length}개 · 마지막: ${esc(cname(b.head))}</div></div>
           ${b.id===branchId?'':`<button class="btn btn-sm" data-sw="${b.id}">이동</button>${b.id==='main'?'':`<button class="btn btn-sm btn-danger" data-delb="${b.id}">지우기</button>`}`}</div>`).join('')}
-        <div class="Box-row caption">과거 커밋에서 '만약에' 갈래를 만들면 원래 이야기는 그대로 두고 다른 전개를 시험해 볼 수 있어요. 갈래 합치기는 준비 중이에요.</div></div>
+        <div class="Box-row caption">지난 기록에서 '만약에' 전개를 만들면 본편은 그대로 두고 다른 이야기를 시험해 볼 수 있어요. 전개 합치기는 준비 중이에요.</div></div>
     </aside>
   </div>`;
   wireHistHead();
   $$('[data-tc]').forEach(b=>b.onclick=()=>{ ui.treeSel=b.dataset.tc; renderHistory(); });
-  $$('[data-sw]').forEach(b=>b.onclick=()=>{ if(switchBranch(b.dataset.sw)) toast(`'${curBranch().name}' 갈래로 옮겼어요`); render(); });
-  $('#t-branch').onclick=()=>{ const name=(prompt('새 갈래 이름 (예: 만약 바이가 떠나지 않았다면)')||'').trim(); if(!name) return; createBranch(sel, name); render(); };
+  $$('[data-sw]').forEach(b=>b.onclick=()=>{ if(switchBranch(b.dataset.sw)) toast(`'${curBranch().name}' 전개로 옮겼어요`); render(); });
+  $('#t-branch').onclick=()=>{ const name=(prompt('새 전개 이름 (예: 만약 바이가 떠나지 않았다면)')||'').trim(); if(!name) return; createBranch(sel, name); render(); };
   $('#t-graph').onclick=()=>{ ui.graphVer = sel===head().id?'work':sel; showTab('graph'); };
   $$('[data-delb]').forEach(b=>b.onclick=()=>{ const br=branches.find(x=>x.id===b.dataset.delb);
-    if(!confirm(`'${br.name}' 갈래를 지울까요? 이 갈래에만 있는 커밋도 함께 지워져요.`)) return;
-    deleteBranch(br.id); toast('갈래를 지웠어요'); render(); });
+    if(!confirm(`'${br.name}' 전개를 지울까요? 이 전개에만 있는 기록도 함께 지워져요.`)) return;
+    deleteBranch(br.id); toast('전개를 지웠어요'); render(); });
   wirePending();
 }
 function renderHistory(){
   if((ui.histView||'tree')==='tree') return renderTree();
+  if(ui.histView==='time') return renderTimeline();
   const n=commits.length;
   if(!commits.some(c=>c.id===ui.cmpA)) ui.cmpA=commits[Math.max(0,n-2)].id;
   if(!commits.some(c=>c.id===ui.cmpB)) ui.cmpB=commits[n-1].id;
@@ -1028,7 +1103,7 @@ function renderHistory(){
       <div class="Box" style="margin-bottom:8px"><div class="Box-body">
         <div class="commit">
           <div class="msg">${esc(c.message)}${i===n-1?'<span class="head-tag">지금</span>':''}
-            <small><span class="Label" style="margin-right:4px">${COMMIT_KIND[c.kind]||c.kind}</span>${esc(USER.name)} 커밋${c.impacts?.length?` · 영향 ${c.impacts.length}건`:''} · 변경 ${c.patches.length}건</small></div>
+            <small><span class="Label" style="margin-right:4px">${COMMIT_KIND[c.kind]||c.kind}</span>${esc(USER.name)} 기록${c.impacts?.length?` · 영향 ${c.impacts.length}건`:''} · 변경 ${c.patches.length}건</small></div>
           <div class="pick" role="group" aria-label="비교 대상">
             <label><input type="radio" name="cmpA" value="${c.id}" ${ui.cmpA===c.id?'checked':''}>A</label>
             <label><input type="radio" name="cmpB" value="${c.id}" ${ui.cmpB===c.id?'checked':''}>B</label>
@@ -1039,14 +1114,14 @@ function renderHistory(){
           <div class="caption" style="margin-top:4px">${c.event.story_time?`작중 시점: ${esc(c.event.story_time)} · `:''}관련: ${(c.event.involved||[]).map(id=>esc(nm(state,id))).join(', ')}</div></div>`:''}
         ${(c.impacts?.length||c.patches.length)?`<button class="btn-link" data-open="${c.id}" style="margin-top:8px;font-size:12px">${open?'접기':'영향과 변경 보기'}</button>`:''}
         ${open?`${impactTable(c)}${c.patches.length?`<div class="stack" style="gap:3px;margin-top:12px">${c.patches.flatMap(p=>patchLines(stateAt(i),p)).map(([k,l])=>`<span class="diffline ${k}">${esc(l)}</span>`).join('')}</div>`:''}`:''}
-        ${ui.confirm===c.id?`<div class="confirm">${icon('alert')}<span style="flex:1 1 200px">이후 커밋 ${n-1-i}개의 변경을 역순으로 되돌립니다. 기록은 지워지지 않고 되돌리기 커밋이 새로 쌓입니다.</span>
-          <button class="btn btn-sm" data-cancel>취소</button><button class="btn btn-sm btn-primary" data-ok="${c.id}">되돌리기 커밋</button></div>`:''}
+        ${ui.confirm===c.id?`<div class="confirm">${icon('alert')}<span style="flex:1 1 200px">이후 기록 ${n-1-i}개의 변경을 거꾸로 되돌려요. 기존 기록은 지워지지 않고 되돌리기 기록이 새로 쌓여요.</span>
+          <button class="btn btn-sm" data-cancel>취소</button><button class="btn btn-sm btn-primary" data-ok="${c.id}">되돌리기</button></div>`:''}
       </div></div>`; }).join('')}
     </div>
     <aside class="Box" style="position:sticky;top:76px">
       <div class="Box-header"><h3>비교</h3><span class="caption">${esc(cnum(commits[ia].id)+cname(commits[ia].id))} → ${esc(cnum(commits[ib].id)+cname(commits[ib].id))}</span></div>
       <div class="Box-body stack" style="gap:4px;max-height:60vh;overflow:auto">
-        ${ia===ib?'<span class="caption">A와 B에 서로 다른 커밋을 고르세요.</span>':lines.length?lines.map(([c,l])=>`<span class="diffline ${c}">${esc(l)}</span>`).join(''):'<span class="caption">차이가 없습니다.</span>'}
+        ${ia===ib?'<span class="caption">A와 B에 서로 다른 기록을 고르세요.</span>':lines.length?lines.map(([c,l])=>`<span class="diffline ${c}">${esc(l)}</span>`).join(''):'<span class="caption">차이가 없습니다.</span>'}
       </div>
       <div class="Box-row" style="flex-wrap:wrap"><span class="caption" style="flex:1">${cnt.add}개 추가 · ${cnt.chg}개 변경 · ${cnt.del}개 삭제</span>
         <button class="btn btn-sm" id="h-graph">${icon('graph')}B 시점 관계도</button></div>
@@ -1214,7 +1289,7 @@ function syncFromCloud(k){
   loadCloud(k).then(remote=>{
     if(k!==worldKey) return;
     if(remote && remote.updatedAt>savedAt && remote.data?.state){
-      state=remote.data.state; setTree(remote.data.commits, remote.data.branches, remote.data.branch); pending=remote.data.pending||[];
+      state=remote.data.state; setTree(remote.data.commits, remote.data.branches, remote.data.branch); pending=remote.data.pending||[]; LAYOUT=remote.data.layout||{};
       savedAt=remote.updatedAt; lastJson=JSON.stringify(snapshot());
       try{ localStorage.setItem(saveKey(k), JSON.stringify({...snapshot(), savedAt})); }catch(e){}
       render(); toast('클라우드에 저장된 세계관을 불러왔습니다');
@@ -1227,11 +1302,11 @@ function syncFromCloud(k){
 function loadWorld(k, fresh=false){
   W=WORLDS[k]; DATA=W.data; POS=W.pos||{}; SAMPLE=W.sample||{title:'', description:'', story_time:'', direct:[], rewrite:{}, relations:[]}; worldKey=k;
   const pe=$('#proj-edit'); if(pe) pe.style.display=k.startsWith('p_')?'':'none';
-  state=clone(DATA.state); setTree(clone(DATA.commits)); pending=[]; analysis=null;
+  state=clone(DATA.state); setTree(clone(DATA.commits)); pending=[]; analysis=null; LAYOUT={}; ui.view=null;
   if(!fresh){
     try{
       const saved=JSON.parse(localStorage.getItem(saveKey(k)));
-      if(saved?.state && saved?.commits){ state=saved.state; setTree(saved.commits, saved.branches, saved.branch); pending=saved.pending||[]; }
+      if(saved?.state && saved?.commits){ state=saved.state; setTree(saved.commits, saved.branches, saved.branch); pending=saved.pending||[]; LAYOUT=saved.layout||{}; }
       savedAt=saved?.savedAt||0;
     }catch(e){ savedAt=0; }
   } else savedAt=0;
@@ -1303,9 +1378,9 @@ $('#sign-out').onclick=()=>signOutUser().then(()=>location.reload());
 /* ---------- 사용 안내 (처음 한 번, 이후 도움말 버튼) ---------- */
 const TOUR=[
   ['world','세계관','오른쪽에 세계관 전체가 관계도로 보여요. 인물이나 단체를 누르면 상황, 성격, 관계가 옆에 열리고 바로 고칠 수 있어요. 왼쪽 도구창에서 + 인물 추가, + 단체 추가로 새로 만들어요. 위쪽에서 시점을 고르면 그때의 관계도로 바뀌어요.'],
-  ['event','사건 입력','이야기에서 일어난 일을 적고 AI 영향 분석을 누르면, 누가 직접 영향을 받고 소속을 따라 어떻게 퍼지는지 보여줘요. 확인한 뒤 사건 커밋을 누르면 버전으로 남아요.'],
+  ['event','사건 입력','이야기에서 일어난 일을 적고 AI 영향 분석을 누르면, 누가 직접 영향을 받고 소속을 따라 어떻게 퍼지는지 보여줘요. 확인한 뒤 사건 기록하기를 누르면 버전으로 남아요.'],
   ['manuscript','원고 붙여넣기','쓴 원고를 한 화씩 붙여넣으면 AI가 새 인물, 바뀐 상황, 새 관계, 큰 사건을 후보로 골라줘요. 체크한 것만 반영돼요.'],
-  ['history','버전 기록','모든 변화가 커밋 트리로 쌓여요. 과거 커밋에서 \'만약에\' 갈래를 만들어 다른 전개를 시험하고, 언제든 되돌릴 수 있어요. 내 이야기는 왼쪽 도구창의 + 새 프로젝트로 시작하세요.']
+  ['history','버전 기록','모든 변화가 이야기 흐름으로 쌓여요. 지난 기록에서 \'만약에\' 전개를 만들어 다른 이야기를 시험하고, 언제든 되돌릴 수 있어요. 내 이야기는 왼쪽 도구창의 + 새 프로젝트로 시작하세요.']
 ];
 function tour(i=0){
   $('#tour')?.remove(); $$('.tour-hl').forEach(el=>el.classList.remove('tour-hl'));
