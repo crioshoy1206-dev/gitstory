@@ -3,8 +3,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = { title: "개인정보처리방침 · GitStory" };
 
-// 문의처: 운영자 메일 주소가 정해지면 바꾼다
-const CONTACT = "운영자 이메일 (준비 중)";
+const CONTACT = "crioceio@naver.com";
 const EFFECTIVE = "2026년 10월 30일";
 
 const TRANSFERS: [string, string, string, string][] = [
@@ -68,7 +67,7 @@ export default function Privacy() {
       <p>모든 통신은 암호화(HTTPS)되고, 데이터베이스는 본인 계정으로만 읽고 쓸 수 있도록 접근을 제한합니다.</p>
 
       <h2>9. 개인정보 보호책임자와 문의처</h2>
-      <p>문의: {CONTACT}</p>
+      <p>개인정보 보호책임자: GitStory 운영자<br />문의: {CONTACT}</p>
 
       <h2>10. 방침 변경</h2>
       <p>이 방침이 바뀌면 시행 7일 전에 서비스 화면으로 알립니다.</p>
