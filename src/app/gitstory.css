@@ -307,3 +307,9 @@ details.more summary{cursor:pointer;color:var(--accent);font-size:12px;font-weig
 @media (min-width:1281px){.ws.has-detail .graph-wrap svg{min-width:0}}
 @media (max-width:860px){.main-tabs .side-toggle{display:inline-flex}}
 .detail{scroll-margin-top:72px}
+.graph-wrap svg{max-width:1180px;margin:0 auto}
+.ov-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.ov-stats div{display:flex;flex-direction:column;align-items:center;padding:10px 4px;background:var(--bg-subtle);border-radius:var(--r)}
+.ov-stats b{font-family:var(--font-head);font-size:20px;font-variant-numeric:tabular-nums}
+.ov-stats span{font-size:12px;color:var(--fg-muted)}
+.ov-n{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:600;background:var(--bg-muted);color:var(--fg-muted)}
