@@ -77,6 +77,8 @@ function nationOf(s,e){
 }
 function nationColor(n){ const z=W.zones.find(z=>z.id===n); return z?`var(${z.c})`:'var(--fg-muted)'; }
 function statusCls(st){ return st==='사망'?'Label--danger':/위기|마비|비상|충격|불안정|공백|도주|진압|교전|부상|축소|저항|쇠약|수감|수배|장악|숙청|상실|폐교|동요/.test(st||'')?'Label--attention':''; }
+const cname = id => { const c=byId(id); return c ? c.message.replace(/^사건:\s*/,'') : '지워진 시점'; };
+const cnum = id => { const i=commits.findIndex(c=>c.id===id); return i<0?'':`${i+1}. `; };
 function fmtDate(s){ if(!s) return '방금 전'; const d=new Date(s); return `${d.getMonth()+1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
 function newId(p){ return `${p}_${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2,5)}`; }
 function newSha(){ return Array.from({length:7},()=>'0123456789abcdef'[Math.random()*16|0]).join(''); }
@@ -266,7 +268,7 @@ function wirePending(){
     pending.forEach(p=>{ const m=p.path.match(/^\/(groups|characters)\/([^/]+)\//); if(m){ const hp={op:'add', path:`/${m[1]}/${m[2]}/situation/history/-`, after:{commit:id, summary:describePath(state,p.path).split(' · ')[1]+' 수정', source:'manual'}}; applyPatch(state,hp); p.__h=hp; } });
     const patches=pending.flatMap(p=>p.__h?[{op:p.op,path:p.path,before:p.before,after:p.after}, p.__h]:[{op:p.op,path:p.path,before:p.before,after:p.after}]);
     addCommit({id, parent:head().id, kind:'manual', message:$('#pend-msg').value.trim()||'수동 수정', created_at:new Date().toISOString(), impacts:[], patches});
-    pending=[]; toast(`커밋 ${id} 생성`); render();
+    pending=[]; toast('수동 수정을 기록했어요'); render();
   };
   $('#pend-discard').onclick=()=>{ pending.slice().reverse().forEach(p=>applyPatch(state,p,true)); pending=[]; toast('수동 수정을 버렸습니다'); render(); };
 }
@@ -432,7 +434,7 @@ function entityDetail(e){
             <div><div style="font-weight:600;margin-bottom:8px">이력 <span class="Counter">${sit.history.length}</span></div>
             ${sit.history.length?`<ul class="log">${sit.history.slice().reverse().map(h=>`<li class="${h.source||''}">
               <div>${esc(h.summary)}</div>
-              <div class="meta"><span class="sha">${esc(h.commit)}</span>${h.source?`<span class="Label ${SRC[h.source][1]}">${SRC[h.source][0]}</span>`:''}
+              <div class="meta"><span>${esc(cname(h.commit))}</span>${h.source?`<span class="Label ${SRC[h.source][1]}">${SRC[h.source][0]}</span>`:''}
               ${h.via?`<span>${esc(nm(s,h.via))} 경유</span>`:''}${h.weight!=null?`<span class="num ${h.weight<0?'neg':'pos'}">w ${sf2(h.weight)}</span>`:''}</div></li>`).join('')}</ul>`:'<span class="caption">아직 이력이 없습니다.</span>'}</div>
           </div></div>
         <div class="Box"><div class="Box-header"><h3>관계</h3><span class="Counter">${rels.length}</span></div>
@@ -538,12 +540,21 @@ function buildPatches(a, cid, s=state){
   });
   return patches;
 }
+function evPosition(){
+  const recent=commits.slice(-3), skip=commits.length-recent.length;
+  return `<div class="Box"><div class="Box-header"><h3>이 사건이 들어갈 자리</h3>${branches.length>1?`<span class="Label">${esc(curBranch().name)}</span>`:''}</div>
+    <ol class="ev-pos">${skip?`<li class="more">앞선 사건 ${skip}개</li>`:''}
+      ${recent.map(c=>`<li><span class="n">${cnum(c.id).replace('. ','')}</span><div><div>${esc(cname(c.id))}</div>${c.event?.story_time?`<div class="caption">${esc(c.event.story_time)}</div>`:''}</div></li>`).join('')}
+      <li class="here"><span class="n">${commits.length+1}</span><div><div id="ev-pos-title">${esc(analysis?.title ?? ui.evDraft?.title ?? SAMPLE.title)}</div><div class="caption">새 사건이 여기에 들어가요</div></div></li></ol>
+    <div class="Box-row caption">더 앞 시점에 넣고 싶으면 버전 기록에서 그 사건을 고르고 '만약에' 갈래를 만들어 주세요.</div></div>`;
+}
 function renderEvent(){
   const blocked=pending.length>0;
   $('#tab-event').innerHTML = pendingBanner() + `
-  <div class="Subhead"><h2>새 사건</h2><span class="muted">${branches.length>1?`'${esc(curBranch().name)}' 갈래의 `:''}HEAD <span class="sha">${head().id}</span> 위에 커밋됩니다</span></div>
+  <div class="Subhead"><h2>새 사건</h2><span class="muted">${branches.length>1?`'${esc(curBranch().name)}' 갈래 · `:''}'${esc(cname(head().id))}' 다음에 이어집니다</span></div>
   <div class="split-r">
     <div class="stack">
+      ${evPosition()}
       <div class="Box"><div class="Box-body stack">
         <div class="form-group"><label for="ev-title">사건 제목</label><input class="form-control" id="ev-title" value="${esc(analysis?.title ?? ui.evDraft?.title ?? SAMPLE.title)}"></div>
         <div class="form-group"><label for="ev-text">무슨 일이 일어나나요?</label><textarea class="form-control" id="ev-text" rows="3">${esc(analysis?.description ?? ui.evDraft?.description ?? SAMPLE.description)}</textarea></div>
@@ -563,7 +574,8 @@ function renderEvent(){
       <div class="flash">${icon('info')}<div class="caption" style="color:var(--fg)">반응도 판단과 상황 문장은 AI가, 숫자 계산은 앱이 합니다. 그래서 M이나 성격 강도를 고치면 결과가 바로 다시 계산됩니다.</div></div>
     </aside>
   </div>`;
-  const evs=$('#ev-sample'); if(evs) evs.onclick=()=>{ $('#ev-title').value=SAMPLE.title; $('#ev-text').value=SAMPLE.description; $('#ev-time').value=SAMPLE.story_time; };
+  const evs=$('#ev-sample'); if(evs) evs.onclick=()=>{ $('#ev-title').value=SAMPLE.title; $('#ev-text').value=SAMPLE.description; $('#ev-time').value=SAMPLE.story_time; $('#ev-pos-title').textContent=SAMPLE.title; };
+  $('#ev-title').oninput=e=>{ $('#ev-pos-title').textContent=e.target.value.trim()||'새 사건'; };
   $('#ev-run').onclick=async ()=>{
     const title=$('#ev-title').value.trim()||'새 사건', text=$('#ev-text').value.trim(), time=$('#ev-time').value.trim();
     if(!text){ $('#ev-result').innerHTML=`<div class="flash flash-warn">${icon('alert')}<div>사건 내용을 입력하세요.</div></div>`; return; }
@@ -649,7 +661,7 @@ function drawProp(){
     addCommit({id, parent:head().id, kind:'event', message:$('#ev-msg').value.trim()||'사건: '+a.title, created_at:new Date().toISOString(),
       event:{title:a.title, description:a.description, story_time:a.story_time, involved:a.direct.map(d=>d.target)},
       impacts:its.map(it=>({target:it.target, source:it.source, via:it.via, tags:it.tags, magnitude:Math.round(it.w*100)/100, summary:it.summary||''})), patches:ps});
-    analysis=null; ui.evDraft=null; ui.graphVer='work'; ui.open={[id]:true}; toast(`커밋 ${id} 생성 · 변경 ${ps.length}건`); showTab('history');
+    analysis=null; ui.evDraft=null; ui.graphVer='work'; ui.open={[id]:true}; toast(`'${cname(id)}' 사건을 기록했어요 · 변경 ${ps.length}건`); showTab('history');
   };
 }
 
@@ -816,17 +828,17 @@ function renderGraph(){
     return `<g class="node" data-id="${e.id}" tabindex="0" role="button" aria-label="${esc(e.name)}" opacity="${dead?.5:dim?.45:1}">${shape}${badge}</g>`;
   };
   const e=ent(s,sel); const myRels=s.relations.filter(r=>r.from===sel||r.to===sel);
-  const verLabel = ui.graphVer==='preview'?'AI 제안 미리보기':ui.graphVer==='work'?`HEAD ${head().id}`:ui.graphVer;
+  const verLabel = ui.graphVer==='preview'?'AI 제안 미리보기':ui.graphVer==='work'?`지금 · ${cname(head().id)}`:cnum(ui.graphVer)+cname(ui.graphVer);
   const ovSrc = ui.graphVer==='preview'?'미리보기 사건':(ui.graphVer==='work'?head():byId(ui.graphVer))?.message;
   const other = !['work','preview'].includes(ui.graphVer) && !commits.some(c=>c.id===ui.graphVer) ? byId(ui.graphVer) : null;
   $('#tab-graph').innerHTML = pendingBanner() + `
-  <div class="Subhead"><h2>관계도</h2><span class="sha">${esc(verLabel)}</span>${ui.graphVer==='preview'?'<span class="Label Label--done">아직 커밋 안 됨</span>':''}
+  <div class="Subhead"><h2>관계도</h2><span class="muted">${esc(verLabel)}</span>${ui.graphVer==='preview'?'<span class="Label Label--done">아직 커밋 안 됨</span>':''}
     <div class="actions">
       <select class="form-control" id="g-ver" style="width:auto;padding:3px 8px;font-size:12px" aria-label="버전">
-        <option value="work" ${ui.graphVer==='work'?'selected':''}>현재 (HEAD${pending.length?' + 수동 수정':''})</option>
+        <option value="work" ${ui.graphVer==='work'?'selected':''}>지금 (${esc(cname(head().id))}${pending.length?' + 수동 수정':''})</option>
         ${analysis?`<option value="preview" ${ui.graphVer==='preview'?'selected':''}>AI 제안 미리보기</option>`:''}
-        ${other?`<option value="${other.id}" selected>${other.id} · ${esc(other.message)} (다른 갈래)</option>`:''}
-        ${commits.slice().reverse().map(c=>`<option value="${c.id}" ${ui.graphVer===c.id?'selected':''}>${c.id} · ${esc(c.message)}</option>`).join('')}
+        ${other?`<option value="${other.id}" selected>${esc(cname(other.id))} (다른 갈래)</option>`:''}
+        ${commits.slice().reverse().map(c=>`<option value="${c.id}" ${ui.graphVer===c.id?'selected':''}>${cnum(c.id)}${esc(cname(c.id))}</option>`).join('')}
       </select>
     </div></div>
   <div class="split-r">
@@ -928,7 +940,7 @@ function renderTree(){
   const list=rows.map(c=>`<button class="tree-row" data-tc="${c.id}" aria-current="${c.id===sel}" style="height:${ROW}px;padding-left:${SW+6}px;${onLine.has(c.id)?'':'color:var(--fg-muted)'}">
       <span class="tree-msg">${esc(c.message)}</span>
       ${(heads[c.id]||[]).map(b=>`<span class="Label ${b.id===branchId?'Label--accent':''}">${esc(b.name)}</span>`).join('')}
-      <span class="sha">${c.id}</span></button>`).join('');
+      </button>`).join('');
   const c=byId(sel);
   $('#tab-history').innerHTML = pendingBanner() + histHead() + `
   <div class="split-r">
@@ -937,7 +949,7 @@ function renderTree(){
     <aside class="stack">
       <div class="Box"><div class="Box-header"><h3>${esc(c.message)}</h3></div>
         <div class="Box-body stack" style="gap:8px">
-          <div class="caption" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="Label">${COMMIT_KIND[c.kind]||c.kind}</span>${fmtDate(c.created_at)}<span class="sha">${c.id}</span>${c.patches.length?`변경 ${c.patches.length}건`:''}</div>
+          <div class="caption" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="Label">${COMMIT_KIND[c.kind]||c.kind}</span>${fmtDate(c.created_at)}${c.patches.length?` · 변경 ${c.patches.length}건`:''}</div>
           ${c.event?`<div style="padding:8px 12px;background:var(--bg-subtle);border-radius:6px">${esc(c.event.description)}${c.event.story_time?`<div class="caption" style="margin-top:4px">작중 시점: ${esc(c.event.story_time)}</div>`:''}</div>`:''}
           ${onLine.has(c.id)?'':`<div class="caption">지금 갈래('${esc(curBranch().name)}')에는 없는 커밋이에요.</div>`}
         </div>
@@ -948,7 +960,7 @@ function renderTree(){
         </div></div>
       <div class="Box"><div class="Box-header"><h3>갈래</h3><span class="Counter">${branches.length}</span></div>
         ${branches.map((b,bi)=>`<div class="Box-row"><span class="dot" style="background:${LANE_C[bi%LANE_C.length]}"></span>
-          <div style="flex:1;min-width:0"><b>${esc(b.name)}</b>${b.id===branchId?' <span class="Label Label--accent">지금</span>':''}<div class="caption">커밋 ${lineOf(b.head).length}개 · 끝 <span class="sha">${b.head}</span></div></div>
+          <div style="flex:1;min-width:0"><b>${esc(b.name)}</b>${b.id===branchId?' <span class="Label Label--accent">지금</span>':''}<div class="caption">사건 ${lineOf(b.head).length}개 · 마지막: ${esc(cname(b.head))}</div></div>
           ${b.id===branchId?'':`<button class="btn btn-sm" data-sw="${b.id}">이동</button>${b.id==='main'?'':`<button class="btn btn-sm btn-danger" data-delb="${b.id}">지우기</button>`}`}</div>`).join('')}
         <div class="Box-row caption">과거 커밋에서 '만약에' 갈래를 만들면 원래 이야기는 그대로 두고 다른 전개를 시험해 볼 수 있어요. 갈래 합치기는 준비 중이에요.</div></div>
     </aside>
@@ -979,9 +991,8 @@ function renderHistory(){
         return `<div class="tl-head">${icon('commit')}${fmtDate(c.created_at)}</div>
       <div class="Box" style="margin-bottom:8px"><div class="Box-body">
         <div class="commit">
-          <div class="msg">${esc(c.message)}${i===n-1?'<span class="head-tag">HEAD</span>':''}
-            <small><span class="Label" style="margin-right:4px">${COMMIT_KIND[c.kind]||c.kind}</span>${esc(USER.name)} 커밋${c.parent?` · 부모 ${c.parent}`:''}${c.impacts?.length?` · 영향 ${c.impacts.length}건`:''} · 변경 ${c.patches.length}건</small></div>
-          <span class="sha">${c.id}</span>
+          <div class="msg">${esc(c.message)}${i===n-1?'<span class="head-tag">지금</span>':''}
+            <small><span class="Label" style="margin-right:4px">${COMMIT_KIND[c.kind]||c.kind}</span>${esc(USER.name)} 커밋${c.impacts?.length?` · 영향 ${c.impacts.length}건`:''} · 변경 ${c.patches.length}건</small></div>
           <div class="pick" role="group" aria-label="비교 대상">
             <label><input type="radio" name="cmpA" value="${c.id}" ${ui.cmpA===c.id?'checked':''}>A</label>
             <label><input type="radio" name="cmpB" value="${c.id}" ${ui.cmpB===c.id?'checked':''}>B</label>
@@ -997,7 +1008,7 @@ function renderHistory(){
       </div></div>`; }).join('')}
     </div>
     <aside class="Box" style="position:sticky;top:76px">
-      <div class="Box-header"><h3>비교</h3><span class="sha">${commits[ia].id}</span><span class="muted">→</span><span class="sha">${commits[ib].id}</span></div>
+      <div class="Box-header"><h3>비교</h3><span class="caption">${esc(cnum(commits[ia].id)+cname(commits[ia].id))} → ${esc(cnum(commits[ib].id)+cname(commits[ib].id))}</span></div>
       <div class="Box-body stack" style="gap:4px;max-height:60vh;overflow:auto">
         ${ia===ib?'<span class="caption">A와 B에 서로 다른 커밋을 고르세요.</span>':lines.length?lines.map(([c,l])=>`<span class="diffline ${c}">${esc(l)}</span>`).join(''):'<span class="caption">차이가 없습니다.</span>'}
       </div>
@@ -1020,7 +1031,7 @@ function renderHistory(){
       else q={op:'add', path:p.path, after:p.before};
       applyPatch(state,q); inv.push(q);
     });
-    const id=newSha(); addCommit({id, parent:head().id, kind:'manual', message:`되돌리기: ${b.dataset.ok} 시점으로 복원`, created_at:new Date().toISOString(), impacts:[], patches:inv});
+    const id=newSha(); addCommit({id, parent:head().id, kind:'manual', message:`되돌리기: '${cname(b.dataset.ok)}' 시점으로 복원`, created_at:new Date().toISOString(), impacts:[], patches:inv});
     ui.confirm=null; ui.cmpA=b.dataset.ok; ui.cmpB=id; ui.open={[id]:true}; analysis=null; toast(`${b.dataset.ok} 시점으로 되돌렸습니다`); render();
   });
   $('#h-graph').onclick=()=>{ ui.graphVer=commits[ib].id===head().id?'work':commits[ib].id; showTab('graph'); };
