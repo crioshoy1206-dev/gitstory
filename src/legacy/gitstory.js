@@ -980,17 +980,31 @@ function wireGraph(svg, body){
   const pt=ev=>{ const p=new DOMPoint(ev.clientX, ev.clientY).matrixTransform(svg.getScreenCTM().inverse()); return [p.x, p.y]; };
   const wire=()=>svg.querySelectorAll('.node').forEach(n=>n.onkeydown=ev=>{ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); pick(n.dataset.id); } });
   const zoom=(k,c=[V.x+V.w/2, V.y+V.h/2])=>{ const w=clamp(V.w*k, 280, 2200), f=w/V.w; V.x=c[0]-(c[0]-V.x)*f; V.y=c[1]-(c[1]-V.y)*f; V.h=w*V.h/V.w; V.w=w; setVB(); };
+  /* 빈 곳으로 너무 멀리 끌면 살짝 버티다가, 놓으면 내용이 조금 보이는 자리까지 부드럽게 돌아온다.
+     내용(인물·단체·관계선)이 화면 가로·세로의 45%쯤은 걸쳐 있으면 그대로 둔다. */
+  const KEEP=0.45, PULL=0.35;
+  const range=()=>{ const g=$('#g-body'); let b; try{ b=g.getBBox(); }catch(e){ return null; } if(!b.width&&!b.height) return null;
+    const nx=Math.min(b.width, V.w)*KEEP, ny=Math.min(b.height, V.h)*KEEP;
+    return {x0:b.x+nx-V.w, x1:b.x+b.width-nx, y0:b.y+ny-V.h, y1:b.y+b.height-ny}; };
+  const soft=(v,lo,hi)=>v<lo?lo-(lo-v)*PULL:v>hi?hi+(v-hi)*PULL:v;
+  let anim=0;
+  const settle=()=>{ const r=range(); if(!r) return;
+    const tx=clamp(V.x,r.x0,r.x1), ty=clamp(V.y,r.y0,r.y1); if(tx===V.x && ty===V.y) return;
+    const fx=V.x, fy=V.y, t0=performance.now(), dur=380;
+    const step=now=>{ const t=Math.min(1,(now-t0)/dur), e=1-Math.pow(1-t,3); V.x=fx+(tx-fx)*e; V.y=fy+(ty-fy)*e; setVB(); if(t<1) anim=requestAnimationFrame(step); };
+    cancelAnimationFrame(anim); anim=requestAnimationFrame(step); };
   let d=null;
-  svg.onpointerdown=ev=>{ if(ev.button) return; const n=ev.target.closest('.node');
-    d={id:n?.dataset.id, sx:ev.clientX, sy:ev.clientY, vx:V.x, vy:V.y, moved:false}; svg.setPointerCapture(ev.pointerId); };
+  svg.onpointerdown=ev=>{ if(ev.button) return; cancelAnimationFrame(anim); const n=ev.target.closest('.node');
+    d={id:n?.dataset.id, sx:ev.clientX, sy:ev.clientY, vx:V.x, vy:V.y, moved:false, r:n?null:range()}; svg.setPointerCapture(ev.pointerId); };
   svg.onpointermove=ev=>{ if(!d) return;
     if(!d.moved && Math.hypot(ev.clientX-d.sx, ev.clientY-d.sy)<5) return; d.moved=true;
     if(d.id){ const [x,y]=pt(ev); LAYOUT[d.id]=[Math.round(clamp(x,20,1080)), Math.round(clamp(y,20,520))]; $('#g-body').innerHTML=body(); wire(); }
-    else { const k=V.w/svg.clientWidth; V.x=d.vx-(ev.clientX-d.sx)*k; V.y=d.vy-(ev.clientY-d.sy)*k; setVB(); } };
-  svg.onpointerup=ev=>{ const x=d; d=null; if(!x) return; if(!x.moved){ if(x.id) pick(x.id); return; } if(x.id) saveWorld(); };
-  svg.onpointercancel=()=>{ d=null; };
-  svg.onwheel=ev=>{ if(!ev.ctrlKey && !ev.metaKey) return; ev.preventDefault(); zoom(ev.deltaY<0?0.88:1/0.88, pt(ev)); };
-  $$('[data-zoom]').forEach(b=>b.onclick=()=>{ const z=b.dataset.zoom; if(z==='fit'){ Object.assign(V, fitView(V.h/V.w>0.6)); setVB(); } else zoom(z==='in'?0.8:1.25); });
+    else { const k=V.w/svg.clientWidth, x=d.vx-(ev.clientX-d.sx)*k, y=d.vy-(ev.clientY-d.sy)*k, r=d.r;
+      V.x=r?soft(x,r.x0,r.x1):x; V.y=r?soft(y,r.y0,r.y1):y; setVB(); } };
+  svg.onpointerup=ev=>{ const x=d; d=null; if(!x) return; if(!x.moved){ if(x.id) pick(x.id); return; } if(x.id) saveWorld(); else settle(); };
+  svg.onpointercancel=()=>{ const x=d; d=null; if(x && !x.id) settle(); };
+  svg.onwheel=ev=>{ if(!ev.ctrlKey && !ev.metaKey) return; ev.preventDefault(); zoom(ev.deltaY<0?0.88:1/0.88, pt(ev)); clearTimeout(svg.st); svg.st=setTimeout(settle,250); };
+  $$('[data-zoom]').forEach(b=>b.onclick=()=>{ const z=b.dataset.zoom; if(z==='fit'){ Object.assign(V, fitView(V.h/V.w>0.6)); setVB(); } else { zoom(z==='in'?0.8:1.25); settle(); } });
   wire();
 }
 /* 아무것도 고르지 않았을 때 오른쪽 패널: 세계관 한눈에 보기 */
