@@ -67,7 +67,15 @@ function setTree(cs, brs, bid){
 const snapshot = () => ({state, commits:allCommits, pending, branches, branch:branchId, layout:LAYOUT});
 function all(s){ return [...s.groups, ...s.characters, ...s.background]; }
 function ent(s,id){ return all(s).find(x=>x.id===id); }
-function nm(s,id){ const e=ent(s,id)||ent(state,id); return e ? (e.name||e.title) : id; }
+function nm(s,id){ const e=ent(s,id)||ent(state,id); return e ? (e.name||e.title) : ghostName(id); }
+/* 지워진 항목의 이름: 기록에 남은 추가·지우기 patch에서 찾는다 */
+function ghostName(id){
+  const tail='/'+id;
+  for(const p of [...pending, ...allCommits.flatMap(c=>c.patches||[])].reverse()){
+    const v=p.before||p.after; if(p.op!=='replace' && p.path.endsWith(tail) && v && (v.name||v.title)) return v.name||v.title;
+  }
+  return '지워진 항목';
+}
 function coll(id){ return id.startsWith('grp_')?'groups':id.startsWith('chr_')?'characters':id.startsWith('rel_')?'relations':'background'; }
 function rootNation(s,gid){ let g=s.groups.find(x=>x.id===gid); let n=0; while(g && g.parent && n++<10) g=s.groups.find(x=>x.id===g.parent); return g?g.id:null; }
 function nationOf(s,e){
@@ -85,6 +93,39 @@ function fmtDate(s){ if(!s) return '방금 전'; const d=new Date(s); return `${
 function newId(p){ return `${p}_${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2,5)}`; }
 function newSha(){ return Array.from({length:7},()=>'0123456789abcdef'[Math.random()*16|0]).join(''); }
 function toast(t){ const el=$('#toast'); el.textContent=t; el.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,2600); }
+/* 알림에 되돌리기 버튼을 붙인다 (지우기 직후 실수를 바로 무를 수 있게) */
+function toastUndo(t, undo){
+  const el=$('#toast'); el.innerHTML=`${esc(t)} <button type="button" class="toast-undo" id="toast-undo">되돌리기</button>`; el.hidden=false;
+  clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,7000);
+  $('#toast-undo').onclick=()=>{ el.hidden=true; undo(); };
+}
+/* 받침에 맞는 조사. 받침 없을 때, 있을 때 순서: jo('르블랑','와','과') → '르블랑과' */
+function jo(word, a, b){
+  const w=String(word??''), c=w.charCodeAt(w.length-1);
+  if(c>=0xAC00 && c<=0xD7A3){ const jong=(c-0xAC00)%28; if(b==='으로' && jong===8) return w+a; return w+(jong?b:a); }
+  return `${w}${a}(${b})`;
+}
+/* 따옴표로 감싼 이름 + 조사: jq('용기','를','을') → "'용기'를" */
+function jq(word, a, b){ const w=String(word??''); return `'${w}'${jo(w,a,b).slice(w.length)}`; }
+const NAME_MAX=60;
+/* 같은 이름(다른 이름 포함)을 가진 인물·단체·배경 */
+function sameName(name, except){
+  const k=name.trim().toLowerCase();
+  return all(state).find(x=>x.id!==except && [x.name||x.title, ...(x.aliases||[])].some(n=>String(n||'').trim().toLowerCase()===k));
+}
+/* 서버·네트워크 오류를 작가가 읽을 수 있는 말로 */
+function friendlyErr(err){
+  const st=err?.status, msg=err?.body?.error;
+  const korean=typeof msg==='string' && /[가-힣]/.test(msg) && msg.length<120;
+  if(!st) return '인터넷 연결이 끊겼거나 서버에 닿지 못했어요. 연결을 확인하고 다시 눌러 주세요';
+  if(st===401||st===403) return '로그인이 풀렸어요. 새로고침한 뒤 다시 로그인해 주세요';
+  if(st===413) return '세계관이나 원고가 너무 커서 한 번에 보낼 수 없어요';
+  if(st===504) return 'AI 응답이 너무 오래 걸렸어요. 조금 뒤 다시 눌러 주세요';
+  if(st===503) return korean ? msg : 'AI 서버가 붐벼요. 조금 뒤 다시 눌러 주세요';
+  if(korean) return msg;
+  if(st>=500) return 'AI 서버에 잠시 문제가 있어요. 조금 뒤 다시 눌러 주세요';
+  return '알 수 없는 문제가 생겼어요. 조금 뒤 다시 눌러 주세요';
+}
 
 /* ---------- patch (id로 가리키는 경로) ---------- */
 function walk(s,path){
@@ -167,12 +208,17 @@ function describePath(s,path){
   if(rest==='situation/current') return `${n} · 현재 상황`;
   if(rest==='situation/history/-') return `${n} · 상황 이력`;
   if(rest==='parent_bond') return `${n} · 상위 단체 소속감`;
-  let m=rest.match(/^traits\/([^/]+)\/value$/); if(m){ const e=ent(s,id)||ent(state,id); const t=e?.traits?.find(t=>t.key===m[1]); return `${n} · 성격 '${t?.label||m[1]}'`; }
-  m=rest.match(/^traits\/([^/]+)$/); if(m){ const e=ent(s,id)||ent(state,id); const t=e?.traits?.find(t=>t.key===m[1]); return `${n} · 성격 '${t?.label||m[1]}'`; }
+  let m=rest.match(/^traits\/([^/]+)(\/value)?$/); if(m) return `${n} · 성격 '${traitLabel(s,c,id,m[1])}'`;
   m=rest.match(/^memberships\/([^/]+)$/); if(m) return `${n} · '${nm(s,m[1])}' 소속`;
   m=rest.match(/^memberships\/([^/]+)\/bond$/); if(m) return `${n} · '${nm(s,m[1])}' 소속감`;
   m=rest.match(/^memberships\/([^/]+)\/active$/); if(m) return `${n} · '${nm(s,m[1])}' 소속 활성`;
   return `${n} · ${rest}`;
+}
+function traitLabel(s,c,id,key){
+  const e=ent(s,id)||ent(state,id); const t=e?.traits?.find(t=>t.key===key); if(t) return t.label;
+  const path=`/${c}/${id}/traits/${key}`;
+  const p=[...pending, ...allCommits.flatMap(x=>x.patches||[])].find(p=>p.path===path && (p.before||p.after)?.label);
+  return p ? (p.before||p.after).label : '지워진 성격';
 }
 function ent2rel(s,id){ return s.relations.find(r=>r.id===id) || state.relations.find(r=>r.id===id); }
 function showVal(v){ if(v==null) return '(없음)'; if(typeof v==='string' && v.startsWith('data:image')) return '(사진)'; if(Array.isArray(v)) return v.length?v.join(', '):'(없음)'; if(typeof v==='object' && v.group && v.bond!=null) return `소속감 ${lvOf(v.bond)}${v.role?' · '+v.role:''}`; if(typeof v==='object' && v.key && v.value!=null) return lvOf(v.value); if(typeof v==='number') return v>=0&&v<=1?lvOf(v):f2(v); if(typeof v==='boolean') return v?'예':'아니오'; if(typeof v==='object') return v.type&&REL[v.type] ? `${REL[v.type].l} · ${lvOf(v.intensity)}${v.note?' · '+v.note:''}` : (v.summary || v.title || v.name || v.label || '항목'); return v; }
@@ -180,6 +226,8 @@ function patchLines(s,p){
   const label=(p.op!=='replace' && p.path.startsWith('/relations/') && (p.after||p.before)?.from) ? `관계 ${nm(s,(p.after||p.before).from)} ↔ ${nm(s,(p.after||p.before).to)}` : describePath(s,p.path);
   if(p.op==='replace') return [['chg',`~ ${label}: ${showVal(p.before)} → ${showVal(p.after)}`]];
   if(p.op==='add' && p.path.split('/').length===3 && !p.path.startsWith('/relations/')) return [['add',`+ ${label} 추가`]];
+  if(p.op==='remove' && p.path.split('/').length===3 && !p.path.startsWith('/relations/')) return [['del',`- ${{characters:'인물',groups:'단체',background:'배경'}[p.path.split('/')[1]]} '${p.before.name||p.before.title}' 지움`]];
+  if(p.op==='remove') return [['del',`- ${label} 지움`]];
   if(p.op==='add') return [['add',`+ ${label}: ${showVal(p.after)}`]];
   return [['del',`- ${label}: ${showVal(p.before)}`]];
 }
@@ -202,7 +250,7 @@ function flushPending(){
   const id = merge ? h.id : newSha();
   pending.forEach(p=>{ const m=p.path.match(/^\/(groups|characters)\/([^/]+)\//); if(!m) return;
     const e=ent(state,m[2]); if(!e?.situation?.history) return;
-    const summary=describePath(state,p.path).split(' · ')[1]+' 수정'; const last=e.situation.history.at(-1);
+    const summary=describePath(state,p.path).split(' · ')[1]+(p.op==='remove'?' 지움':' 수정'); const last=e.situation.history.at(-1);
     if(last && last.commit===id && last.summary===summary) return;
     const hp={op:'add', path:`/${m[1]}/${m[2]}/situation/history/-`, after:{commit:id, summary, source:'manual'}}; applyPatch(state,hp); p.__h=hp; });
   const patches=pending.flatMap(p=>p.__h?[{op:p.op,path:p.path,before:p.before,after:p.after}, p.__h]:[{op:p.op,path:p.path,before:p.before,after:p.after}]);
@@ -212,6 +260,22 @@ function flushPending(){
 }
 /* 새 항목 추가 → pending (id로 가리키는 경로라 되돌리기도 그 항목만 뺀다) */
 function addManual(path, obj){ const p={op:'add', path, after:clone(obj)}; pending.push(p); applyPatch(state,p); }
+/* 지우기 → pending. 되살리기에 쓰도록 만든 patch를 돌려준다 */
+function removeManual(path){ const before=getv(state,path); if(before===undefined) return null; const p={op:'remove', path, before:clone(before)}; pending.push(p); applyPatch(state,p); return p; }
+/* 인물·단체·배경 지우기: 이어진 관계, 그 단체에 속한 인물의 소속, 하위 단체의 상위 연결도 함께 정리한다 */
+function removeEntity(id){
+  const c=coll(id), done=[], push=p=>{ if(p) done.push(p); };
+  state.relations.filter(r=>r.from===id||r.to===id).map(r=>r.id).forEach(rid=>push(removeManual(`/relations/${rid}`)));
+  if(c==='groups'){
+    state.characters.filter(ch=>(ch.memberships||[]).some(m=>m.group===id)).forEach(ch=>push(removeManual(`/characters/${ch.id}/memberships/${id}`)));
+    state.groups.filter(g=>g.parent===id).forEach(g=>{ done.push({op:'replace', path:`/groups/${g.id}/parent`, before:id}); setManual(`/groups/${g.id}/parent`, null); });
+  }
+  push(removeManual(`/${c}/${id}`));
+  delete LAYOUT[id];
+  return done;
+}
+/* 지운 것을 되살린다 (지운 순서의 반대로) */
+function restore(done){ done.slice().reverse().forEach(p=>{ if(p.op==='remove') addManual(p.path, p.before); else setManual(p.path, p.before); }); }
 /* gid가 anc의 하위 단체인지 (상위 단체 지정 시 순환 방지) */
 function isUnder(s,gid,anc){ let g=s.groups.find(x=>x.id===gid), n=0; while(g && n++<20){ if(g.id===anc) return true; g=s.groups.find(x=>x.id===g.parent); } return false; }
 
@@ -288,21 +352,30 @@ function renderSide(){
   const s=state, q=(ui.q||'').trim().toLowerCase();
   const hit=x=>!q || [x.name||x.title, ...(x.aliases||[]), x.category||''].join(' ').toLowerCase().includes(q);
   const item=(x,mark,meta,pad=0)=>`<li><button data-side="${x.id}" aria-current="${x.id===ui.sel}" style="padding-left:${8+pad*14}px">${mark}<span class="nm">${esc(x.name||x.title)}</span>${meta?`<span class="meta">${esc(meta)}</span>`:''}</button></li>`;
-  const sec=(key,label,n,body)=>`<section class="side-sec"><div class="side-sec-h"><span>${label}</span><span class="Counter">${n}</span><button class="btn btn-sm" data-new="${key}">+ ${label} 추가</button></div>
-    <ul class="tree">${body||`<li class="caption side-empty">${q?'찾는 항목이 없어요':'아직 없어요'}</li>`}</ul></section>`;
+  const PH={chr:'새 인물 이름',grp:'새 단체 이름',bg:'새 배경 제목'};
+  const addRow=key=>ui.adding===key?`<li class="side-add"><form data-addform="${key}"><input class="form-control" id="side-add-name" maxlength="${NAME_MAX}" placeholder="${PH[key]}" aria-label="${PH[key]}" autocomplete="off"><button class="btn btn-sm btn-primary" type="submit">추가</button><button class="btn btn-sm" type="button" data-addcancel>취소</button></form></li>`:'';
+  const sec=(key,label,n,body)=>`<section class="side-sec"><div class="side-sec-h"><span>${label}</span><span class="Counter">${n}</span><button class="btn btn-sm" data-new="${key}" aria-expanded="${ui.adding===key}">+ ${label} 추가</button></div>
+    <ul class="tree">${addRow(key)}${body||(ui.adding===key?'':`<li class="caption side-empty">${q?'찾는 항목이 없어요':'아직 없어요'}</li>`)}</ul></section>`;
   const chars=s.characters.filter(hit), grps=q?s.groups.filter(hit).map(g=>[g,0]):treeGroups(s), bgs=s.background.filter(hit);
   $('#side-list').innerHTML =
     sec('chr','인물',chars.length, chars.map(c=>item(c, c.photo?`<img class="side-photo" src="${esc(c.photo)}" alt="" style="border-color:${nationColor(nationOf(s,c))}">`:`<span class="dot" style="background:${nationColor(nationOf(s,c))}${c.situation?.status==='사망'?';opacity:.4':''}"></span>`, c.situation?.status)).join('')) +
     sec('grp','단체',grps.length, grps.map(([g,d])=>item(g,`<span class="sq" style="background:${nationColor(nationOf(s,g))}"></span>`, KIND[g.kind], d)).join('')) +
     sec('bg','배경',bgs.length, bgs.map(b=>item(b,`<span class="sq" style="background:var(--border-strong)"></span>`, b.category)).join(''));
   $$('[data-side]').forEach(b=>b.onclick=()=>pick(b.dataset.side));
-  $$('[data-new]').forEach(b=>b.onclick=()=>{
-    const t=b.dataset.new; const name=(prompt({chr:'새 인물 이름',grp:'새 단체 이름',bg:'새 배경 제목'}[t])||'').trim(); if(!name) return;
-    const sit={current:'', status:'', history:[]};
-    if(t==='chr'){ const id=newId('chr'); addManual(`/characters/${id}`, {id, name, aliases:[], memberships:[], traits:[], situation:sit}); ui.sel=id; }
-    else if(t==='grp'){ const id=newId('grp'); addManual(`/groups/${id}`, {id, name, kind:'organization', parent:null, traits:[], situation:sit}); ui.sel=id; }
-    else { const id=newId('bg'); const cat=(prompt('분류 (예: 지리, 역사, 기술)','기타')||'기타').trim(); addManual(`/background/${id}`, {id, category:cat, title:name, content:'', introduced_in:null}); ui.sel=id; }
-    ui.editing=null; ui.graphVer='work'; toast('추가했어요'); sideOpen(false); showTab('world'); focusDetail(); });
+  // + 추가는 목록 맨 위에 이름 칸을 연다 (브라우저 입력창 대신)
+  $$('[data-new]').forEach(b=>b.onclick=()=>{ ui.adding = ui.adding===b.dataset.new ? null : b.dataset.new; renderSide(); $('#side-add-name')?.focus(); });
+  $$('[data-addcancel]').forEach(b=>b.onclick=()=>{ ui.adding=null; renderSide(); });
+  $$('[data-addform]').forEach(f=>{
+    f.onkeydown=ev=>{ if(ev.key==='Escape'){ ev.stopPropagation(); ui.adding=null; renderSide(); } };
+    f.onsubmit=ev=>{ ev.preventDefault();
+      const t=f.dataset.addform, name=$('#side-add-name').value.trim().slice(0,NAME_MAX); if(!name){ toast('이름을 입력하세요'); return; }
+      const dup=sameName(name); if(dup && !confirm(`${jq(dup.name||dup.title,'가','이')} 이미 있어요. 같은 이름으로 하나 더 만들까요?`)) return;
+      const sit={current:'', status:'', history:[]};
+      if(t==='chr'){ const id=newId('chr'); addManual(`/characters/${id}`, {id, name, aliases:[], memberships:[], traits:[], situation:sit}); ui.sel=id; }
+      else if(t==='grp'){ const id=newId('grp'); addManual(`/groups/${id}`, {id, name, kind:'organization', parent:null, traits:[], situation:sit}); ui.sel=id; }
+      else { const id=newId('bg'); addManual(`/background/${id}`, {id, category:'기타', title:name, content:'', introduced_in:null}); ui.sel=id; }
+      ui.adding=null; ui.editing=null; ui.graphVer='work'; toast(`${jq(name,'를','을')} 추가했어요`); sideOpen(false); showTab('world'); focusDetail(); };
+  });
 }
 /* 인물·단체·배경을 골라 오른쪽 상세 패널로 연다 */
 function pick(id){
@@ -317,9 +390,10 @@ function sideOpen(open){
 }
 function bgDetail(b){
   return `<div class="Subhead"><h2>${esc(b.title)}</h2><span class="Label">배경</span><span class="Label">${esc(b.category)}</span>
-    ${b.introduced_in?`<span class="Label Label--done">${icon('commit')}${b.introduced_in}에서 추가</span>`:''}</div>
+    ${b.introduced_in?`<span class="Label Label--done">${icon('commit')}${esc(cname(b.introduced_in))}에서 추가</span>`:''}
+    <div class="actions"><button class="btn btn-sm btn-danger" id="ent-del">지우기</button></div></div>
     <div class="Box"><div class="Box-body stack">
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><div class="form-group" style="flex:2 1 200px"><label for="bg-title">제목</label><input class="form-control" id="bg-title" value="${esc(b.title)}"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><div class="form-group" style="flex:2 1 200px"><label for="bg-title">제목</label><input class="form-control" id="bg-title" maxlength="${NAME_MAX}" value="${esc(b.title)}"></div>
         <div class="form-group" style="flex:1 1 120px"><label for="bg-cat">분류</label><input class="form-control" id="bg-cat" value="${esc(b.category)}"></div></div>
       <div class="form-group"><label for="bg-content">내용</label><textarea class="form-control" id="bg-content" rows="5">${esc(b.content)}</textarea>
       <span class="caption">배경은 지리, 역사, 기술처럼 이야기의 바탕이 되는 정보예요.</span></div>
@@ -338,17 +412,17 @@ function traitRows(e){
   const c=coll(e.id);
   return (e.traits||[]).map(t=>`<div class="trait Box-row" style="display:grid">
     <div class="lab">${esc(t.label)} ${t.target?`<span class="Label">${icon('graph')}${esc(nm(state,t.target))}</span>`:''}${t.key.startsWith('t_')?'':`<small class="num">${esc(t.key)}</small>`}</div>
-    ${levelPick(`/${c}/${e.id}/traits/${t.key}/value`, t.value, t.label+' 세기')}</div>`).join('');
+    <div class="row-end">${levelPick(`/${c}/${e.id}/traits/${t.key}/value`, t.value, t.label+' 세기')}<button type="button" class="rm" data-rmt="${esc(t.key)}" aria-label="${esc(t.label)} 성격 지우기" title="지우기">×</button></div></div>`).join('');
 }
-function bondRow(label, sub, path, v, goId, extra=''){
+function bondRow(label, sub, path, v, goId, extra='', rm=''){
   return `<div class="trait Box-row" style="display:grid">
     <div class="lab"><button class="btn-link" data-go="${goId}">${esc(label)}</button> ${extra}${sub?`<small>${esc(sub)}</small>`:''}</div>
-    ${levelPick(path, v, label+' 소속감')}</div>`;
+    <div class="row-end">${levelPick(path, v, label+' 소속감')}${rm}</div></div>`;
 }
 function editBox(e){
   const s=state, isG=e.id.startsWith('grp_');
   return `<div class="Box" style="margin-bottom:16px"><div class="Box-header"><h3>기본 정보 수정</h3><span class="caption right">고치면 바로 저장돼요</span></div><div class="Box-body stack">
-    <div class="form-group"><label for="ed-name">이름</label><input class="form-control" id="ed-name" value="${esc(e.name)}"></div>
+    <div class="form-group"><label for="ed-name">이름</label><input class="form-control" id="ed-name" maxlength="${NAME_MAX}" value="${esc(e.name)}"></div>
     ${isG?`<div style="display:flex;gap:8px;flex-wrap:wrap">
       <div class="form-group" style="flex:1 1 140px"><label for="ed-kind">종류</label><select class="form-control" id="ed-kind">${Object.entries(KIND).map(([k,l])=>`<option value="${k}" ${e.kind===k?'selected':''}>${l}</option>`).join('')}</select></div>
       <div class="form-group" style="flex:1 1 180px"><label for="ed-parent">상위 단체</label><select class="form-control" id="ed-parent"><option value="">없음 (최상위)</option>${s.groups.filter(g=>!isUnder(s,g.id,e.id)).map(g=>`<option value="${g.id}" ${e.parent===g.id?'selected':''}>${esc(g.name)}</option>`).join('')}</select></div></div>`
@@ -372,7 +446,8 @@ function wireEntityEdit(e){
   $('#ent-edit').onclick=()=>{ ui.editing = ui.editing===e.id?null:e.id; render('world'); if(ui.editing) $('#ed-name')?.focus(); };
   const cc=$('#ed-cancel'); if(cc) cc.onclick=()=>{ ui.editing=null; render('world'); };
   const sv=$('#ed-save'); if(sv) sv.onclick=()=>{
-    const name=$('#ed-name').value.trim(); if(!name){ toast('이름을 입력하세요'); return; }
+    const name=$('#ed-name').value.trim().slice(0,NAME_MAX); if(!name){ toast('이름을 입력하세요'); return; }
+    const dup=name!==e.name && sameName(name, e.id); if(dup && !confirm(`${jq(dup.name||dup.title,'가','이')} 이미 있어요. 그래도 이 이름으로 바꿀까요?`)) return;
     const before=pending.length;
     setManual(base+'/name', name);
     const al=$('#ed-alias'); if(al){ const v=al.value.split(',').map(x=>x.trim()).filter(Boolean); if(v.length || e.aliases?.length) setManual(base+'/aliases', v); }
@@ -385,17 +460,17 @@ function wireEntityEdit(e){
     if(!e.traits) setManual(base+'/traits', []);
     const key='t_'+Date.now().toString(36);
     addManual(`${base}/traits/${key}`, {key, label, value:Math.round(clamp(+$('#tr-val').value||0,0,1)*100)/100});
-    done(`성격 '${label}'을 담았습니다`);
+    done(`성격 ${jq(label,'를','을')} 담았어요`);
   };
   const ma=$('#mem-add'); if(ma) ma.onclick=()=>{
     const g=$('#mem-group').value, role=$('#mem-role').value.trim();
     const m={group:g, bond:Math.round(clamp(+$('#mem-bond').value||0,0,1)*100)/100}; if(role) m.role=role;
-    addManual(`${base}/memberships/${g}`, m); done(`'${nm(state,g)}' 소속을 담았습니다`);
+    addManual(`${base}/memberships/${g}`, m); done(`'${nm(state,g)}' 소속을 담았어요`);
   };
   const ra=$('#rel-add'); if(ra) ra.onclick=()=>{
     const id=newId('rel'), to=$('#rel-to').value, note=$('#rel-note').value.trim();
     const r={id, from:e.id, to, type:$('#rel-type').value, intensity:Math.round(clamp(+$('#rel-int').value||0,0,1)*100)/100}; if(note) r.note=note;
-    addManual(`/relations/${id}`, r); done(`${nm(state,to)}와의 관계를 담았습니다`);
+    addManual(`/relations/${id}`, r); done(`${jo(nm(state,to),'와','과')}의 관계를 담았어요`);
   };
 }
 function entityDetail(e){
@@ -414,15 +489,15 @@ function entityDetail(e){
       ${!subs.length&&!members.length?'<div class="Box-row caption">아직 없습니다.</div>':''}</div>`;
   } else {
     belong = `<div class="Box"><div class="Box-header"><h3>소속</h3><span class="Counter">${e.memberships.length}</span><span class="caption right">소속감이 클수록 단체가 받은 영향이 크게 전해져요</span></div>
-      ${e.memberships.map(m=>bondRow(nm(s,m.group), m.role, `/characters/${e.id}/memberships/${m.group}/bond`, m.bond, m.group, m.active===false?'<span class="Label">비활성</span>':'')).join('')}
+      ${e.memberships.map(m=>bondRow(nm(s,m.group), m.role, `/characters/${e.id}/memberships/${m.group}/bond`, m.bond, m.group, m.active===false?'<span class="Label">비활성</span>':'', `<button type="button" class="rm" data-rmm="${m.group}" aria-label="${esc(nm(s,m.group))} 소속 지우기" title="지우기">×</button>`)).join('')}
       ${(()=>{ const cand=s.groups.filter(g=>!e.memberships.some(m=>m.group===g.id)); return cand.length?`<div class="Box-row" style="flex-wrap:wrap;gap:8px;background:var(--bg-subtle)"><select class="form-control" id="mem-group" style="flex:1 1 140px;width:auto" aria-label="소속 단체">${cand.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')}</select><input class="form-control" id="mem-role" placeholder="역할 (선택)" style="flex:1 1 110px;width:auto" aria-label="역할">${levelSelect('mem-bond',0.75,'소속감')}<button class="btn btn-sm" id="mem-add">+ 소속 추가</button></div>`:`<div class="Box-row caption">${s.groups.length?'추가할 수 있는 단체가 더 없어요.':'소속을 추가하려면 먼저 단체를 만드세요.'}</div>`; })()}</div>`;
   }
   return `<div class="Subhead">${e.photo?`<img class="ent-photo" src="${esc(e.photo)}" alt="${esc(e.name)} 사진">`:''}<h2>${esc(e.name)}</h2>
       ${isG?`<span class="Label">${KIND[e.kind]}</span>`:'<span class="Label">인물</span>'}
-      ${nat?`<span class="Label" style="color:${nationColor(nat)};border-color:${nationColor(nat)}">${esc(nm(s,nat))}</span>`:''}
+      ${nat&&nat!==e.id?`<span class="Label" style="color:${nationColor(nat)};border-color:${nationColor(nat)}">${esc(nm(s,nat))}</span>`:''}
       ${e.aliases?.length?`<span class="caption">다른 이름: ${esc(e.aliases.join(', '))}</span>`:''}
       <div class="actions"><button class="btn btn-sm" id="ent-edit" aria-pressed="${ui.editing===e.id}">이름·기본 정보 수정</button>
-        <label class="btn btn-sm">${e.photo?'사진 바꾸기':'사진 넣기'}<input type="file" accept="image/*" id="ent-photo" hidden></label>${e.photo?'<button class="btn btn-sm" id="ent-photo-del">사진 빼기</button>':''}</div></div>
+        <label class="btn btn-sm">${e.photo?'사진 바꾸기':'사진 넣기'}<input type="file" accept="image/*" id="ent-photo" hidden></label>${e.photo?'<button class="btn btn-sm" id="ent-photo-del">사진 빼기</button>':''}<button class="btn btn-sm btn-danger" id="ent-del">지우기</button></div></div>
     ${ui.editing===e.id?editBox(e):''}
     <div class="cols2">
       <div class="stack">
@@ -443,7 +518,7 @@ function entityDetail(e){
           ${rels.map(r=>{const o=r.from===e.id?r.to:r.from; const R=REL[r.type]||REL.personal; return `<div class="Box-row"><i style="display:inline-block;width:18px;border-top:2px ${R.dash?'dashed':'solid'} ${R.c}"></i>
             <div style="flex:1;min-width:0"><button class="btn-link" data-go="${o}">${esc(nm(s,o))}</button>${r.note?`<div class="caption">${esc(r.note)}</div>`:''}</div>
             <span class="Label" style="color:${R.c};border-color:${R.c}">${R.l}${r.directed?(r.from===e.id?' →':' ←'):''}</span>
-            <div class="rel-lv">${levelPick(`/relations/${r.id}/intensity`, r.intensity, nm(s,o)+' 관계 세기')}</div></div>`}).join('') || '<div class="Box-row caption">관계가 없습니다.</div>'}
+            <div class="rel-lv row-end">${levelPick(`/relations/${r.id}/intensity`, r.intensity, nm(s,o)+' 관계 세기')}<button type="button" class="rm" data-rmr="${r.id}" aria-label="${esc(nm(s,o))} 관계 지우기" title="지우기">×</button></div></div>`}).join('') || '<div class="Box-row caption">관계가 없습니다.</div>'}
           ${addRelRow(e)}
         </div>
       </div>
@@ -582,7 +657,9 @@ function renderEvent(){
   const evs=$('#ev-sample'); if(evs) evs.onclick=()=>{ $('#ev-title').value=SAMPLE.title; $('#ev-text').value=SAMPLE.description; $('#ev-time').value=SAMPLE.story_time; $('#ev-pos-title').textContent=SAMPLE.title; };
   $('#ev-title').oninput=e=>{ $('#ev-pos-title').textContent=e.target.value.trim()||'새 사건'; };
   $('#ev-run').onclick=async ()=>{
-    const title=$('#ev-title').value.trim()||'새 사건', text=$('#ev-text').value.trim(), time=$('#ev-time').value.trim();
+    const text=$('#ev-text').value.trim(), time=$('#ev-time').value.trim();
+    // 제목을 비우면 내용 앞부분을 이름으로 쓴다 (타임라인에 '새 사건'만 줄줄이 생기지 않게)
+    const title=$('#ev-title').value.trim() || (text.length>18 ? text.slice(0,18).trim()+'…' : text) || '새 사건';
     if(!text){ $('#ev-result').innerHTML=`<div class="flash flash-warn">${icon('alert')}<div>사건 내용을 입력하세요.</div></div>`; return; }
     const btn=$('#ev-run'); btn.disabled=true;
     $('#ev-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 사건이 단체·인물에 주는 직접 영향을 판단하고 있습니다 <span id="ev-wait"></span></span></div></div>`;
@@ -596,7 +673,7 @@ function renderEvent(){
     }catch(err){
       console.warn('AI 분석 실패', err);
       if(err.status===429){ if(err.body?.usage) showUsage(err.body.usage); note='오늘 쓸 수 있는 토큰을 다 썼어요. 한국 시간 자정에 다시 채워집니다. (충전 기능은 준비 중)'; }
-      else note=`AI 분석을 쓸 수 없어 간단 추정으로 대신했습니다 (${err.message||'연결 실패'})`;
+      else note=`AI 분석을 쓸 수 없어 간단 추정으로 대신했어요. ${friendlyErr(err)}.`;
       a = (title===SAMPLE.title) ? {...clone(SAMPLE), description:text} : guessAnalysis(title, text);
     }
     clearInterval(tick); btn.disabled=false;
@@ -701,13 +778,14 @@ function renderManuscript(){
     try{
       // 겹치는 인물을 걸러야 하니 세계관 전체를 보낸다
       const r=await extractManuscript(text, worldForAi(''));
-      const on=a=>a.map(x=>({...x, on:true}));
-      msResult={characters:on(r.result.characters), groups:on(r.result.groups), updates:on(r.result.updates), relations:on(r.result.relations), events:r.result.events};
+      // 이미 있는 이름은 기본으로 체크를 끄고 '이미 있어요'로 표시한다
+      const on=a=>a.map(x=>({...x, on:true})), known=a=>a.map(x=>sameName(x.name)?{...x, on:false, dup:true}:{...x, on:true});
+      msResult={characters:known(r.result.characters), groups:known(r.result.groups), updates:on(r.result.updates), relations:on(r.result.relations), events:r.result.events};
       showUsage(r.usage); toast(`원고 읽기 완료 (${r.provider==='claude'?'Claude':'Gemini'}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
     }catch(err){
       console.warn('원고 읽기 실패', err); msResult=null;
       if(err.status===429){ if(err.body?.usage) showUsage(err.body.usage); note='오늘 쓸 수 있는 토큰을 다 썼어요. 한국 시간 자정에 다시 채워집니다.'; }
-      else note=`원고를 읽지 못했어요 (${err.message||'연결 실패'})`;
+      else note=`원고를 읽지 못했어요. ${friendlyErr(err)}.`;
     }
     clearInterval(tick); btn.disabled=false; drawMs();
     if(note) $('#ms-result').innerHTML=`<div class="flash flash-warn">${icon('alert')}<div>${esc(note)}</div></div>`;
@@ -723,8 +801,8 @@ function drawMs(){
   const total=['characters','groups','updates','relations'].reduce((a,k)=>a+r[k].length,0);
   const picked=['characters','groups','updates','relations'].reduce((a,k)=>a+r[k].filter(x=>x.on).length,0);
   box.innerHTML = (total||r.events.length ? '' : '<div class="Box"><div class="Box-body caption">반영할 만한 새 내용을 찾지 못했어요.</div></div>')
-    + sec('characters','새 인물',r.characters,c=>`<b>${esc(c.name)}</b>${c.aliases.length?` <span class="caption">(${esc(c.aliases.join(', '))})</span>`:''}${c.group?` <span class="Label">${esc(who(c.group))}${c.role?' · '+esc(c.role):''}</span>`:''}<div class="caption">${esc(c.summary)}</div>`)
-    + sec('groups','새 단체',r.groups,g=>`<b>${esc(g.name)}</b> <span class="Label">${KIND[g.kind]||'조직'}</span>${g.parent?` <span class="caption">${esc(nm(state,g.parent))} 소속</span>`:''}<div class="caption">${esc(g.summary)}</div>`)
+    + sec('characters','새 인물',r.characters,c=>`<b>${esc(c.name)}</b>${c.dup?' <span class="Label Label--attention">이미 있어요</span>':''}${c.aliases.length?` <span class="caption">(${esc(c.aliases.join(', '))})</span>`:''}${c.group?` <span class="Label">${esc(who(c.group))}${c.role?' · '+esc(c.role):''}</span>`:''}<div class="caption">${esc(c.summary)}</div>`)
+    + sec('groups','새 단체',r.groups,g=>`<b>${esc(g.name)}</b>${g.dup?' <span class="Label Label--attention">이미 있어요</span>':''} <span class="Label">${KIND[g.kind]||'조직'}</span>${g.parent?` <span class="caption">${esc(ent(state,g.parent)?nm(state,g.parent):g.parent)} 소속</span>`:''}<div class="caption">${esc(g.summary)}</div>`)
     + sec('updates','상황 변화',r.updates,u=>{ const e=ent(state,u.id); return `<b>${esc(nm(state,u.id))}</b> <span class="Label Label--attention">${esc(u.status)}</span><div class="diffline del" style="margin-top:4px">- ${esc(e?.situation?.current||'(없음)')}</div><div class="diffline add">+ ${esc(u.text)}</div>`; })
     + sec('relations','새 관계',r.relations,x=>{ const R=REL[x.type]||REL.personal; return `<b>${esc(who(x.from))}</b> ↔ <b>${esc(who(x.to))}</b> <span class="Label" style="color:${R.c};border-color:${R.c}">${R.l} · ${lvOf(x.intensity)}</span>${x.note?`<div class="caption">${esc(x.note)}</div>`:''}`; })
     + (total?`<div class="Box"><div class="Box-row" style="background:var(--bg-subtle);flex-wrap:wrap"><span class="caption" style="flex:1">${picked}개 선택됨. 새 인물이 들어간 관계는 그 인물도 체크해야 담겨요.</span><button class="btn btn-primary" id="ms-apply" ${picked?'':'disabled'}>선택한 후보 반영</button></div></div>`:'')
@@ -738,9 +816,11 @@ function drawMs(){
 }
 function applyMs(){
   const r=msResult, made={}; let n=0;
-  const idOf=x=>ent(state,x)?x:made[x];
-  r.groups.filter(g=>g.on).forEach(g=>{ const id=newId('grp'); made[g.name]=id; n++;
-    addManual(`/groups/${id}`, {id, name:g.name, kind:g.kind, parent:g.parent||null, traits:[], situation:{current:g.summary||'', status:'', history:[]}}); });
+  // AI는 id 또는 이름으로 가리킨다: 있는 id, 이번에 만든 이름, 이미 있는 이름 순으로 찾는다
+  const idOf=x=>!x?null:ent(state,x)?x:made[x]||sameName(x)?.id||null;
+  const gs=r.groups.filter(g=>g.on); gs.forEach(g=>{ made[g.name]=newId('grp'); });
+  gs.forEach(g=>{ const id=made[g.name]; n++; const par=idOf(g.parent);
+    addManual(`/groups/${id}`, {id, name:g.name, kind:KIND[g.kind]?g.kind:'organization', parent:par&&par.startsWith('grp_')&&par!==id?par:null, traits:[], situation:{current:g.summary||'', status:'', history:[]}}); });
   r.characters.filter(c=>c.on).forEach(c=>{ const id=newId('chr'); made[c.name]=id; n++;
     const gid=c.group?idOf(c.group):null; const m=gid?[{group:gid, bond:0.6, ...(c.role?{role:c.role}:{})}]:[];
     addManual(`/characters/${id}`, {id, name:c.name, aliases:c.aliases, memberships:m, traits:[], situation:{current:c.summary||'', status:'', history:[]}}); });
@@ -851,12 +931,13 @@ function renderWorld(){
         <div class="seg" role="group" aria-label="관계 필터">${[['all','전체'],['conflict','대립·경쟁'],['coop','공존·동맹'],['dominate','지배'],['personal','가족·개인']].map(([k,l])=>`<button aria-pressed="${ui.relFilter===k}" data-f="${k}">${l}</button>`).join('')}</div>
         <label class="check"><input type="checkbox" id="g-mem" ${ui.showMembers?'checked':''}>소속 선</label>
         <label class="check"><input type="checkbox" id="g-ov" ${ui.overlay?'checked':''}>사건 영향 표시</label>
+        <div class="zoom" role="group" aria-label="확대와 축소"><button type="button" data-zoom="in" aria-label="확대">+</button><button type="button" data-zoom="out" aria-label="축소">−</button><button type="button" data-zoom="fit">전체</button></div>
       </div>
       <div class="graph-wrap"><svg id="g-svg" viewBox="${V.x} ${V.y} ${V.w} ${V.h}" role="img" aria-label="단체·인물 관계도">
         <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--done)"/></marker></defs>
         ${W.zones.map((z,i)=>`<rect x="${z.x}" y="0" width="${z.w}" height="540" style="fill:var(${z.fill})"/>${i?`<line x1="${z.x}" y1="0" x2="${z.x}" y2="540" style="stroke:var(--border);stroke-dasharray:2 6"/>`:''}<text x="${z.x+14}" y="528" font-size="11" font-weight="600" letter-spacing="1" style="fill:var(${z.c})">${esc(z.label)}</text>`).join('')}
         <g id="g-body">${body()}</g>
-      </svg><div class="zoom" role="group" aria-label="확대와 축소"><button type="button" data-zoom="in" aria-label="확대">+</button><button type="button" data-zoom="out" aria-label="축소">−</button><button type="button" data-zoom="fit">전체</button></div></div>
+      </svg></div>
       <div class="Box-row caption graph-tip">인물이나 단체를 끌어서 자리를 옮길 수 있어요. 빈 곳을 끌면 화면이 움직이고, + − 로 확대해요.</div>
       <div class="Box-row" style="flex-wrap:wrap"><div class="legend">
         ${Object.values(REL).map(R=>`<span><i style="border-top:2px ${R.dash?'dashed':'solid'} ${R.c}"></i>${R.l}</span>`).join('')}
@@ -961,6 +1042,17 @@ function wireDetail(e){
   const ph=$('#ent-photo'); if(ph) ph.onchange=async()=>{ const f=ph.files?.[0]; if(!f) return;
     try{ setManual(base+'/photo', await shrinkPhoto(f)); toast('사진을 넣었어요'); render('world'); }catch(err){ toast('사진을 읽지 못했어요'); } };
   const pd=$('#ent-photo-del'); if(pd) pd.onclick=()=>{ setManual(base+'/photo', null); toast('사진을 뺐어요'); render('world'); };
+  // 지우기: 바로 지우고 알림의 되돌리기로 되살린다
+  const undoable=(msg, done)=>{ if(!done.length) return; render(); toastUndo(msg, ()=>{ restore(done); toast('되살렸어요'); render(); }); };
+  const dl=$('#ent-del'); if(dl) dl.onclick=()=>{
+    const name=e.name||e.title, rels=state.relations.filter(r=>r.from===e.id||r.to===e.id).length;
+    const mem=e.id.startsWith('grp_')?state.characters.filter(ch=>(ch.memberships||[]).some(m=>m.group===e.id)).length:0;
+    const more=[rels?`관계 ${rels}개`:'', mem?`소속 인물 ${mem}명의 소속`:''].filter(Boolean).join(', ');
+    if(!confirm(`${jq(name,'를','을')} 지울까요?${more?` ${more}도 함께 지워져요.`:''} 지운 뒤에도 알림의 되돌리기로 되살릴 수 있어요.`)) return;
+    ui.sel=null; ui.editing=null; undoable(`${jq(name,'를','을')} 지웠어요`, removeEntity(e.id)); };
+  $$('[data-rmt]').forEach(b=>b.onclick=()=>{ const t=e.traits.find(x=>x.key===b.dataset.rmt); const p=removeManual(`${base}/traits/${b.dataset.rmt}`); undoable(`성격 ${jq(t?.label,'를','을')} 지웠어요`, p?[p]:[]); });
+  $$('[data-rmm]').forEach(b=>b.onclick=()=>{ const g=b.dataset.rmm; const p=removeManual(`${base}/memberships/${g}`); undoable(`'${nm(state,g)}' 소속을 지웠어요`, p?[p]:[]); });
+  $$('[data-rmr]').forEach(b=>b.onclick=()=>{ const r=state.relations.find(x=>x.id===b.dataset.rmr); const o=r&&(r.from===e.id?r.to:r.from); const p=removeManual(`/relations/${b.dataset.rmr}`); undoable(`${jo(nm(state,o),'와','과')}의 관계를 지웠어요`, p?[p]:[]); });
 }
 /* 사진은 가운데를 정사각형으로 잘라 160px JPEG로 줄여 저장한다 (세계관 문서 크기를 작게 유지) */
 function shrinkPhoto(file){
@@ -1143,7 +1235,7 @@ function renderHistory(){
       applyPatch(state,q); inv.push(q);
     });
     const id=newSha(); addCommit({id, parent:head().id, kind:'manual', message:`되돌리기: '${cname(b.dataset.ok)}' 시점으로 복원`, created_at:new Date().toISOString(), impacts:[], patches:inv});
-    ui.confirm=null; ui.cmpA=b.dataset.ok; ui.cmpB=id; ui.open={[id]:true}; analysis=null; toast(`${b.dataset.ok} 시점으로 되돌렸습니다`); render();
+    ui.confirm=null; ui.cmpA=b.dataset.ok; ui.cmpB=id; ui.open={[id]:true}; analysis=null; toast(`'${cname(b.dataset.ok)}' 시점으로 되돌렸어요`); render();
   });
   $('#h-graph').onclick=()=>{ ui.graphVer=commits[ib].id===head().id?'work':commits[ib].id; showTab('graph'); };
   wireHistHead();
@@ -1281,7 +1373,7 @@ function showUsage(u){
   el.title=`하루 ${u.limit.toLocaleString()} 중 ${u.used.toLocaleString()} 사용 · 충전 잔액 ${u.credits.toLocaleString()} · 매일 한국 시간 자정 초기화`;
 }
 function refreshUsage(){
-  fetchUsage().then(showUsage).catch(err=>{ console.warn('토큰 사용량 확인 실패', err); const el=$('#token-meter'); el.textContent=`토큰 확인 불가 (${err.status===404?'서버 경로 없음':err.message||'연결 실패'})`; el.className='Label Label--danger'; el.title=el.textContent; });
+  fetchUsage().then(showUsage).catch(err=>{ console.warn('토큰 사용량 확인 실패', err); const el=$('#token-meter'); el.textContent='남은 토큰을 확인하지 못했어요'; el.className='Label Label--danger'; el.title=friendlyErr(err); });
 }
 /* 다른 기기에서 저장한 게 더 최신이면 불러옴 */
 function syncFromCloud(k){
@@ -1292,7 +1384,7 @@ function syncFromCloud(k){
       state=remote.data.state; setTree(remote.data.commits, remote.data.branches, remote.data.branch); pending=remote.data.pending||[]; LAYOUT=remote.data.layout||{};
       savedAt=remote.updatedAt; lastJson=JSON.stringify(snapshot());
       try{ localStorage.setItem(saveKey(k), JSON.stringify({...snapshot(), savedAt})); }catch(e){}
-      render(); toast('클라우드에 저장된 세계관을 불러왔습니다');
+      render(); toast('클라우드에 저장된 세계관을 불러왔어요');
     } else if(!remote || remote.updatedAt<savedAt){
       lastJson=null; saveWorld();
     }
@@ -1319,10 +1411,10 @@ $('#side-toggle').onclick=()=>sideOpen(!$('#side').classList.contains('open'));
 $('#side-close').onclick=()=>sideOpen(false);
 $('#side-backdrop').onclick=()=>sideOpen(false);
 document.addEventListener('keydown',ev=>{ if(ev.key==='Escape' && $('#side').classList.contains('open')) sideOpen(false); });
-$('#world-pick').onchange=ev=>{ loadWorld(ev.target.value); render(); syncFromCloud(worldKey); toast(`${DATA.meta.title} 세계관을 불러왔습니다`); };
+$('#world-pick').onchange=ev=>{ loadWorld(ev.target.value); render(); syncFromCloud(worldKey); toast(`${DATA.meta.title} 세계관을 불러왔어요`); };
 $('#world-reset').onclick=()=>{
   if(!confirm(`${DATA.meta.title}의 모든 변경을 지우고 처음 상태로 되돌릴까요?${worldKey.startsWith('p_')?' (직접 만든 프로젝트는 빈 상태가 됩니다)':''}`)) return;
-  loadWorld(worldKey, true); lastJson=null; render(); toast('처음 예시 상태로 되돌렸습니다');
+  loadWorld(worldKey, true); lastJson=null; render(); toast('처음 상태로 되돌렸어요');
 };
 /* ---------- 직접 만든 프로젝트 (키 p_...) ----------
    목록은 브라우저에 두고, 각 프로젝트 내용은 다른 세계관처럼 users/{uid}/worlds/{키}에 meta와 함께 저장한다. */
@@ -1349,13 +1441,13 @@ $('#proj-new').onclick=()=>{
   const p={key, meta:{id:key, title, description, created_at:new Date().toISOString()}};
   PROJECTS.push(p); writeProjects(); WORLDS[key]=customWorld(p);
   loadWorld(key); fillPicker(); showTab('world'); syncFromCloud(key);
-  toast(`'${title}' 프로젝트를 만들었습니다. + 인물, + 단체로 시작하세요`);
+  toast(`'${title}' 프로젝트를 만들었어요. 왼쪽의 + 인물 추가, + 단체 추가로 시작하세요`);
 };
 $('#proj-edit').onclick=()=>{
   const p=PROJECTS.find(x=>x.key===worldKey); if(!p) return;
   const title=(prompt('프로젝트 이름', p.meta.title)||'').trim(); if(!title) return;
   const d=prompt('한 줄 설명', p.meta.description||''); if(d!==null) p.meta.description=d.trim();
-  p.meta.title=title; DATA.meta=p.meta; writeProjects(); fillPicker(); lastJson=null; render(); toast('프로젝트 정보를 바꿨습니다');
+  p.meta.title=title; DATA.meta=p.meta; writeProjects(); fillPicker(); lastJson=null; render(); toast('프로젝트 정보를 바꿨어요');
 };
 /* 다른 기기에서 만든 프로젝트도 목록에 합친다 */
 listProjects().then(list=>{
@@ -1384,7 +1476,7 @@ const TOUR=[
 ];
 function tour(i=0){
   $('#tour')?.remove(); $$('.tour-hl').forEach(el=>el.classList.remove('tour-hl'));
-  if(i>=TOUR.length){ try{ localStorage.setItem('gitstory-tour-done','1'); }catch(e){} return; }
+  if(i>=TOUR.length){ try{ localStorage.setItem('gitstory-tour-done','1'); }catch(e){} showTab('world'); return; }
   const [tab,title,text]=TOUR[i]; showTab(tab);
   const tb=$(`[role=tab][data-tab=${tab}]`); tb.classList.add('tour-hl'); tb.scrollIntoView({inline:'center', block:'nearest'});
   document.body.insertAdjacentHTML('beforeend', `<div class="tour" id="tour" role="dialog" aria-label="사용 안내"><div class="caption">사용 안내 ${i+1} / ${TOUR.length}</div><h3>${title}</h3><p>${text}</p>
@@ -1393,6 +1485,7 @@ function tour(i=0){
   const pv=$('#tour-prev'); if(pv) pv.onclick=()=>tour(i-1);
 }
 $('#help-btn').onclick=()=>tour(0);
+document.addEventListener('keydown', ev=>{ if(ev.key==='Escape' && $('#tour')) tour(TOUR.length); });
 /* ---------- 테마 고르기: 원고지(기본)·밤의 서고·작업 노트 × 시스템·밝게·어둡게. 이 브라우저에 기억한다 ---------- */
 const SKINS=[['paper','원고지',['#fbfbf7','#2f7a5b','#1c211f']],['night','밤의 서고',['#11151f','#d6a84f','#ece3cf']],['note','작업 노트',['#f7f7fb','#4b3fe0','#17172b']]];
 const MODES=[['system','시스템'],['light','밝게'],['dark','어둡게']];
