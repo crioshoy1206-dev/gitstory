@@ -30,7 +30,7 @@ export default function Home() {
   return (
     <main className="landing">
       <section className="hero">
-        <div className="logo" aria-hidden="true">G</div>
+        <img className="logo" src="/logo.svg" alt="" aria-hidden="true" />
         <h1>사건 하나가 세계를 어떻게 바꾸는지, GitStory가 기억합니다</h1>
         <p>
           창작자를 위한 세계관 관리 도구예요. 인물과 단체를 정리하고 사건을 입력하면, AI가 누가 어떤 영향을 받는지 분석해
