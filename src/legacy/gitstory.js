@@ -1612,7 +1612,7 @@ function tour(i=0){
 $('#help-btn').onclick=()=>tour(0);
 document.addEventListener('keydown', ev=>{ if(ev.key==='Escape' && $('#tour')) tour(TOUR.length); });
 /* ---------- 테마 고르기: 원고지(기본)·밤의 서고·작업 노트 × 시스템·밝게·어둡게. 이 브라우저에 기억한다 ---------- */
-const SKINS=[['paper','원고지',['#fbfbf7','#2f7a5b','#1c211f']],['night','밤의 서고',['#110e22','#e6b85c','#93d6ea']],['note','작업 노트',['#fdfcf5','#2c5ccf','#fff07a']]];
+const SKINS=[['paper','원고지',['#fbfbf7','#2f7a5b','#1c211f']],['night','밤의 서고',['#1a1630','#e6b85c','#93d6ea']],['note','작업 노트',['#fdfcf5','#2c5ccf','#fff07a']]];
 const MODES=[['system','시스템'],['light','밝게'],['dark','어둡게']];
 const pref=(k,d)=>{ try{ return localStorage.getItem(k)||d; }catch(e){ return d; } };
 function applyTheme(skin, mode){
