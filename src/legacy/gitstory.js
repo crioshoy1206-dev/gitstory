@@ -64,7 +64,7 @@ function setTree(cs, brs, bid){
   branchId=branches.some(b=>b.id===bid) ? bid : branches[0].id;
   commits=lineOf(curBranch().head);
 }
-const snapshot = () => ({state, commits:allCommits, pending, branches, branch:branchId, layout:LAYOUT});
+const snapshot = () => ({state, commits:allCommits, pending, branches, branch:branchId, layout:LAYOUT, chapters:CHAPTERS});
 function all(s){ return [...s.groups, ...s.characters, ...s.background]; }
 function ent(s,id){ return all(s).find(x=>x.id===id); }
 function nm(s,id){ const e=ent(s,id)||ent(state,id); return e ? (e.name||e.title) : ghostName(id); }
@@ -747,31 +747,131 @@ function drawProp(){
   };
 }
 
-/* ---------- 원고 붙여넣기 ----------
-   원고 한 화를 AI가 읽고 새 인물·단체, 상황 변화, 새 관계, 사건 후보를 뽑는다. 체크한 것만 수동 수정으로 담고,
-   사건 후보는 사건 입력 탭으로 보내 하나씩 분석한다. 원고 원문은 저장하지 않는다(이 화면에만 둔다). */
-const MS_MAX=12000;
-let msText='', msResult=null;
+/* ---------- 원고 ----------
+   화(챕터)별로 원고를 쓰고 저장한다. 목록(제목·글자 수·시각)은 세계관 저장본(snapshot.chapters)에 함께 두고,
+   본문과 이전 버전은 화마다 따로 둔다: 브라우저 localStorage + Firestore users/{uid}/worlds/ms_{세계관}_{화 id}.
+   (세계관 문서 하나의 1MB 한도를 넘지 않게 나눠 둔다.) 이전 버전마다 그때의 세계관 기록(commit)을 함께 남겨
+   "이 원고를 쓸 때 세계관이 어땠는지"를 이어서 볼 수 있게 한다. AI로 읽기는 지금 화 본문으로 한다. */
+const MS_MAX=12000, CH_MAX=30000, VER_MAX=8, VER_GAP=10*60*1000;
+let CHAPTERS=[], msResult=null;
+const chBody={};                 // id -> {title,text,versions:[{at,text,commit}],savedAt}
+const chTimers={};
+const chLocalKey=id=>`gitstory-ms-${USER.uid}-${worldKey}-${id}`;
+const chCloudKey=id=>`ms_${worldKey}_${id}`;
+function when(t){
+  if(!t) return ''; const d=Date.now()-t;
+  if(d<60e3) return '방금'; if(d<3600e3) return `${Math.floor(d/60e3)}분 전`; if(d<86400e3) return `${Math.floor(d/3600e3)}시간 전`;
+  const x=new Date(t); return `${x.getMonth()+1}월 ${x.getDate()}일`;
+}
+function chMeta(id){ return CHAPTERS.find(c=>c.id===id); }
+function loadChapter(id){
+  if(chBody[id]) return chBody[id];
+  let b=null; try{ b=JSON.parse(localStorage.getItem(chLocalKey(id))); }catch(e){}
+  chBody[id]=b&&typeof b.text==='string'?b:{title:chMeta(id)?.title||'', text:'', versions:[], savedAt:0};
+  const key=worldKey;
+  loadCloud(chCloudKey(id)).then(r=>{
+    if(key!==worldKey || !r?.data || r.updatedAt<=(chBody[id]?.savedAt||0) || typeof r.data.text!=='string') return;
+    chBody[id]={...r.data, savedAt:r.updatedAt};
+    try{ localStorage.setItem(chLocalKey(id), JSON.stringify(chBody[id])); }catch(e){}
+    if(cur()==='manuscript' && ui.ch===id) renderManuscript();
+  }).catch(err=>console.warn('원고 불러오기 실패', err));
+  return chBody[id];
+}
+function saveChapter(id, now=false){
+  const b=chBody[id], m=chMeta(id); if(!b||!m) return;
+  b.savedAt=Date.now(); m.updatedAt=b.savedAt; m.chars=b.text.length; m.title=b.title;
+  try{ localStorage.setItem(chLocalKey(id), JSON.stringify(b)); const s=$('#ch-saved'); if(s&&ui.ch===id) s.textContent='브라우저에 저장됨'; }catch(e){ toast('브라우저 저장 공간이 부족해요. 클라우드에만 저장돼요'); }
+  clearTimeout(chTimers[id]);
+  const key=worldKey, go=()=>{ if(key!==worldKey) return; setCloud('saving');
+    saveCloud(chCloudKey(id), b, b.savedAt).then(()=>{ setCloud('synced'); const s=$('#ch-saved'); if(s&&ui.ch===id) s.textContent='저장됨'; })
+      .catch(err=>{ console.warn('원고 저장 실패', err); setCloud('offline'); }); };
+  if(now) go(); else chTimers[id]=setTimeout(go, 800);
+  saveWorld();
+}
+/* 지금 본문을 이전 버전으로 남긴다. 같은 내용이면 건너뛴다. 가장 오래된 것부터 지운다. */
+function snapChapter(id, force=false){
+  const b=chBody[id]; if(!b||!b.text.trim()) return false;
+  const last=b.versions[0];
+  if(last && last.text===b.text) return false;
+  if(!force && last && Date.now()-last.at<VER_GAP) return false;
+  b.versions.unshift({at:Date.now(), text:b.text, commit:head().id}); b.versions=b.versions.slice(0,VER_MAX);
+  return true;
+}
+function newChapter(){
+  const id=newId('ch'), n=CHAPTERS.length+1, title=`${n}화`;
+  CHAPTERS.push({id, title, chars:0, updatedAt:Date.now()});
+  chBody[id]={title, text:'', versions:[], savedAt:0};
+  ui.ch=id; msResult=null; saveChapter(id, true); return id;
+}
+function removeChapter(id){
+  const i=CHAPTERS.findIndex(c=>c.id===id); if(i<0) return;
+  const meta=CHAPTERS[i], body=loadChapter(id);
+  CHAPTERS.splice(i,1); try{ localStorage.removeItem(chLocalKey(id)); }catch(e){}
+  saveCloud(chCloudKey(id), {deleted:true}, Date.now()).catch(()=>{});
+  if(ui.ch===id){ ui.ch=CHAPTERS[Math.min(i,CHAPTERS.length-1)]?.id||null; msResult=null; }
+  saveWorld(); renderManuscript();
+  toastUndo(`${jq(meta.title,'를','을')} 지웠어요`, ()=>{ CHAPTERS.splice(i,0,meta); chBody[id]=body; ui.ch=id; saveChapter(id, true); renderManuscript(); toast(`${jq(meta.title,'를','을')} 되살렸어요`); });
+}
 function renderManuscript(){
-  $('#tab-manuscript').innerHTML = pendingBanner() + `<div class="Subhead"><h2>원고 붙여넣기</h2><span class="muted">한 화씩 붙여넣으면 AI가 설정에 반영할 후보를 골라줘요</span></div>
-  <div class="split-r"><div class="stack">
-    <div class="Box"><div class="Box-body stack">
-      <div class="form-group"><label for="ms-text">원고 한 화 (최대 ${MS_MAX.toLocaleString()}자)</label>
-        <textarea class="form-control" id="ms-text" rows="10" maxlength="${MS_MAX}" placeholder="여기에 원고를 붙여넣으세요">${esc(msText)}</textarea><span class="caption" id="ms-count"></span></div>
-      <div><button class="btn btn-primary" id="ms-run">${icon('spark')}AI로 읽기</button></div>
-    </div></div>
-    <div id="ms-result" class="stack"></div>
+  if(ui.ch && !chMeta(ui.ch)) ui.ch=null;
+  if(!ui.ch && CHAPTERS.length) ui.ch=CHAPTERS.reduce((x,y)=>(y.updatedAt||0)>=(x.updatedAt||0)?y:x).id; // 마지막으로 고친 화
+  const id=ui.ch, b=id?loadChapter(id):null, m=id?chMeta(id):null;
+  const list=CHAPTERS.map(c=>`<button type="button" class="ch-item" data-ch="${c.id}" ${c.id===id?'aria-current="true"':''}><b>${esc(c.title||'제목 없음')}</b><span class="caption">${(c.chars||0).toLocaleString()}자 · ${when(c.updatedAt)}${c.readAt?' · AI로 읽음':''}</span></button>`).join('');
+  const vers=b?.versions||[];
+  $('#tab-manuscript').innerHTML = pendingBanner() + `<div class="Subhead"><h2>원고</h2><span class="muted">화마다 원고를 쓰고 저장해요. AI가 읽고 세계관에 반영할 후보를 골라줘요</span></div>
+  <div class="split ms-split">
+    <aside class="Box ch-list"><div class="Box-header"><h3>화 목록</h3><span class="Counter">${CHAPTERS.length}</span><button class="btn btn-sm right" id="ch-new" type="button">+ 새 화</button></div>
+      ${CHAPTERS.length?`<div class="ch-items">${list}</div>`:`<div class="Box-body caption">아직 저장한 원고가 없어요. 오른쪽에 바로 쓰거나 붙여넣으면 1화로 저장돼요.</div>`}
+    </aside>
+    <div class="stack" style="min-width:0">
+      <div class="Box"><div class="Box-body stack">
+        <div class="ch-head"><input class="form-control ch-title" id="ch-title" maxlength="60" placeholder="화 제목 (예: 3화 · 의회 습격)" aria-label="화 제목" value="${esc(b?.title||'')}">
+          ${id?`<button class="btn btn-sm btn-danger" id="ch-del" type="button">이 화 지우기</button>`:''}</div>
+        <div class="form-group"><label for="ms-text" class="sr-only">원고 본문</label>
+          <textarea class="form-control ch-text" id="ms-text" rows="16" maxlength="${CH_MAX}" placeholder="여기에 원고를 쓰거나 붙여넣으세요. 쓰는 대로 저장돼요">${esc(b?.text||'')}</textarea>
+          <div class="ch-foot"><span class="caption" id="ms-count"></span><span class="caption" id="ch-saved">${b?.savedAt?'저장됨 · '+when(b.savedAt):''}</span></div></div>
+        <div class="row-end" style="justify-content:flex-start;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="ms-run" type="button">${icon('spark')}AI로 읽기</button>
+          ${id?`<button class="btn" id="ch-snap" type="button">지금 버전 남기기</button>`:''}
+          ${m?.readAt?`<span class="caption">AI로 읽음 · ${when(m.readAt)}</span>`:''}
+        </div>
+      </div></div>
+      <div id="ms-result" class="stack"></div>
+      ${vers.length?`<details class="Box ch-vers" ${ui.chVers?'open':''}><summary class="Box-header"><h3>이전 버전</h3><span class="Counter">${vers.length}</span><span class="caption right">최근 ${VER_MAX}개까지 남아요</span></summary>
+        ${vers.map((v,i)=>`<div class="Box-row" style="align-items:flex-start;flex-wrap:wrap;gap:8px"><div style="flex:1 1 220px;min-width:0"><b>${when(v.at)}</b> <span class="caption">${v.text.length.toLocaleString()}자</span>
+          <div class="caption">그때 세계관: ${byId(v.commit)?esc(`'${cname(v.commit)}'`):'(지금은 없는 기록)'}</div>
+          <div class="caption ch-peek">${esc(v.text.slice(0,90))}${v.text.length>90?'…':''}</div></div>
+          <button class="btn btn-sm" data-chrestore="${i}" type="button">이 버전으로 되돌리기</button></div>`).join('')}</details>`:''}
+    </div>
   </div>
-  <aside class="stack"><div class="Box"><div class="Box-header"><h3>이렇게 반영돼요</h3></div><div class="Box-body stack" style="gap:8px">
-    <div>1. AI가 새 인물·단체, 상황이 바뀐 인물, 새 관계, 큰 사건을 후보로 골라요.</div>
-    <div>2. 체크한 후보만 세계관에 반영되고 바로 저장돼요.</div>
+  <div class="Box" style="margin-top:16px"><div class="Box-header"><h3>이렇게 반영돼요</h3></div><div class="Box-body stack" style="gap:8px">
+    <div>1. 원고는 화마다 쓰는 대로 저장돼요. 10분마다, 그리고 AI로 읽을 때 이전 버전이 남아요.</div>
+    <div>2. AI가 새 인물·단체, 상황이 바뀐 인물, 새 관계, 큰 사건을 후보로 골라요. 체크한 후보만 세계관에 반영돼요.</div>
     <div>3. 사건 후보는 사건 입력 탭으로 보내 영향 분석을 따로 해요.</div>
-    <div class="caption">이미 있는 이름이나 다른 이름과 겹치는 인물은 새로 만들지 않아요. 원고 원문은 저장하지 않아요.</div>
-  </div></div></aside></div>`;
-  const ta=$('#ms-text'), cnt=()=>{ $('#ms-count').textContent=`${ta.value.length.toLocaleString()} / ${MS_MAX.toLocaleString()}자`; };
-  ta.oninput=()=>{ msText=ta.value; cnt(); }; cnt();
+    <div class="caption">AI는 한 번에 ${MS_MAX.toLocaleString()}자까지 읽어요. 이미 있는 이름이나 다른 이름과 겹치는 인물은 새로 만들지 않아요.</div>
+  </div></div>`;
+  const ta=$('#ms-text'), tt=$('#ch-title');
+  const cnt=()=>{ const n=ta.value.length; $('#ms-count').innerHTML=`${n.toLocaleString()} / ${CH_MAX.toLocaleString()}자${n>MS_MAX?` <span class="Label Label--attention">AI는 앞 ${MS_MAX.toLocaleString()}자만 읽을 수 있어요</span>`:''}`; };
+  // 처음 쓰기 시작하면 화를 만든다
+  const ensure=()=>{ if(!ui.ch){ newChapter(); const nb=chBody[ui.ch]; nb.title=tt.value.trim()||nb.title; } return chBody[ui.ch]; };
+  const touched=()=>{ const s=$('#ch-saved'); if(s) s.textContent='저장 중…'; };
+  ta.oninput=()=>{ const had=!!ui.ch; const cb=ensure(); snapChapter(ui.ch); cb.text=ta.value; cnt(); touched(); saveChapter(ui.ch); if(!had) renderManuscript(), $('#ms-text').focus(); else refreshList(); };
+  tt.oninput=()=>{ if(!ui.ch && !tt.value.trim()) return; const had=!!ui.ch; const cb=ensure(); cb.title=tt.value.trim()||`${CHAPTERS.findIndex(c=>c.id===ui.ch)+1}화`; touched(); saveChapter(ui.ch); if(!had){ renderManuscript(); const t=$('#ch-title'); t.focus(); t.setSelectionRange(t.value.length,t.value.length); } else refreshList(); };
+  cnt();
+  $('#ch-new').onclick=()=>{ if(ui.ch) snapChapter(ui.ch); newChapter(); renderManuscript(); $('#ms-text').focus(); toast(`${jq(chMeta(ui.ch).title,'를','을')} 만들었어요`); };
+  $$('[data-ch]').forEach(x=>x.onclick=()=>{ if(x.dataset.ch===ui.ch) return; if(ui.ch) snapChapter(ui.ch); ui.ch=x.dataset.ch; msResult=null; ui.chVers=false; renderManuscript(); });
+  const del=$('#ch-del'); if(del) del.onclick=()=>removeChapter(ui.ch);
+  const snap=$('#ch-snap'); if(snap) snap.onclick=()=>{ if(snapChapter(ui.ch, true)){ saveChapter(ui.ch, true); ui.chVers=true; renderManuscript(); toast('지금 버전을 남겼어요'); } else toast(chBody[ui.ch]?.text.trim()?'바로 전 버전과 내용이 같아요':'아직 쓴 내용이 없어요'); };
+  const vd=$('.ch-vers'); if(vd) vd.ontoggle=()=>{ ui.chVers=vd.open; };
+  $$('[data-chrestore]').forEach(x=>x.onclick=()=>{
+    const cb=chBody[ui.ch], v=cb.versions[+x.dataset.chrestore]; if(!v) return;
+    const prev=cb.text; snapChapter(ui.ch, true); cb.text=v.text; saveChapter(ui.ch, true); renderManuscript();
+    toastUndo(`${when(v.at)} 버전으로 되돌렸어요`, ()=>{ cb.text=prev; saveChapter(ui.ch, true); renderManuscript(); });
+  });
   $('#ms-run').onclick=async ()=>{
-    const text=ta.value.trim(); if(!text){ toast('원고를 붙여넣으세요'); return; }
+    const text=ta.value.trim(); if(!text){ toast('원고를 쓰거나 붙여넣으세요'); return; }
+    if(text.length>MS_MAX){ toast(`AI는 한 번에 ${MS_MAX.toLocaleString()}자까지 읽어요. 화를 나눠 주세요`); return; }
+    const cid=ui.ch; if(cid){ snapChapter(cid, true); saveChapter(cid, true); }
     const btn=$('#ms-run'); btn.disabled=true; let note='';
     $('#ms-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 원고를 읽고 있어요 <span id="ms-wait"></span></span></div></div>`;
     const t0=Date.now(), tick=setInterval(()=>{ const w=$('#ms-wait'), sec=Math.round((Date.now()-t0)/1000); if(w) w.textContent=`· ${sec}초`; },1000);
@@ -781,17 +881,28 @@ function renderManuscript(){
       // 이미 있는 이름은 기본으로 체크를 끄고 '이미 있어요'로 표시한다
       const on=a=>a.map(x=>({...x, on:true})), known=a=>a.map(x=>sameName(x.name)?{...x, on:false, dup:true}:{...x, on:true});
       msResult={characters:known(r.result.characters), groups:known(r.result.groups), updates:on(r.result.updates), relations:on(r.result.relations), events:r.result.events};
+      const cm=chMeta(cid); if(cm){ cm.readAt=Date.now(); cm.readCommit=head().id; saveWorld(); }
       showUsage(r.usage); toast(`원고 읽기 완료 (${r.provider==='claude'?'Claude':'Gemini'}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
     }catch(err){
       console.warn('원고 읽기 실패', err); msResult=null;
       if(err.status===429){ if(err.body?.usage) showUsage(err.body.usage); note='오늘 쓸 수 있는 토큰을 다 썼어요. 한국 시간 자정에 다시 채워집니다.'; }
       else note=`원고를 읽지 못했어요. ${friendlyErr(err)}.`;
     }
-    clearInterval(tick); btn.disabled=false; drawMs();
+    clearInterval(tick);
+    if(ui.ch!==cid || cur()!=='manuscript') return;
+    if(!note && chMeta(cid)) { renderManuscript(); return; }
+    btn.disabled=false; drawMs();
     if(note) $('#ms-result').innerHTML=`<div class="flash flash-warn">${icon('alert')}<div>${esc(note)}</div></div>`;
   };
   if(msResult) drawMs();
   wirePending();
+}
+/* 목록의 글자 수·시각만 다시 그린다 (쓰는 중에 편집기를 다시 그리지 않도록) */
+function refreshList(){
+  CHAPTERS.forEach(c=>{ const el=document.querySelector(`[data-ch="${c.id}"]`); if(!el) return;
+    el.querySelector('b').textContent=c.title||'제목 없음';
+    el.querySelector('.caption').textContent=`${(c.chars||0).toLocaleString()}자 · ${when(c.updatedAt)}${c.readAt?' · AI로 읽음':''}`; });
+  const s=$('#ch-saved'); 
 }
 function drawMs(){
   const r=msResult, box=$('#ms-result'); if(!box||!r) return;
@@ -1395,7 +1506,7 @@ function syncFromCloud(k){
   loadCloud(k).then(remote=>{
     if(k!==worldKey) return;
     if(remote && remote.updatedAt>savedAt && remote.data?.state){
-      state=remote.data.state; setTree(remote.data.commits, remote.data.branches, remote.data.branch); pending=remote.data.pending||[]; LAYOUT=remote.data.layout||{};
+      state=remote.data.state; setTree(remote.data.commits, remote.data.branches, remote.data.branch); pending=remote.data.pending||[]; LAYOUT=remote.data.layout||{}; CHAPTERS=remote.data.chapters||[];
       savedAt=remote.updatedAt; lastJson=JSON.stringify(snapshot());
       try{ localStorage.setItem(saveKey(k), JSON.stringify({...snapshot(), savedAt})); }catch(e){}
       render(); toast('클라우드에 저장된 세계관을 불러왔어요');
@@ -1408,16 +1519,16 @@ function syncFromCloud(k){
 function loadWorld(k, fresh=false){
   W=WORLDS[k]; DATA=W.data; POS=W.pos||{}; SAMPLE=W.sample||{title:'', description:'', story_time:'', direct:[], rewrite:{}, relations:[]}; worldKey=k;
   const pe=$('#proj-edit'); if(pe) pe.style.display=k.startsWith('p_')?'':'none';
-  state=clone(DATA.state); setTree(clone(DATA.commits)); pending=[]; analysis=null; LAYOUT={}; ui.view=null;
+  state=clone(DATA.state); setTree(clone(DATA.commits)); pending=[]; analysis=null; LAYOUT={}; ui.view=null; CHAPTERS=[]; msResult=null; Object.keys(chBody).forEach(k=>delete chBody[k]);
   if(!fresh){
     try{
       const saved=JSON.parse(localStorage.getItem(saveKey(k)));
-      if(saved?.state && saved?.commits){ state=saved.state; setTree(saved.commits, saved.branches, saved.branch); pending=saved.pending||[]; LAYOUT=saved.layout||{}; }
+      if(saved?.state && saved?.commits){ state=saved.state; setTree(saved.commits, saved.branches, saved.branch); pending=saved.pending||[]; LAYOUT=saved.layout||{}; CHAPTERS=saved.chapters||[]; }
       savedAt=saved?.savedAt||0;
     }catch(e){ savedAt=0; }
   } else savedAt=0;
   lastJson=JSON.stringify(snapshot());
-  Object.assign(ui, {sel:null, treeSel:null, editing:null, graphVer:'work', relFilter:'all', cmpA:null, cmpB:null, confirm:null, open:{}});
+  Object.assign(ui, {ch:null, chVers:false, sel:null, treeSel:null, editing:null, graphVer:'work', relFilter:'all', cmpA:null, cmpB:null, confirm:null, open:{}});
   try{ localStorage.setItem('gitstory-world', k); }catch(e){}
 }
 $('#side-q').oninput=ev=>{ ui.q=ev.target.value; renderSide(); };
@@ -1485,7 +1596,7 @@ $('#sign-out').onclick=()=>signOutUser().then(()=>location.reload());
 const TOUR=[
   ['world','세계관','오른쪽에 세계관 전체가 관계도로 보여요. 인물이나 단체를 누르면 상황, 성격, 관계가 옆에 열리고 바로 고칠 수 있어요. 왼쪽 도구창에서 + 인물 추가, + 단체 추가로 새로 만들어요. 위쪽에서 시점을 고르면 그때의 관계도로 바뀌어요.'],
   ['event','사건 입력','이야기에서 일어난 일을 적고 AI 영향 분석을 누르면, 누가 직접 영향을 받고 소속을 따라 어떻게 퍼지는지 보여줘요. 확인한 뒤 사건 기록하기를 누르면 버전으로 남아요.'],
-  ['manuscript','원고 붙여넣기','쓴 원고를 한 화씩 붙여넣으면 AI가 새 인물, 바뀐 상황, 새 관계, 큰 사건을 후보로 골라줘요. 체크한 것만 반영돼요.'],
+  ['manuscript','원고','화마다 원고를 쓰거나 붙여넣으면 저장돼요. AI로 읽으면 새 인물, 바뀐 상황, 새 관계, 큰 사건을 후보로 골라줘요. 체크한 것만 반영돼요.'],
   ['history','버전 기록','모든 변화가 이야기 흐름으로 쌓여요. 지난 기록에서 \'만약에\' 전개를 만들어 다른 이야기를 시험하고, 언제든 되돌릴 수 있어요. 내 이야기는 왼쪽 도구창의 + 새 프로젝트로 시작하세요.']
 ];
 function tour(i=0){
