@@ -64,9 +64,15 @@ export async function callApi<T>(path: string, init: RequestInit = {}): Promise<
   });
   const text = await res.text();
   let body: Record<string, unknown> = {};
+  let parsed = true;
   try {
     body = JSON.parse(text);
-  } catch {}
+  } catch {
+    parsed = false;
+  }
+  if (res.ok && !parsed) {
+    throw Object.assign(new Error("bad response"), { status: 502, body: { error: "AI 응답을 제대로 읽지 못했어요. 다시 눌러 주세요" } });
+  }
   if (!res.ok) {
     const detail = (body.error as string) || text.slice(0, 80) || "응답 없음";
     throw Object.assign(new Error(`HTTP ${res.status}: ${detail}`), { status: res.status, body });
