@@ -422,3 +422,16 @@ img.logo{background:none;object-fit:contain;border-radius:22%;display:block}
 .ch-vers summary::-webkit-details-marker{display:none}
 .ch-peek{white-space:pre-wrap;margin-top:4px;opacity:.85}
 @media (max-width:860px){.ch-list{position:static}.ch-items{max-height:none;flex-direction:row;overflow-x:auto}.ch-item{border-top:0;border-right:1px solid var(--border);flex:0 0 auto;min-width:120px}.ch-item[aria-current="true"]::before{left:8px;right:8px;top:auto;bottom:0;width:auto;height:3px}.ch-text{min-height:260px}}
+/* 저장 실패 경고 (브라우저 저장 공간이 가득 찼을 때 등). 사라지지 않고 위쪽에 남는다 */
+.save-warn{display:flex;gap:10px;align-items:flex-start;padding:10px 16px;background:var(--attention-subtle);color:var(--fg);border-bottom:1px solid var(--attention-muted);font-size:13px;line-height:1.5;position:sticky;top:57px;z-index:9}
+.save-warn[hidden]{display:none}
+.save-warn .oct{color:var(--attention);flex:none;margin-top:3px}
+.save-warn.danger{background:var(--danger-subtle);border-bottom-color:var(--danger)}
+.save-warn.danger .oct{color:var(--danger)}
+/* 알림 안의 되돌리기 줄: 지운 것마다 한 줄씩 */
+.toast{display:flex;flex-direction:column;gap:6px}
+.toast[hidden]{display:none}
+.toast-row{display:flex;align-items:baseline;gap:8px;justify-content:space-between}
+.toast-msg + .toast-row{border-top:1px solid color-mix(in srgb,var(--bg) 25%,transparent);padding-top:6px}
+.detail h2:focus,.detail h3:focus{outline:none}
+.detail h2:focus-visible,.detail h3:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

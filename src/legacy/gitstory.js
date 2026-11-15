@@ -92,13 +92,67 @@ const cnum = id => { const i=commits.findIndex(c=>c.id===id); return i<0?'':`${i
 function fmtDate(s){ if(!s) return '방금 전'; const d=new Date(s); return `${d.getMonth()+1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
 function newId(p){ return `${p}_${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2,5)}`; }
 function newSha(){ return Array.from({length:7},()=>'0123456789abcdef'[Math.random()*16|0]).join(''); }
-function toast(t){ const el=$('#toast'); el.textContent=t; el.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,2600); }
-/* 알림에 되돌리기 버튼을 붙인다 (지우기 직후 실수를 바로 무를 수 있게) */
-function toastUndo(t, undo){
-  const el=$('#toast'); el.innerHTML=`${esc(t)} <button type="button" class="toast-undo" id="toast-undo">되돌리기</button>`; el.hidden=false;
-  clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,7000);
-  $('#toast-undo').onclick=()=>{ el.hidden=true; undo(); };
+/* 알림. 지우기 뒤의 '되돌리기'는 알림 문구와 따로 두어서, 다른 알림이 떠도 사라지지 않고 여러 개를 연달아 지워도 각각 되돌릴 수 있다 */
+let toastMsg='', undos=[];
+function drawToast(){
+  const el=$('#toast'); if(!el) return;
+  const now=Date.now(); undos=undos.filter(u=>u.until>now);
+  el.innerHTML=(toastMsg?`<div class="toast-msg">${esc(toastMsg)}</div>`:'')
+    + undos.map(u=>`<div class="toast-row"><span>${esc(u.label)}</span><button type="button" class="toast-undo" data-undo="${u.id}">되돌리기</button></div>`).join('');
+  el.hidden=!toastMsg && !undos.length;
+  el.querySelectorAll('[data-undo]').forEach(b=>b.onclick=()=>{ const u=undos.find(x=>x.id===+b.dataset.undo); undos=undos.filter(x=>x!==u); drawToast(); u?.fn(); });
 }
+function toast(t){ toastMsg=t; drawToast(); clearTimeout(toast.t); toast.t=setTimeout(()=>{ toastMsg=''; drawToast(); },2600); }
+function toastUndo(t, undo){
+  undos.push({id:(toastUndo.n=(toastUndo.n||0)+1), label:t, fn:undo, until:Date.now()+12000}); undos=undos.slice(-3);
+  toastMsg=''; drawToast(); clearTimeout(toastUndo.t); toastUndo.t=setTimeout(drawToast,12100);
+  undos.forEach(u=>setTimeout(drawToast, u.until-Date.now()+50));
+}
+function clearUndos(){ undos=[]; drawToast(); }
+/* 화면을 통째로 다시 그리면 포커스가 사라진다(BODY). 그리기 전에 포커스가 있던 요소를 기억했다가,
+   다시 그린 뒤 같은 요소(같은 id나 data- 속성)를 찾아 포커스를 돌려준다. 없어졌으면 가까운 상자 안 첫 버튼으로 보낸다. */
+const FOCUSABLE='button:not([disabled]):not([hidden]),[href],input:not([type=hidden]):not([hidden]):not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+function focusSel(el){
+  if(!el || el===document.body || !el.isConnected) return null;
+  if(el.id) return '#'+CSS.escape(el.id);
+  const at=[...el.attributes].filter(a=>a.name.startsWith('data-') || (el.tagName==='INPUT' && (a.name==='name'||a.name==='value')));
+  return at.length ? el.tagName.toLowerCase()+at.map(a=>`[${a.name}="${CSS.escape(a.value)}"]`).join('') : null;
+}
+function keepFocus(fn){
+  return function(...args){
+    const el=document.activeElement, sel=focusSel(el), anc=[];
+    if(sel) for(let p=el.parentElement; p && p!==document.body; p=p.parentElement) if(p.id) anc.push(p.id);
+    const out=fn.apply(this, args);
+    const now=document.activeElement;
+    if(sel && (!now || now===document.body || !now.isConnected)){
+      let t=document.querySelector(sel);
+      if(!t || t.closest('[hidden]')){ t=null; for(const id of anc){ const a=document.getElementById(id); if(a && !a.closest('[hidden]')){ t=a.querySelector(FOCUSABLE)||a; break; } } }
+      if(t){ if(!t.matches(FOCUSABLE)) t.tabIndex=-1; t.focus({preventScroll:true}); }
+    }
+    return out;
+  };
+}
+/* 브라우저 저장(localStorage). 저장 공간이 가득 차는 등으로 실패하면 감추지 않고 화면 위쪽에 경고를 계속 띄운다 */
+const failedKeys=new Set(); let cloudState='connecting';
+function lsSet(k, v){
+  try{ localStorage.setItem(k, v); if(failedKeys.delete(k)) showSaveWarn(); return true; }
+  catch(e){ console.warn('브라우저 저장 실패', k, e); failedKeys.add(k); showSaveWarn(); return false; }
+}
+function lsRemove(k){ try{ localStorage.removeItem(k); }catch(e){} if(failedKeys.delete(k)) showSaveWarn(); }
+const unsafe=()=>failedKeys.size>0 && cloudState!=='synced';
+function showSaveWarn(){
+  let el=$('#save-warn');
+  if(!el){ $('.app-header')?.insertAdjacentHTML('afterend','<div class="save-warn" id="save-warn" role="alert" hidden></div>'); el=$('#save-warn'); if(!el) return; }
+  if(!failedKeys.size){ el.hidden=true; el.textContent=''; return; }
+  const danger=cloudState!=='synced';
+  el.className='save-warn'+(danger?' danger':'');
+  el.innerHTML=`${icon('alert')}<div><b>${danger?'저장하지 못했어요.':'이 기기에는 저장하지 못했어요.'}</b> `
+    + (danger ? '브라우저 저장 공간이 가득 찼고 클라우드에도 아직 저장되지 않았어요. 이대로 새로고침하거나 창을 닫으면 최근 작업이 사라질 수 있어요. 인터넷 연결을 확인하고, 쓰지 않는 화나 사진을 지워 공간을 비워 주세요.'
+      : '브라우저 저장 공간이 가득 찼어요. 지금은 클라우드에만 저장되고 있어서, 인터넷이 끊기면 작업이 사라질 수 있어요. 쓰지 않는 화나 사진을 지우거나 브라우저의 사이트 데이터를 정리해 주세요.')+'</div>';
+  el.hidden=false;
+}
+$('#toast')?.setAttribute('role','status');
+window.addEventListener('beforeunload', ev=>{ if(unsafe()){ ev.preventDefault(); ev.returnValue=''; } });
 /* 받침에 맞는 조사. 받침 없을 때, 있을 때 순서: jo('르블랑','와','과') → '르블랑과' */
 function jo(word, a, b){
   const w=String(word??''), c=w.charCodeAt(w.length-1);
@@ -175,7 +229,7 @@ function stateOf(id){
 function switchBranch(id){
   const b=branches.find(x=>x.id===id); if(!b || id===branchId) return false;
   flushPending();
-  state=stateOf(b.head); branchId=id; commits=lineOf(b.head); analysis=null;
+  state=stateOf(b.head); branchId=id; commits=lineOf(b.head); cancelAnalysis(); clearUndos();
   Object.assign(ui, {graphVer:'work', cmpA:null, cmpB:null, confirm:null, open:{}});
   return true;
 }
@@ -241,11 +295,35 @@ function setManual(path, value){
   if(JSON.stringify(p.before)===JSON.stringify(p.after)) pending=pending.filter(x=>x!==p);
 }
 
-/* 직접 고친 내용은 바로 기록한다. 방금(30분 안) 만든 '세계관 직접 수정' 기록이 맨 끝이고 그 뒤로 갈라진 전개가 없으면 거기에 이어 붙인다. */
-function flushPending(){
+/* 직접 고친 내용은 바로 기록한다. 고칠 때마다 기록이 하나씩 남아서 중간 시점으로도 되돌릴 수 있다.
+   다만 같은 항목 하나를 몇 분 안에 잇달아 고친 것(세기 버튼을 여러 번 누르기 등)은 바로 앞 기록에 이어 붙인다.
+   항목 추가·지우기와 원고 반영은 늘 따로 남긴다. */
+const MERGE_GAP=3*60e3;
+const patchKey=p=>p.path.split('/').slice(1,3).join('/');
+const isWhole=p=>p.op!=='replace' && p.path.split('/').length===3;
+function manualMsg(ps){
+  const nameOf=p=>{ const v=p.after||p.before; return v?.name||v?.title||nm(state,p.path.split('/')[2]); };
+  const list=a=>a.slice(0,2).map(n=>`'${n}'`).join(', ')+(a.length>2?` 외 ${a.length-2}개`:'');
+  const whole=ps.filter(p=>isWhole(p) && !p.path.startsWith('/relations/'));
+  if(whole.length){
+    const ad=whole.filter(p=>p.op==='add').map(nameOf), rm=whole.filter(p=>p.op==='remove').map(nameOf);
+    return [ad.length?list(ad)+' 추가':'', rm.length?list(rm)+' 지움':''].filter(Boolean).join(' · ');
+  }
+  const ids=[...new Set(ps.map(p=>p.path.split('/')[2]))];
+  const names=ids.map(id=>{
+    if(!id.startsWith('rel_')) return nm(state,id);
+    const v=ps.map(p=>p.after||p.before).find(v=>v?.id===id && v.from) || ent2rel(state,id);
+    return v ? `${nm(state,v.from)}·${nm(state,v.to)} 관계` : '관계';
+  });
+  return list(names);
+}
+function flushPending(msg){
   if(!pending.length) return;
   const h=head(), now=new Date().toISOString();
-  const merge = h.kind==='manual' && h.auto && Date.now()-new Date(h.updated_at||h.created_at) < 30*60e3
+  const keys=new Set(pending.map(patchKey)), hk=new Set((h.patches||[]).map(patchKey));
+  const merge = !msg && h.kind==='manual' && h.auto && !h.fixed && keys.size===1 && hk.size===1 && [...keys][0]===[...hk][0]
+    && !pending.some(isWhole) && !h.patches.some(isWhole)
+    && Date.now()-new Date(h.updated_at||h.created_at) < MERGE_GAP
     && !allCommits.some(c=>c.parent===h.id) && !branches.some(b=>b.id!==branchId && b.head===h.id);
   const id = merge ? h.id : newSha();
   pending.forEach(p=>{ const m=p.path.match(/^\/(groups|characters)\/([^/]+)\//); if(!m) return;
@@ -255,7 +333,7 @@ function flushPending(){
     const hp={op:'add', path:`/${m[1]}/${m[2]}/situation/history/-`, after:{commit:id, summary, source:'manual'}}; applyPatch(state,hp); p.__h=hp; });
   const patches=pending.flatMap(p=>p.__h?[{op:p.op,path:p.path,before:p.before,after:p.after}, p.__h]:[{op:p.op,path:p.path,before:p.before,after:p.after}]);
   if(merge){ h.patches.push(...patches); h.updated_at=now; }
-  else addCommit({id, parent:h.id, kind:'manual', auto:true, message:'세계관 직접 수정', created_at:now, updated_at:now, impacts:[], patches});
+  else addCommit({id, parent:h.id, kind:'manual', auto:true, ...(msg?{fixed:true}:{}), message:msg||`직접 수정: ${manualMsg(pending)}`, created_at:now, updated_at:now, impacts:[], patches});
   pending=[];
 }
 /* 새 항목 추가 → pending (id로 가리키는 경로라 되돌리기도 그 항목만 뺀다) */
@@ -271,7 +349,7 @@ function removeEntity(id){
     state.groups.filter(g=>g.parent===id).forEach(g=>{ done.push({op:'replace', path:`/groups/${g.id}/parent`, before:id}); setManual(`/groups/${g.id}/parent`, null); });
   }
   push(removeManual(`/${c}/${id}`));
-  delete LAYOUT[id];
+  // 관계도 자리는 남겨 둔다: 되살리면 원래 자리로 돌아온다
   return done;
 }
 /* 지운 것을 되살린다 (지운 순서의 반대로) */
@@ -320,11 +398,18 @@ function level(w){ const a=Math.abs(w); return a<0.25?['변화 없음','']:a<0.6
 function wbar(w){ const pct=Math.abs(w)*50; return `<div class="wbar" title="${sf2(w)}"><i style="${w<0?`right:50%;width:${pct}%;background:var(--danger)`:`left:50%;width:${pct}%;background:var(--success)`}"></i></div>`; }
 
 /* ---------- 탭 ---------- */
-$$('[role=tab]').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
+const TABS=$$('[role=tab]');
+TABS.forEach(b=>{ b.addEventListener('click',()=>showTab(b.dataset.tab));
+  const p=$('#tab-'+b.dataset.tab); b.id='tabbtn-'+b.dataset.tab; b.setAttribute('aria-controls', p.id); p.setAttribute('role','tabpanel'); p.setAttribute('aria-labelledby', b.id); b.tabIndex=b.getAttribute('aria-selected')==='true'?0:-1; });
+/* 화면 탭: 화살표·Home·End로 옆 탭으로 옮긴다 (고른 탭만 Tab 순서에 들어간다) */
+$('.main-tabs').addEventListener('keydown', ev=>{
+  const i=TABS.indexOf(ev.target); if(i<0) return;
+  const j={ArrowRight:i+1, ArrowLeft:i-1, Home:0, End:TABS.length-1}[ev.key]; if(j===undefined) return;
+  ev.preventDefault(); const b=TABS[(j+TABS.length)%TABS.length]; showTab(b.dataset.tab); b.focus();
+});
 function showTab(t){
-  $$('[role=tab]').forEach(b=>b.setAttribute('aria-selected', b.dataset.tab===t));
   if(t==='graph') t='world';
-  $$('[role=tab]').forEach(b=>b.setAttribute('aria-selected', b.dataset.tab===t));
+  TABS.forEach(b=>{ const on=b.dataset.tab===t; b.setAttribute('aria-selected', on); b.tabIndex=on?0:-1; });
   ['world','event','manuscript','history'].forEach(x=>$('#tab-'+x).hidden = x!==t);
   render(t); window.scrollTo({top:0});
 }
@@ -364,9 +449,10 @@ function renderSide(){
   $$('[data-side]').forEach(b=>b.onclick=()=>pick(b.dataset.side));
   // + 추가는 목록 맨 위에 이름 칸을 연다 (브라우저 입력창 대신)
   $$('[data-new]').forEach(b=>b.onclick=()=>{ ui.adding = ui.adding===b.dataset.new ? null : b.dataset.new; renderSide(); $('#side-add-name')?.focus(); });
-  $$('[data-addcancel]').forEach(b=>b.onclick=()=>{ ui.adding=null; renderSide(); });
+  const closeAdd=key=>{ ui.adding=null; renderSide(); $(`[data-new="${key}"]`)?.focus(); };
+  $$('[data-addcancel]').forEach(b=>b.onclick=()=>closeAdd(b.closest('[data-addform]').dataset.addform));
   $$('[data-addform]').forEach(f=>{
-    f.onkeydown=ev=>{ if(ev.key==='Escape'){ ev.stopPropagation(); ui.adding=null; renderSide(); } };
+    f.onkeydown=ev=>{ if(ev.key==='Escape'){ ev.stopPropagation(); closeAdd(f.dataset.addform); } };
     f.onsubmit=ev=>{ ev.preventDefault();
       const t=f.dataset.addform, name=$('#side-add-name').value.trim().slice(0,NAME_MAX); if(!name){ toast('이름을 입력하세요'); return; }
       const dup=sameName(name); if(dup && !confirm(`${jq(dup.name||dup.title,'가','이')} 이미 있어요. 같은 이름으로 하나 더 만들까요?`)) return;
@@ -383,10 +469,20 @@ function pick(id){
   if(cur()!=='world') showTab('world'); else render('world');
   focusDetail();
 }
-function focusDetail(){ if(window.innerWidth<1200) $('#detail')?.scrollIntoView({behavior:'smooth', block:'start'}); }
+/* 상세 패널로 포커스를 옮긴다 (키보드로 고른 뒤 Tab을 수십 번 누르지 않게) */
+function focusDetail(){
+  const h=$('#detail h2, #detail h3'); if(h){ h.tabIndex=-1; h.focus({preventScroll:true}); }
+  if(window.innerWidth<1200) $('#detail')?.scrollIntoView({behavior:'smooth', block:'start'});
+}
+/* 휴대폰 도구창: 열면 포커스를 안으로 옮기고 뒤쪽 화면은 잠근다(inert). 닫으면 '☰ 목록'으로 포커스를 돌려보낸다 */
 function sideOpen(open){
-  $('#side').classList.toggle('open', open); $('#side-backdrop').hidden=!open;
-  $('#side-toggle').setAttribute('aria-expanded', open);
+  const side=$('#side'), was=side.classList.contains('open'), tg=$('#side-toggle');
+  side.classList.toggle('open', open); $('#side-backdrop').hidden=!open;
+  tg.setAttribute('aria-expanded', open);
+  const drawer=getComputedStyle(tg).display!=='none';
+  const lock=open && drawer; $('.main-col').inert=lock; $('.app-header').inert=lock;
+  if(lock){ side.setAttribute('role','dialog'); side.setAttribute('aria-modal','true'); if(!was) $('#side-close').focus(); }
+  else { side.removeAttribute('role'); side.removeAttribute('aria-modal'); if(was && side.contains(document.activeElement)) tg.focus(); }
 }
 function bgDetail(b){
   return `<div class="Subhead"><h2>${esc(b.title)}</h2><span class="Label">배경</span><span class="Label">${esc(b.category)}</span>
@@ -623,21 +719,34 @@ function evPosition(){
   return `<div class="Box"><div class="Box-header"><h3>이 사건이 들어갈 자리</h3>${branches.length>1?`<span class="Label">${esc(curBranch().name)}</span>`:''}</div>
     <ol class="ev-pos">${skip?`<li class="more">앞선 사건 ${skip}개</li>`:''}
       ${recent.map(c=>`<li><span class="n">${cnum(c.id).replace('. ','')}</span><div><div>${esc(cname(c.id))}</div>${c.event?.story_time?`<div class="caption">${esc(c.event.story_time)}</div>`:''}</div></li>`).join('')}
-      <li class="here"><span class="n">${commits.length+1}</span><div><div id="ev-pos-title">${esc(analysis?.title || ui.evDraft?.title || '새 사건')}</div><div class="caption">새 사건이 여기에 들어가요</div></div></li></ol>
+      <li class="here"><span class="n">${commits.length+1}</span><div><div id="ev-pos-title">${esc((evBusy?.draft || ui.evDraft)?.title || analysis?.title || '새 사건')}</div><div class="caption">새 사건이 여기에 들어가요</div></div></li></ol>
     <div class="Box-row caption">더 앞 시점에 넣고 싶으면 버전 기록에서 그 사건을 고르고 '만약에' 전개를 만들어 주세요.</div></div>`;
 }
+/* 지금 세계관에 없는 대상(분석을 기다리는 동안 지운 단체 등)을 분석 결과에서 뺀다 */
+function pruneAnalysis(a){
+  if(!a) return a;
+  const ok=id=>typeof id==='string' && !id.startsWith('bg_') && !!ent(state,id);
+  a.direct=(a.direct||[]).filter(d=>ok(d.target));
+  a.relations=(a.relations||[]).filter(r=>{ if(r.op==='add') return ok(r.after?.from) && ok(r.after?.to); const w=walk(state,r.path); return !!w && (!w.arr || w.idx>-1); });
+  a.rewrite=a.rewrite||{};
+  return a;
+}
+/* 진행 중인 AI 분석. 세계관·전개를 바꾸거나 다시 분석하면 번호(evSeq)가 바뀌어, 늦게 온 응답은 버린다 */
+let evSeq=0, evBusy=null;
+function cancelAnalysis(){ evSeq++; evBusy=null; analysis=null; }
+const evBusyHtml=()=>`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 사건이 단체·인물에 주는 직접 영향을 판단하고 있습니다 <span id="ev-wait"></span></span></div></div>`;
 function renderEvent(){
-  const blocked=pending.length>0;
+  const dv=evBusy?.draft || ui.evDraft || (analysis?{title:analysis.title, description:analysis.description, story_time:analysis.story_time}:{});
   $('#tab-event').innerHTML = pendingBanner() + `
   <div class="Subhead"><h2>새 사건</h2><span class="muted">${branches.length>1?`'${esc(curBranch().name)}' 전개 · `:''}'${esc(cname(head().id))}' 다음에 이어집니다</span></div>
   <div class="split-r">
     <div class="stack">
       ${evPosition()}
       <div class="Box"><div class="Box-body stack">
-        <div class="form-group"><label for="ev-title">사건 제목</label><input class="form-control" id="ev-title" value="${esc(analysis?.title ?? ui.evDraft?.title ?? '')}" placeholder="예: ${esc(SAMPLE.title||'왕국에 전쟁이 선포된다')}"></div>
-        <div class="form-group"><label for="ev-text">무슨 일이 일어나나요?</label><textarea class="form-control" id="ev-text" rows="3" placeholder="누가 무엇을 했고, 어떤 단체와 인물이 엮이는지 적어 주세요">${esc(analysis?.description ?? ui.evDraft?.description ?? '')}</textarea></div>
-        <div class="form-group" style="max-width:260px"><label for="ev-time">작중 시점</label><input class="form-control" id="ev-time" value="${esc(analysis?.story_time ?? ui.evDraft?.story_time ?? '')}" placeholder="예: ${esc(SAMPLE.story_time||'2부 초반')}"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="ev-run">${icon('spark')}AI 영향 분석</button>${W.sample?'<button class="btn" id="ev-sample">예시 사건 넣기</button>':''}</div>
+        <div class="form-group"><label for="ev-title">사건 제목</label><input class="form-control" id="ev-title" value="${esc(dv.title ?? '')}" placeholder="예: ${esc(SAMPLE.title||'왕국에 전쟁이 선포된다')}"></div>
+        <div class="form-group"><label for="ev-text">무슨 일이 일어나나요?</label><textarea class="form-control" id="ev-text" rows="3" placeholder="누가 무엇을 했고, 어떤 단체와 인물이 엮이는지 적어 주세요">${esc(dv.description ?? '')}</textarea></div>
+        <div class="form-group" style="max-width:260px"><label for="ev-time">작중 시점</label><input class="form-control" id="ev-time" value="${esc(dv.story_time ?? '')}" placeholder="예: ${esc(SAMPLE.story_time||'2부 초반')}"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="ev-run" ${evBusy?'disabled':''}>${icon('spark')}AI 영향 분석</button>${W.sample?'<button class="btn" id="ev-sample">예시 사건 넣기</button>':''}</div>
       </div></div>
       <div id="ev-result" class="stack"></div>
     </div>
@@ -654,44 +763,54 @@ function renderEvent(){
         </div></div>
     </aside>
   </div>`;
-  const evs=$('#ev-sample'); if(evs) evs.onclick=()=>{ $('#ev-title').value=SAMPLE.title; $('#ev-text').value=SAMPLE.description; $('#ev-time').value=SAMPLE.story_time; $('#ev-pos-title').textContent=SAMPLE.title; };
-  $('#ev-title').oninput=e=>{ $('#ev-pos-title').textContent=e.target.value.trim()||'새 사건'; };
+  // 쓰던 제목·내용·시점은 다른 탭에 다녀와도 남게 바로 기억한다
+  const keepDraft=()=>{ ui.evDraft={title:$('#ev-title').value, description:$('#ev-text').value, story_time:$('#ev-time').value}; };
+  const evs=$('#ev-sample'); if(evs) evs.onclick=()=>{ $('#ev-title').value=SAMPLE.title; $('#ev-text').value=SAMPLE.description; $('#ev-time').value=SAMPLE.story_time; $('#ev-pos-title').textContent=SAMPLE.title; keepDraft(); };
+  $('#ev-title').oninput=e=>{ $('#ev-pos-title').textContent=e.target.value.trim()||'새 사건'; keepDraft(); };
+  $('#ev-text').oninput=keepDraft; $('#ev-time').oninput=keepDraft;
   $('#ev-run').onclick=async ()=>{
-    const text=$('#ev-text').value.trim(), time=$('#ev-time').value.trim();
+    if(evBusy) return;
+    const rawTitle=$('#ev-title').value, text=$('#ev-text').value.trim(), time=$('#ev-time').value.trim();
     // 제목을 비우면 내용 앞부분을 이름으로 쓴다 (타임라인에 '새 사건'만 줄줄이 생기지 않게)
-    const title=$('#ev-title').value.trim() || (text.length>18 ? text.slice(0,18).trim()+'…' : text) || '새 사건';
+    const title=rawTitle.trim() || (text.length>18 ? text.slice(0,18).trim()+'…' : text) || '새 사건';
     if(!text){ $('#ev-result').innerHTML=`<div class="flash flash-warn">${icon('alert')}<div>사건 내용을 입력하세요.</div></div>`; return; }
-    const btn=$('#ev-run'); btn.disabled=true;
-    $('#ev-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 사건이 단체·인물에 주는 직접 영향을 판단하고 있습니다 <span id="ev-wait"></span></span></div></div>`;
+    // 다시 분석하면 예전 결과는 바로 치운다 (기다리는 동안 예전 결과를 기록하지 않게)
+    analysis=null; const seq=++evSeq, key=worldKey;
+    evBusy={seq, draft:{title:rawTitle, description:$('#ev-text').value, story_time:$('#ev-time').value}}; ui.evDraft=evBusy.draft;
+    $('#ev-run').disabled=true; $('#ev-result').innerHTML=evBusyHtml();
     const t0=Date.now(), tick=setInterval(()=>{ const w=$('#ev-wait'), s=Math.round((Date.now()-t0)/1000); if(w) w.textContent=`· ${s}초`+(s>=25?' (AI 서버가 붐벼 다른 모델로 다시 시도하는 중이에요)':''); },1000);
     let a, note='';
     try{
       const r=await analyzeEvent({title, description:text, story_time:time}, worldForAi(title+' '+text));
+      if(seq!==evSeq || key!==worldKey) return;
       a=r.analysis; Object.entries(a.relevance||{}).forEach(([k,v])=>{ RELEVANCE[k]={...(RELEVANCE[k]||{}), ...v}; });
       showUsage(r.usage); toast(`AI 분석 완료 (${r.provider==='claude'?'Claude':'Gemini'}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
-      if(!a.direct.length) note='AI가 직접 영향을 받는 대상을 찾지 못했습니다. 사건에 단체나 인물 이름을 넣어 보세요.';
     }catch(err){
+      if(seq!==evSeq || key!==worldKey) return;
       console.warn('AI 분석 실패', err);
       if(err.status===429){ if(err.body?.usage) showUsage(err.body.usage); note='오늘 쓸 수 있는 토큰을 다 썼어요. 한국 시간 자정에 다시 채워집니다. (충전 기능은 준비 중)'; }
       else note=`AI 분석을 쓸 수 없어 간단 추정으로 대신했어요. ${friendlyErr(err)}.`;
       a = (title===SAMPLE.title) ? {...clone(SAMPLE), description:text} : guessAnalysis(title, text);
-    }
-    clearInterval(tick); btn.disabled=false;
-    analysis=a; analysis.story_time=time; drawAnalysis();
-    if(note) $('#ev-result').insertAdjacentHTML('afterbegin', `<div class="flash flash-warn">${icon('alert')}<div>${esc(note)}</div></div>`);
+    }finally{ clearInterval(tick); }
+    evBusy=null;
+    a.title=title; a.description=text; a.story_time=time; pruneAnalysis(a);
+    if(!note && !a.direct.length) note='AI가 직접 영향을 받는 대상을 찾지 못했습니다. 사건에 단체나 인물 이름을 넣어 보세요.';
+    a.note=note; analysis=a;
+    if(cur()==='event') renderEvent(); else toast(`'${title}' 분석이 끝났어요. 사건 입력 탭에서 확인하세요`);
   };
-  if(analysis) drawAnalysis();
+  if(evBusy) $('#ev-result').innerHTML=evBusyHtml();
+  else if(analysis) drawAnalysis();
   wirePending();
 }
 function drawAnalysis(){
-  const a=analysis, box=$('#ev-result'); if(!box) return;
+  const a=pruneAnalysis(analysis), box=$('#ev-result'); if(!box||!a) return;
   const cand=[...state.groups, ...state.characters].filter(e=>!a.direct.some(d=>d.target===e.id));
-  box.innerHTML = `
+  box.innerHTML = (a.note?`<div class="flash flash-warn" role="status">${icon('alert')}<div>${esc(a.note)}</div></div>`:'') + `
   <div class="Box">
     <div class="Box-header"><span class="step-badge">1</span><h3>직접 영향</h3><span class="ai-badge">${icon('spark')}AI 판단</span><span class="caption right">영향 크기와 태그는 고칠 수 있어요</span></div>
     ${a.direct.length?'':'<div class="Box-body caption">사건에서 세계관 항목을 찾지 못했습니다. 아래에서 대상을 추가하세요.</div>'}
     ${a.direct.map((d,i)=>`<div class="direct-row">
-      <div><b>${esc(nm(state,d.target))}</b><div class="caption">${d.target.startsWith('grp_')?KIND[ent(state,d.target).kind]:'인물'}</div></div>
+      <div><b>${esc(nm(state,d.target))}</b><div class="caption">${d.target.startsWith('grp_')?KIND[ent(state,d.target)?.kind]||'단체':'인물'}</div></div>
       <div class="mrow"><input type="range" min="-1" max="1" step="0.05" value="${d.M}" data-m="${i}" aria-label="${esc(nm(state,d.target))} 영향 크기"><span class="num" id="mv${i}" style="width:44px;text-align:right">${sf2(d.M)}</span></div>
       <button class="btn btn-sm btn-danger" data-del="${i}" aria-label="삭제" style="padding:2px 6px">×</button>
       <div class="chips full">${TAGS.map(t=>`<button class="chip" data-tag="${i}|${t}" aria-pressed="${d.tags.includes(t)}">${t}</button>`).join('')}</div>
@@ -737,12 +856,16 @@ function drawProp(){
       <button class="btn btn-primary" id="ev-commit" ${pending.length||!patches.length?'disabled':''}>${icon('commit')}사건 기록하기</button>
     </div>`;
   $('#ev-preview').onclick=()=>{ ui.graphVer='preview'; showTab('graph'); };
-  $('#ev-commit').onclick=()=>{
+  $('#ev-commit').onclick=ev=>{
+    // 두 번 누르거나(Enter 두 번) 이미 기록·다시 분석한 결과로는 기록하지 않는다
+    if(a!==analysis || evBusy || ev.currentTarget.disabled) return; ev.currentTarget.disabled=true;
+    pruneAnalysis(a);
     const id=newSha(); const ps=buildPatches(a,id); const {items:its}=finals(a);
     ps.forEach(p=>applyPatch(state,p));
     addCommit({id, parent:head().id, kind:'event', message:$('#ev-msg').value.trim()||'사건: '+a.title, created_at:new Date().toISOString(),
       event:{title:a.title, description:a.description, story_time:a.story_time, involved:a.direct.map(d=>d.target)},
       impacts:its.map(it=>({target:it.target, source:it.source, via:it.via, tags:it.tags, magnitude:Math.round(it.w*100)/100, summary:it.summary||''})), patches:ps});
+    if(ui.evSrc){ ui.evSrc.done=true; ui.evSrc=null; }
     analysis=null; ui.evDraft=null; ui.graphVer='work'; ui.open={[id]:true}; toast(`'${cname(id)}' 사건을 기록했어요 · 변경 ${ps.length}건`); showTab('history');
   };
 }
@@ -753,7 +876,9 @@ function drawProp(){
    (세계관 문서 하나의 1MB 한도를 넘지 않게 나눠 둔다.) 이전 버전마다 그때의 세계관 기록(commit)을 함께 남겨
    "이 원고를 쓸 때 세계관이 어땠는지"를 이어서 볼 수 있게 한다. AI로 읽기는 지금 화 본문으로 한다. */
 const MS_MAX=12000, CH_MAX=30000, VER_MAX=8, VER_GAP=10*60*1000;
-let CHAPTERS=[], msResult=null;
+let CHAPTERS=[];
+/* AI로 읽기 결과·실패 안내·진행 중 표시는 화 id별로 둔다. 읽는 중에 다른 화로 옮겨도 결과가 엉뚱한 화에 붙지 않고, 돌아오면 그 화에서 보인다 */
+let msResults={}, msNotes={}, msBusy={};
 const chBody={};                 // id -> {title,text,versions:[{at,text,commit}],savedAt}
 const chTimers={};
 const chLocalKey=id=>`gitstory-ms-${USER.uid}-${worldKey}-${id}`;
@@ -772,19 +897,21 @@ function loadChapter(id){
   loadCloud(chCloudKey(id)).then(r=>{
     if(key!==worldKey || !r?.data || r.updatedAt<=(chBody[id]?.savedAt||0) || typeof r.data.text!=='string') return;
     chBody[id]={...r.data, savedAt:r.updatedAt};
-    try{ localStorage.setItem(chLocalKey(id), JSON.stringify(chBody[id])); }catch(e){}
-    if(cur()==='manuscript' && ui.ch===id) renderManuscript();
+    lsSet(chLocalKey(id), JSON.stringify(chBody[id]));
+    if(cur()==='manuscript' && ui.ch===id && document.activeElement?.id!=='ms-text') renderManuscript();
   }).catch(err=>console.warn('원고 불러오기 실패', err));
   return chBody[id];
 }
 function saveChapter(id, now=false){
   const b=chBody[id], m=chMeta(id); if(!b||!m) return;
   b.savedAt=Date.now(); m.updatedAt=b.savedAt; m.chars=b.text.length; m.title=b.title;
-  try{ localStorage.setItem(chLocalKey(id), JSON.stringify(b)); const s=$('#ch-saved'); if(s&&ui.ch===id) s.textContent='브라우저에 저장됨'; }catch(e){ toast('브라우저 저장 공간이 부족해요. 클라우드에만 저장돼요'); }
+  const mark=t=>{ const s=$('#ch-saved'); if(s&&ui.ch===id) s.textContent=t; };
+  const local=lsSet(chLocalKey(id), JSON.stringify(b));
+  mark(local?'브라우저에 저장됨':'이 기기에 저장하지 못했어요 · 클라우드에 저장하는 중');
   clearTimeout(chTimers[id]);
   const key=worldKey, go=()=>{ if(key!==worldKey) return; setCloud('saving');
-    saveCloud(chCloudKey(id), b, b.savedAt).then(()=>{ setCloud('synced'); const s=$('#ch-saved'); if(s&&ui.ch===id) s.textContent='저장됨'; })
-      .catch(err=>{ console.warn('원고 저장 실패', err); setCloud('offline'); }); };
+    saveCloud(chCloudKey(id), b, b.savedAt).then(()=>{ setCloud('synced'); mark('저장됨'); })
+      .catch(err=>{ console.warn('원고 저장 실패', err); setCloud('offline'); mark(local?'브라우저에만 저장됨':'저장하지 못했어요'); }); };
   if(now) go(); else chTimers[id]=setTimeout(go, 800);
   saveWorld();
 }
@@ -801,38 +928,48 @@ function newChapter(){
   const id=newId('ch'), n=CHAPTERS.length+1, title=`${n}화`;
   CHAPTERS.push({id, title, chars:0, updatedAt:Date.now()});
   chBody[id]={title, text:'', versions:[], savedAt:0};
-  ui.ch=id; msResult=null; saveChapter(id, true); return id;
+  ui.ch=id; saveChapter(id, true); return id;
 }
 function removeChapter(id){
   const i=CHAPTERS.findIndex(c=>c.id===id); if(i<0) return;
-  const meta=CHAPTERS[i], body=loadChapter(id);
-  CHAPTERS.splice(i,1); try{ localStorage.removeItem(chLocalKey(id)); }catch(e){}
+  const meta=CHAPTERS[i], body=loadChapter(id), n=body.text.length, v=body.versions.length;
+  // 원고가 있는 화는 지우기 전에 한 번 묻는다
+  if((n||v) && !confirm(`${jq(meta.title||'제목 없는 화','를','을')} 지울까요? 원고 ${n.toLocaleString()}자${v?`와 이전 버전 ${v}개`:''}가 함께 지워져요. 지운 뒤 잠시 동안은 알림의 되돌리기로 되살릴 수 있어요.`)) return;
+  CHAPTERS.splice(i,1); lsRemove(chLocalKey(id));
   saveCloud(chCloudKey(id), {deleted:true}, Date.now()).catch(()=>{});
-  if(ui.ch===id){ ui.ch=CHAPTERS[Math.min(i,CHAPTERS.length-1)]?.id||null; msResult=null; }
+  delete msResults[id]; delete msNotes[id];
+  if(ui.ch===id) ui.ch=CHAPTERS[Math.min(i,CHAPTERS.length-1)]?.id||null;
   saveWorld(); renderManuscript();
-  toastUndo(`${jq(meta.title,'를','을')} 지웠어요`, ()=>{ CHAPTERS.splice(i,0,meta); chBody[id]=body; ui.ch=id; saveChapter(id, true); renderManuscript(); toast(`${jq(meta.title,'를','을')} 되살렸어요`); });
+  toastUndo(`${jq(meta.title,'를','을')} 지웠어요`, ()=>{ if(chMeta(id)) return; CHAPTERS.splice(Math.min(i,CHAPTERS.length),0,meta); chBody[id]=body; ui.ch=id; saveChapter(id, true); if(cur()==='manuscript') renderManuscript(); toast(`${jq(meta.title,'를','을')} 되살렸어요`); });
 }
+function chListHtml(id){
+  const list=CHAPTERS.map(c=>`<button type="button" class="ch-item" data-ch="${c.id}" ${c.id===id?'aria-current="true"':''}><b>${esc(c.title||'제목 없음')}</b><span class="caption">${(c.chars||0).toLocaleString()}자 · ${when(c.updatedAt)}${c.readAt?' · AI로 읽음':''}</span></button>`).join('');
+  return `<div class="Box-header"><h3>화 목록</h3><span class="Counter">${CHAPTERS.length}</span><button class="btn btn-sm right" id="ch-new" type="button">+ 새 화</button></div>
+      ${CHAPTERS.length?`<div class="ch-items">${list}</div>`:`<div class="Box-body caption">아직 저장한 원고가 없어요. 오른쪽에 바로 쓰거나 붙여넣으면 1화로 저장돼요.</div>`}`;
+}
+function wireChList(){
+  $('#ch-new').onclick=()=>{ if(ui.ch) snapChapter(ui.ch); newChapter(); renderManuscript(); $('#ms-text').focus(); toast(`${jq(chMeta(ui.ch).title,'를','을')} 만들었어요`); };
+  $$('[data-ch]').forEach(x=>x.onclick=()=>{ if(x.dataset.ch===ui.ch) return; if(ui.ch) snapChapter(ui.ch); ui.ch=x.dataset.ch; ui.chVers=false; renderManuscript(); });
+}
+const msBusyHtml=()=>`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 원고를 읽고 있어요 <span id="ms-wait"></span></span></div></div>`;
 function renderManuscript(){
   if(ui.ch && !chMeta(ui.ch)) ui.ch=null;
   if(!ui.ch && CHAPTERS.length) ui.ch=CHAPTERS.reduce((x,y)=>(y.updatedAt||0)>=(x.updatedAt||0)?y:x).id; // 마지막으로 고친 화
   const id=ui.ch, b=id?loadChapter(id):null, m=id?chMeta(id):null;
-  const list=CHAPTERS.map(c=>`<button type="button" class="ch-item" data-ch="${c.id}" ${c.id===id?'aria-current="true"':''}><b>${esc(c.title||'제목 없음')}</b><span class="caption">${(c.chars||0).toLocaleString()}자 · ${when(c.updatedAt)}${c.readAt?' · AI로 읽음':''}</span></button>`).join('');
   const vers=b?.versions||[];
   $('#tab-manuscript').innerHTML = pendingBanner() + `<div class="Subhead"><h2>원고</h2><span class="muted">화마다 원고를 쓰고 저장해요. AI가 읽고 세계관에 반영할 후보를 골라줘요</span></div>
   <div class="split ms-split">
-    <aside class="Box ch-list"><div class="Box-header"><h3>화 목록</h3><span class="Counter">${CHAPTERS.length}</span><button class="btn btn-sm right" id="ch-new" type="button">+ 새 화</button></div>
-      ${CHAPTERS.length?`<div class="ch-items">${list}</div>`:`<div class="Box-body caption">아직 저장한 원고가 없어요. 오른쪽에 바로 쓰거나 붙여넣으면 1화로 저장돼요.</div>`}
-    </aside>
+    <aside class="Box ch-list" id="ch-list">${chListHtml(id)}</aside>
     <div class="stack" style="min-width:0">
       <div class="Box"><div class="Box-body stack">
         <div class="ch-head"><input class="form-control ch-title" id="ch-title" maxlength="60" placeholder="화 제목 (예: 3화 · 의회 습격)" aria-label="화 제목" value="${esc(b?.title||'')}">
-          ${id?`<button class="btn btn-sm btn-danger" id="ch-del" type="button">이 화 지우기</button>`:''}</div>
+          <button class="btn btn-sm btn-danger" id="ch-del" type="button" ${id?'':'hidden'}>이 화 지우기</button></div>
         <div class="form-group"><label for="ms-text" class="sr-only">원고 본문</label>
           <textarea class="form-control ch-text" id="ms-text" rows="16" maxlength="${CH_MAX}" placeholder="여기에 원고를 쓰거나 붙여넣으세요. 쓰는 대로 저장돼요">${esc(b?.text||'')}</textarea>
           <div class="ch-foot"><span class="caption" id="ms-count"></span><span class="caption" id="ch-saved">${b?.savedAt?'저장됨 · '+when(b.savedAt):''}</span></div></div>
         <div class="row-end" style="justify-content:flex-start;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary" id="ms-run" type="button">${icon('spark')}AI로 읽기</button>
-          ${id?`<button class="btn" id="ch-snap" type="button">지금 버전 남기기</button>`:''}
+          <button class="btn btn-primary" id="ms-run" type="button" ${id&&msBusy[id]?'disabled':''}>${icon('spark')}AI로 읽기</button>
+          <button class="btn" id="ch-snap" type="button" ${id?'':'hidden'}>지금 버전 남기기</button>
           ${m?.readAt?`<span class="caption">AI로 읽음 · ${when(m.readAt)}</span>`:''}
         </div>
       </div></div>
@@ -852,49 +989,61 @@ function renderManuscript(){
   </div></div>`;
   const ta=$('#ms-text'), tt=$('#ch-title');
   const cnt=()=>{ const n=ta.value.length; $('#ms-count').innerHTML=`${n.toLocaleString()} / ${CH_MAX.toLocaleString()}자${n>MS_MAX?` <span class="Label Label--attention">AI는 앞 ${MS_MAX.toLocaleString()}자만 읽을 수 있어요</span>`:''}`; };
-  // 처음 쓰기 시작하면 화를 만든다
-  const ensure=()=>{ if(!ui.ch){ newChapter(); const nb=chBody[ui.ch]; nb.title=tt.value.trim()||nb.title; } return chBody[ui.ch]; };
+  // 처음 쓰기 시작하면 화를 만든다. 편집기는 다시 그리지 않고 목록과 버튼만 바꾼다
+  // (다시 그리면 커서가 맨 앞으로 가서 "Hello"가 "elloH"로 저장되고, 한글 조합도 끊긴다)
+  const ensure=()=>{ if(!ui.ch){ newChapter(); const nb=chBody[ui.ch]; nb.title=tt.value.trim()||nb.title;
+      $('#ch-list').innerHTML=chListHtml(ui.ch); wireChList(); $('#ch-del').hidden=false; $('#ch-snap').hidden=false; }
+    return chBody[ui.ch]; };
   const touched=()=>{ const s=$('#ch-saved'); if(s) s.textContent='저장 중…'; };
-  ta.oninput=()=>{ const had=!!ui.ch; const cb=ensure(); snapChapter(ui.ch); cb.text=ta.value; cnt(); touched(); saveChapter(ui.ch); if(!had) renderManuscript(), $('#ms-text').focus(); else refreshList(); };
-  tt.oninput=()=>{ if(!ui.ch && !tt.value.trim()) return; const had=!!ui.ch; const cb=ensure(); cb.title=tt.value.trim()||`${CHAPTERS.findIndex(c=>c.id===ui.ch)+1}화`; touched(); saveChapter(ui.ch); if(!had){ renderManuscript(); const t=$('#ch-title'); t.focus(); t.setSelectionRange(t.value.length,t.value.length); } else refreshList(); };
+  ta.oninput=()=>{ const cb=ensure(); snapChapter(ui.ch); cb.text=ta.value; cnt(); touched(); saveChapter(ui.ch); refreshList(); };
+  tt.oninput=()=>{ if(!ui.ch && !tt.value.trim()) return; const cb=ensure(); cb.title=tt.value.trim()||`${CHAPTERS.findIndex(c=>c.id===ui.ch)+1}화`; touched(); saveChapter(ui.ch); refreshList(); };
   cnt();
-  $('#ch-new').onclick=()=>{ if(ui.ch) snapChapter(ui.ch); newChapter(); renderManuscript(); $('#ms-text').focus(); toast(`${jq(chMeta(ui.ch).title,'를','을')} 만들었어요`); };
-  $$('[data-ch]').forEach(x=>x.onclick=()=>{ if(x.dataset.ch===ui.ch) return; if(ui.ch) snapChapter(ui.ch); ui.ch=x.dataset.ch; msResult=null; ui.chVers=false; renderManuscript(); });
-  const del=$('#ch-del'); if(del) del.onclick=()=>removeChapter(ui.ch);
-  const snap=$('#ch-snap'); if(snap) snap.onclick=()=>{ if(snapChapter(ui.ch, true)){ saveChapter(ui.ch, true); ui.chVers=true; renderManuscript(); toast('지금 버전을 남겼어요'); } else toast(chBody[ui.ch]?.text.trim()?'바로 전 버전과 내용이 같아요':'아직 쓴 내용이 없어요'); };
+  wireChList();
+  $('#ch-del').onclick=()=>{ if(ui.ch) removeChapter(ui.ch); };
+  $('#ch-snap').onclick=()=>{ if(!ui.ch) return; if(snapChapter(ui.ch, true)){ saveChapter(ui.ch, true); ui.chVers=true; renderManuscript(); toast('지금 버전을 남겼어요'); } else toast(chBody[ui.ch]?.text.trim()?'바로 전 버전과 내용이 같아요':'아직 쓴 내용이 없어요'); };
   const vd=$('.ch-vers'); if(vd) vd.ontoggle=()=>{ ui.chVers=vd.open; };
   $$('[data-chrestore]').forEach(x=>x.onclick=()=>{
-    const cb=chBody[ui.ch], v=cb.versions[+x.dataset.chrestore]; if(!v) return;
-    const prev=cb.text; snapChapter(ui.ch, true); cb.text=v.text; saveChapter(ui.ch, true); renderManuscript();
-    toastUndo(`${when(v.at)} 버전으로 되돌렸어요`, ()=>{ cb.text=prev; saveChapter(ui.ch, true); renderManuscript(); });
+    const cid=ui.ch, cb=chBody[cid], v=cb.versions[+x.dataset.chrestore]; if(!v) return;
+    const prev=cb.text; snapChapter(cid, true); cb.text=v.text; saveChapter(cid, true); renderManuscript();
+    // 되돌리기를 무를 때는 그때 보고 있던 화를 저장한다 (다른 화로 옮긴 뒤에 눌러도)
+    toastUndo(`${jq(chMeta(cid)?.title||'이 화','를','을')} ${when(v.at)} 버전으로 되돌렸어요`, ()=>{ const b2=chBody[cid]; if(!b2||!chMeta(cid)) return;
+      b2.text=prev; saveChapter(cid, true); if(cur()==='manuscript' && ui.ch===cid) renderManuscript(); toast(`${jq(chMeta(cid).title,'를','을')} 되돌리기 전으로 돌려놨어요`); });
   });
   $('#ms-run').onclick=async ()=>{
     const text=ta.value.trim(); if(!text){ toast('원고를 쓰거나 붙여넣으세요'); return; }
     if(text.length>MS_MAX){ toast(`AI는 한 번에 ${MS_MAX.toLocaleString()}자까지 읽어요. 화를 나눠 주세요`); return; }
-    const cid=ui.ch; if(cid){ snapChapter(cid, true); saveChapter(cid, true); }
-    const btn=$('#ms-run'); btn.disabled=true; let note='';
-    $('#ms-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 원고를 읽고 있어요 <span id="ms-wait"></span></span></div></div>`;
-    const t0=Date.now(), tick=setInterval(()=>{ const w=$('#ms-wait'), sec=Math.round((Date.now()-t0)/1000); if(w) w.textContent=`· ${sec}초`; },1000);
+    const cid=ui.ch, key=worldKey; if(!cid || msBusy[cid]) return;
+    snapChapter(cid, true); saveChapter(cid, true);
+    const job={t0:Date.now()}; msBusy[cid]=job; delete msNotes[cid];
+    $('#ms-run').disabled=true; $('#ms-result').innerHTML=msBusyHtml();
+    const tick=setInterval(()=>{ const w=$('#ms-wait'), sec=Math.round((Date.now()-job.t0)/1000); if(w && ui.ch===cid) w.textContent=`· ${sec}초`; },1000);
+    let note='', ok=false;
     try{
       // 겹치는 인물을 걸러야 하니 세계관 전체를 보낸다
       const r=await extractManuscript(text, worldForAi(''));
+      if(key!==worldKey || msBusy[cid]!==job) return;   // 읽는 중에 세계관을 바꿨으면 결과를 버린다
       // 이미 있는 이름은 기본으로 체크를 끄고 '이미 있어요'로 표시한다
       const on=a=>a.map(x=>({...x, on:true})), known=a=>a.map(x=>sameName(x.name)?{...x, on:false, dup:true}:{...x, on:true});
-      msResult={characters:known(r.result.characters), groups:known(r.result.groups), updates:on(r.result.updates), relations:on(r.result.relations), events:r.result.events};
+      msResults[cid]={characters:known(r.result.characters), groups:known(r.result.groups), updates:on(r.result.updates.filter(u=>ent(state,u.id))), relations:on(r.result.relations), events:r.result.events};
       const cm=chMeta(cid); if(cm){ cm.readAt=Date.now(); cm.readCommit=head().id; saveWorld(); }
-      showUsage(r.usage); toast(`원고 읽기 완료 (${r.provider==='claude'?'Claude':'Gemini'}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
+      showUsage(r.usage); ok=true;
+      toast(ui.ch===cid ? `원고 읽기 완료 (${r.provider==='claude'?'Claude':'Gemini'}) · 토큰 ${r.tokens.toLocaleString()} 사용` : `${jq(cm?.title||'원고','를','을')} 다 읽었어요. 그 화를 열면 후보가 보여요`);
     }catch(err){
-      console.warn('원고 읽기 실패', err); msResult=null;
+      if(key!==worldKey || msBusy[cid]!==job) return;
+      console.warn('원고 읽기 실패', err); delete msResults[cid];
       if(err.status===429){ if(err.body?.usage) showUsage(err.body.usage); note='오늘 쓸 수 있는 토큰을 다 썼어요. 한국 시간 자정에 다시 채워집니다.'; }
       else note=`원고를 읽지 못했어요. ${friendlyErr(err)}.`;
+      msNotes[cid]=note;
+    }finally{
+      clearInterval(tick);
+      if(key===worldKey && msBusy[cid]===job) delete msBusy[cid];
     }
-    clearInterval(tick);
-    if(ui.ch!==cid || cur()!=='manuscript') return;
-    if(!note && chMeta(cid)) { renderManuscript(); return; }
-    btn.disabled=false; drawMs();
-    if(note) $('#ms-result').innerHTML=`<div class="flash flash-warn">${icon('alert')}<div>${esc(note)}</div></div>`;
+    if(cur()==='manuscript' && ui.ch===cid) renderManuscript();
+    else if(!ok) toast(note);
   };
-  if(msResult) drawMs();
+  if(id && msBusy[id]) $('#ms-result').innerHTML=msBusyHtml();
+  else if(id && msNotes[id]) $('#ms-result').innerHTML=`<div class="flash flash-warn" role="status">${icon('alert')}<div>${esc(msNotes[id])}</div></div>`;
+  else if(id && msResults[id]) drawMs();
   wirePending();
 }
 /* 목록의 글자 수·시각만 다시 그린다 (쓰는 중에 편집기를 다시 그리지 않도록) */
@@ -902,10 +1051,9 @@ function refreshList(){
   CHAPTERS.forEach(c=>{ const el=document.querySelector(`[data-ch="${c.id}"]`); if(!el) return;
     el.querySelector('b').textContent=c.title||'제목 없음';
     el.querySelector('.caption').textContent=`${(c.chars||0).toLocaleString()}자 · ${when(c.updatedAt)}${c.readAt?' · AI로 읽음':''}`; });
-  const s=$('#ch-saved'); 
 }
 function drawMs(){
-  const r=msResult, box=$('#ms-result'); if(!box||!r) return;
+  const r=msResults[ui.ch], box=$('#ms-result'); if(!box||!r) return;
   const who=x=>ent(state,x)?nm(state,x):x;
   const row=(k,i,x,body)=>`<label class="Box-row" style="cursor:pointer;align-items:flex-start"><input type="checkbox" data-ms="${k}|${i}" ${x.on?'checked':''} style="margin-top:4px"><div style="flex:1;min-width:0">${body}</div></label>`;
   const sec=(k,title,items,fn)=>items.length?`<div class="Box"><div class="Box-header"><h3>${title}</h3><span class="Counter">${items.length}</span></div>${items.map((x,i)=>row(k,i,x,fn(x))).join('')}</div>`:'';
@@ -918,15 +1066,17 @@ function drawMs(){
     + sec('relations','새 관계',r.relations,x=>{ const R=REL[x.type]||REL.personal; return `<b>${esc(who(x.from))}</b> ↔ <b>${esc(who(x.to))}</b> <span class="Label" style="color:${R.c};border-color:${R.c}">${R.l} · ${lvOf(x.intensity)}</span>${x.note?`<div class="caption">${esc(x.note)}</div>`:''}`; })
     + (total?`<div class="Box"><div class="Box-row" style="background:var(--bg-subtle);flex-wrap:wrap"><span class="caption" style="flex:1">${picked}개 선택됨. 새 인물이 들어간 관계는 그 인물도 체크해야 담겨요.</span><button class="btn btn-primary" id="ms-apply" ${picked?'':'disabled'}>선택한 후보 반영</button></div></div>`:'')
     + (r.events.length?`<div class="Box"><div class="Box-header"><h3>사건 후보</h3><span class="Counter">${r.events.length}</span><span class="caption right">하나씩 영향 분석해요</span></div>
-      ${r.events.map((e,i)=>`<div class="Box-row" style="align-items:flex-start;flex-wrap:wrap"><div style="flex:1 1 220px;min-width:0"><b>${esc(e.title)}</b>${e.story_time?` <span class="caption">${esc(e.story_time)}</span>`:''}<div class="caption">${esc(e.description)}</div></div>
-        <button class="btn btn-sm" data-msev="${i}">${icon('bolt')}사건 입력으로 보내기</button></div>`).join('')}</div>`:'');
+      ${r.events.map((e,i)=>`<div class="Box-row" style="align-items:flex-start;flex-wrap:wrap"><div style="flex:1 1 220px;min-width:0"><b>${esc(e.title)}</b>${e.done?' <span class="Label Label--success">기록함</span>':e.sent?' <span class="Label">보냄</span>':''}${e.story_time?` <span class="caption">${esc(e.story_time)}</span>`:''}<div class="caption">${esc(e.description)}</div></div>
+        <button class="btn btn-sm" data-msev="${i}">${icon('bolt')}${e.done?'한 번 더 보내기':'사건 입력으로 보내기'}</button></div>`).join('')}</div>`:'');
   $$('[data-ms]').forEach(c=>c.onchange=()=>{ const [k,i]=c.dataset.ms.split('|'); r[k][i].on=c.checked; drawMs(); });
+  // 보낸 후보에는 '보냄', 그 사건을 기록하면 '기록함'을 붙인다 (같은 사건을 또 기록하지 않게)
   $$('[data-msev]').forEach(b=>b.onclick=()=>{
-    ui.evDraft=r.events[+b.dataset.msev]; analysis=null; showTab('event'); });
+    const ev=r.events[+b.dataset.msev]; ev.sent=true; cancelAnalysis();
+    ui.evDraft={title:ev.title, description:ev.description, story_time:ev.story_time}; ui.evSrc=ev; showTab('event'); });
   const ap=$('#ms-apply'); if(ap) ap.onclick=applyMs;
 }
 function applyMs(){
-  const r=msResult, made={}; let n=0;
+  const r=msResults[ui.ch], made={}; let n=0; if(!r) return;
   // AI는 id 또는 이름으로 가리킨다: 있는 id, 이번에 만든 이름, 이미 있는 이름 순으로 찾는다
   const idOf=x=>!x?null:ent(state,x)?x:made[x]||sameName(x)?.id||null;
   const gs=r.groups.filter(g=>g.on); gs.forEach(g=>{ made[g.name]=newId('grp'); });
@@ -940,6 +1090,7 @@ function applyMs(){
   r.relations.filter(x=>x.on).forEach(x=>{ const from=idOf(x.from), to=idOf(x.to); if(!from||!to) return; n++;
     const id=newId('rel'), rel={id, from, to, type:x.type, intensity:x.intensity}; if(x.note) rel.note=x.note; addManual(`/relations/${id}`, rel); });
   ['characters','groups','updates','relations'].forEach(k=>{ r[k]=r[k].filter(x=>!x.on); });
+  flushPending(`원고 반영: ${chMeta(ui.ch)?.title||'원고'}`);
   toast(`${n}개를 반영했어요`); render();
 }
 
@@ -952,7 +1103,7 @@ const POS_ARCANE = {
   grp_noxus:[960,58], grp_medarda:[905,195], chr_ambessa:[1030,275], grp_black_rose:[925,400], chr_leblanc:[1035,445]
 };
 function graphState(){
-  if(ui.graphVer==='preview' && analysis){ const s=clone(state); buildPatches(analysis,'preview',state).forEach(p=>applyPatch(s,p)); return s; }
+  if(ui.graphVer==='preview' && analysis){ pruneAnalysis(analysis); const s=clone(state); buildPatches(analysis,'preview',state).forEach(p=>applyPatch(s,p)); return s; }
   if(ui.graphVer==='work' || ui.graphVer==='preview'){ ui.graphVer='work'; return state; }
   if(!byId(ui.graphVer)){ ui.graphVer='work'; return state; }
   return stateOf(ui.graphVer);
@@ -975,13 +1126,8 @@ function renderWorld(){
   const filt={all:null, conflict:['hostile','rival'], coop:['coexist','alliance'], dominate:['dominate'], personal:['family','personal']}[ui.relFilter];
   const rels=s.relations.filter(r=>!filt||filt.includes(r.type));
   const pairs={}; rels.forEach(r=>{ const k=[r.from,r.to].sort().join('|'); (pairs[k]=pairs[k]||[]).push(r); });
-  // 위치가 정해지지 않은 항목(새로 추가한 것)은 자동 배치: 빈 세계관이면 화면 전체 격자, 아니면 아래쪽 줄
-  const auto={}; const missing=[...s.groups,...s.characters].filter(x=>!POS[x.id] && !LAYOUT[x.id]);
-  if(missing.length){
-    const empty=!Object.keys(POS).length; const cols=empty?Math.ceil(Math.sqrt(missing.length*2)):Math.min(missing.length,8); const rows=Math.ceil(missing.length/cols);
-    missing.forEach((x,i)=>{ const c=i%cols, r=Math.floor(i/cols); auto[x.id]= empty ? [Math.round((c+0.5)*1100/cols), Math.round(70+(r+0.5)*400/rows)] : [Math.round((c+0.5)*1100/cols), 470-r*60]; });
-  }
-  const pos=id=>LAYOUT[id]||POS[id]||auto[id]||[430,300];
+  placeNew([...s.groups,...s.characters]);
+  const pos=id=>LAYOUT[id]||POS[id]||[430,300];
   const V=ui.view||(ui.view=fitView(innerWidth<600));
   const linked=new Set(sel?[sel]:[]); s.relations.forEach(r=>{ if(r.from===sel) linked.add(r.to); if(r.to===sel) linked.add(r.from); });
   const isNode=id=>id.startsWith('grp_')||id.startsWith('chr_');
@@ -1049,7 +1195,7 @@ function renderWorld(){
         ${W.zones.map((z,i)=>`<rect x="${z.x}" y="0" width="${z.w}" height="540" style="fill:var(${z.fill})"/>${i?`<line x1="${z.x}" y1="0" x2="${z.x}" y2="540" style="stroke:var(--border);stroke-dasharray:2 6"/>`:''}<text x="${z.x+14}" y="528" font-size="11" font-weight="600" letter-spacing="1" style="fill:var(${z.c})">${esc(z.label)}</text>`).join('')}
         <g id="g-body">${body()}</g>
       </svg></div>
-      <div class="Box-row caption graph-tip">인물이나 단체를 끌어서 자리를 옮길 수 있어요. 빈 곳을 끌면 화면이 움직이고, + − 로 확대해요.</div>
+      <div class="Box-row caption graph-tip">인물이나 단체를 끌어서 자리를 옮길 수 있어요. 빈 곳을 끌면 화면이 움직이고, + − 나 두 손가락 벌리기, Ctrl+휠로 확대해요.</div>
       <div class="Box-row" style="flex-wrap:wrap"><div class="legend">
         ${Object.values(REL).map(R=>`<span><i style="border-top:2px ${R.dash?'dashed':'solid'} ${R.c}"></i>${R.l}</span>`).join('')}
         <span><i style="border-top:2px dotted var(--border-strong)"></i>소속</span>
@@ -1083,6 +1229,18 @@ function renderWorld(){
   if(pe && editable) wireDetail(pe);
   wirePending();
 }
+/* 자리가 정해지지 않은 항목(새로 추가한 것)은 비어 있는 칸에 하나씩 놓고, 그 자리를 기억한다.
+   (예전에는 그릴 때마다 격자를 새로 계산해서 하나를 추가·삭제·이동하면 다른 노드가 모두 움직였다)
+   빈 세계관은 위에서부터, 미리 배치된 예시 세계관은 아래쪽 줄부터 채운다. */
+function placeNew(list){
+  const missing=list.filter(x=>!POS[x.id] && !LAYOUT[x.id]); if(!missing.length) return;
+  const taken=[...Object.values(POS), ...Object.values(LAYOUT)];
+  const free=([x,y])=>taken.every(([a,b])=>Math.abs(a-x)>=110 || Math.abs(b-y)>=64);
+  const empty=!Object.keys(POS).length, slots=[];
+  [[0,0],[68,40],[34,20]].forEach(([ox,oy])=>{ for(let r=0;r<6;r++) for(let c=0;c<8;c++) slots.push([75+c*136+ox, (empty?60+r*86:478-r*80)+oy]); });
+  let extra=0;
+  missing.forEach(x=>{ const p=slots.find(free) || [75+(extra%8)*136, 560+Math.floor(extra++/8)*80]; LAYOUT[x.id]=p; taken.push(p); });
+}
 /* 휴대폰에서는 관계도를 세로로 길게 보여 준다 (왼쪽 절반쯤 확대해서 시작) */
 const fitView=tall=>tall?{x:0,y:-10,w:600,h:560}:{x:0,y:0,w:1100,h:540};
 /* 관계도 조작: 노드 끌어 옮기기(위치 저장), 빈 곳 끌어 이동, 확대·축소. 4px 안 움직이면 클릭으로 본다. */
@@ -1104,16 +1262,29 @@ function wireGraph(svg, body){
     const fx=V.x, fy=V.y, t0=performance.now(), dur=380;
     const step=now=>{ const t=Math.min(1,(now-t0)/dur), e=1-Math.pow(1-t,3); V.x=fx+(tx-fx)*e; V.y=fy+(ty-fy)*e; setVB(); if(t<1) anim=requestAnimationFrame(step); };
     cancelAnimationFrame(anim); anim=requestAnimationFrame(step); };
-  let d=null;
-  svg.onpointerdown=ev=>{ if(ev.button) return; cancelAnimationFrame(anim); const n=ev.target.closest('.node');
-    d={id:n?.dataset.id, sx:ev.clientX, sy:ev.clientY, vx:V.x, vy:V.y, moved:false, r:n?null:range()}; svg.setPointerCapture(ev.pointerId); };
-  svg.onpointermove=ev=>{ if(!d) return;
+  /* 두 손가락 벌리기·오므리기로 확대·축소 (손가락 사이 가운데를 기준으로). 손가락마다 따로 기억한다 */
+  let d=null, pinch=null; const ptrs=new Map();
+  const midOf=()=>{ const [a,b]=[...ptrs.values()]; return {clientX:(a.x+b.x)/2, clientY:(a.y+b.y)/2, dist:Math.hypot(a.x-b.x,a.y-b.y)||1}; };
+  svg.onpointerdown=ev=>{ if(ev.button) return; cancelAnimationFrame(anim);
+    ptrs.set(ev.pointerId, {x:ev.clientX, y:ev.clientY}); try{ svg.setPointerCapture(ev.pointerId); }catch(e){}
+    if(ptrs.size===2){ if(d?.id && d.moved) saveWorld(); d=null; const m=midOf(); pinch={dist:m.dist, w:V.w, h:V.h, p0:pt(m)}; return; }
+    if(ptrs.size>2) return;
+    const n=ev.target.closest('.node');
+    d={id:n?.dataset.id, sx:ev.clientX, sy:ev.clientY, vx:V.x, vy:V.y, moved:false, r:n?null:range()}; };
+  svg.onpointermove=ev=>{ const p=ptrs.get(ev.pointerId); if(p){ p.x=ev.clientX; p.y=ev.clientY; }
+    if(pinch){ if(ptrs.size<2) return; const m=midOf(), w=clamp(pinch.w*pinch.dist/m.dist, 280, 2200);
+      V.w=w; V.h=w*pinch.h/pinch.w; setVB(); const [mx,my]=pt(m); V.x+=pinch.p0[0]-mx; V.y+=pinch.p0[1]-my; setVB(); return; }
+    if(!d) return;
     if(!d.moved && Math.hypot(ev.clientX-d.sx, ev.clientY-d.sy)<5) return; d.moved=true;
     if(d.id){ const [x,y]=pt(ev); LAYOUT[d.id]=[Math.round(clamp(x,20,1080)), Math.round(clamp(y,20,520))]; $('#g-body').innerHTML=body(); wire(); }
     else { const k=V.w/svg.clientWidth, x=d.vx-(ev.clientX-d.sx)*k, y=d.vy-(ev.clientY-d.sy)*k, r=d.r;
       V.x=r?soft(x,r.x0,r.x1):x; V.y=r?soft(y,r.y0,r.y1):y; setVB(); } };
-  svg.onpointerup=ev=>{ const x=d; d=null; if(!x) return; if(!x.moved){ if(x.id) pick(x.id); return; } if(x.id) saveWorld(); else settle(); };
-  svg.onpointercancel=()=>{ const x=d; d=null; if(x && !x.id) settle(); };
+  svg.onpointerup=ev=>{ ptrs.delete(ev.pointerId);
+    if(pinch){ if(ptrs.size<2){ pinch=null; d=null; settle(); } return; }
+    const x=d; d=null; if(!x) return; if(!x.moved){ if(x.id) pick(x.id); return; } if(x.id) saveWorld(); else settle(); };
+  svg.onpointercancel=ev=>{ ptrs.delete(ev.pointerId);
+    if(pinch){ if(ptrs.size<2){ pinch=null; settle(); } return; }
+    const x=d; d=null; if(x && !x.id) settle(); if(x?.id && x.moved) saveWorld(); };
   svg.onwheel=ev=>{ if(!ev.ctrlKey && !ev.metaKey) return; ev.preventDefault(); zoom(ev.deltaY<0?0.88:1/0.88, pt(ev)); clearTimeout(svg.st); svg.st=setTimeout(settle,250); };
   $$('[data-zoom]').forEach(b=>b.onclick=()=>{ const z=b.dataset.zoom; if(z==='fit'){ Object.assign(V, fitView(V.h/V.w>0.6)); setVB(); } else { zoom(z==='in'?0.8:1.25); settle(); } });
   wire();
@@ -1360,7 +1531,7 @@ function renderHistory(){
       applyPatch(state,q); inv.push(q);
     });
     const id=newSha(); addCommit({id, parent:head().id, kind:'manual', message:`되돌리기: '${cname(b.dataset.ok)}' 시점으로 복원`, created_at:new Date().toISOString(), impacts:[], patches:inv});
-    ui.confirm=null; ui.cmpA=b.dataset.ok; ui.cmpB=id; ui.open={[id]:true}; analysis=null; toast(`'${cname(b.dataset.ok)}' 시점으로 되돌렸어요`); render();
+    ui.confirm=null; ui.cmpA=b.dataset.ok; ui.cmpB=id; ui.open={[id]:true}; cancelAnalysis(); toast(`'${cname(b.dataset.ok)}' 시점으로 되돌렸어요`); render();
   });
   $('#h-graph').onclick=()=>{ ui.graphVer=commits[ib].id===head().id?'work':commits[ib].id; showTab('graph'); };
   wireHistHead();
@@ -1477,12 +1648,13 @@ function setCloud(st){
   const el=$('#cloud-status'); if(!el) return;
   const m={connecting:['클라우드 연결 중','Label--attention'], synced:['클라우드에 저장됨','Label--success'], saving:['저장 중','Label--attention'], offline:['브라우저에만 저장','Label--danger']}[st];
   el.textContent=m[0]; el.className='Label '+m[1];
+  cloudState=st; showSaveWarn();
 }
 function saveWorld(){
   const json=JSON.stringify(snapshot());
   if(json===lastJson) return;
   lastJson=json; savedAt=Date.now();
-  try{ localStorage.setItem(saveKey(worldKey), JSON.stringify({...snapshot(), savedAt})); }catch(e){}
+  lsSet(saveKey(worldKey), JSON.stringify({...snapshot(), savedAt}));
   clearTimeout(cloudTimer);
   const key=worldKey, at=savedAt, data={...snapshot(), meta:DATA.meta};
   setCloud('saving');
@@ -1508,7 +1680,7 @@ function syncFromCloud(k){
     if(remote && remote.updatedAt>savedAt && remote.data?.state){
       state=remote.data.state; setTree(remote.data.commits, remote.data.branches, remote.data.branch); pending=remote.data.pending||[]; LAYOUT=remote.data.layout||{}; CHAPTERS=remote.data.chapters||[];
       savedAt=remote.updatedAt; lastJson=JSON.stringify(snapshot());
-      try{ localStorage.setItem(saveKey(k), JSON.stringify({...snapshot(), savedAt})); }catch(e){}
+      lsSet(saveKey(k), JSON.stringify({...snapshot(), savedAt}));
       render(); toast('클라우드에 저장된 세계관을 불러왔어요');
     } else if(!remote || remote.updatedAt<savedAt){
       lastJson=null; saveWorld();
@@ -1516,10 +1688,40 @@ function syncFromCloud(k){
     setCloud('synced');
   }).catch(err=>{ console.warn('Firestore 불러오기 실패', err); setCloud('offline'); });
 }
+/* 같은 세계관을 다른 탭에서 고치면, 그 탭이 저장한 내용을 받아 와서 이어 고친다.
+   (예전에는 탭마다 따로 들고 있다가 마지막에 저장한 탭이 전체를 덮어써서 다른 탭의 변경이 통째로 사라졌다) */
+const isTyping=()=>{ const a=document.activeElement; return !!a && (a.tagName==='TEXTAREA' || (a.tagName==='INPUT' && !['checkbox','radio','range','button','submit','file'].includes(a.type))) && !!a.closest('.main-col'); };
+let renderLater=false;
+function renderWhenIdle(){
+  if(!isTyping()){ renderLater=false; render(); return; }
+  if(renderLater) return; renderLater=true;
+  document.addEventListener('focusout', function f(){ setTimeout(()=>{ if(isTyping()) return; document.removeEventListener('focusout', f); renderLater=false; render(); }, 0); });
+}
+window.addEventListener('storage', ev=>{
+  if(!ev.key || ev.newValue==null) return;
+  if(ev.key===projKey()){ if(mergeProjects(readProjects())){ fillPicker(); if(worldKey.startsWith('p_')) render(); } return; }
+  if(ev.key===saveKey(worldKey)){
+    let saved; try{ saved=JSON.parse(ev.newValue); }catch(e){ return; }
+    if(!saved?.state || !saved?.commits || (saved.savedAt||0)<=savedAt) return;
+    clearTimeout(cloudTimer);   // 클라우드에는 저 탭이 저장한다 (이 탭의 예전 내용으로 덮어쓰지 않게)
+    state=saved.state; setTree(saved.commits, saved.branches, saved.branch); pending=saved.pending||[]; LAYOUT=saved.layout||{}; CHAPTERS=saved.chapters||[];
+    savedAt=saved.savedAt; lastJson=JSON.stringify(snapshot()); clearUndos();
+    renderWhenIdle(); toast('다른 탭에서 고친 내용을 불러왔어요');
+    return;
+  }
+  const pre=`gitstory-ms-${USER.uid}-${worldKey}-`;
+  if(ev.key.startsWith(pre)){
+    const id=ev.key.slice(pre.length); let b; try{ b=JSON.parse(ev.newValue); }catch(e){ return; }
+    if(typeof b?.text!=='string' || (b.savedAt||0)<=(chBody[id]?.savedAt||0)) return;
+    clearTimeout(chTimers[id]); chBody[id]=b;
+    if(cur()==='manuscript' && ui.ch===id) renderWhenIdle();
+  }
+});
 function loadWorld(k, fresh=false){
   W=WORLDS[k]; DATA=W.data; POS=W.pos||{}; SAMPLE=W.sample||{title:'', description:'', story_time:'', direct:[], rewrite:{}, relations:[]}; worldKey=k;
   const pe=$('#proj-edit'); if(pe) pe.style.display=k.startsWith('p_')?'':'none';
-  state=clone(DATA.state); setTree(clone(DATA.commits)); pending=[]; analysis=null; LAYOUT={}; ui.view=null; CHAPTERS=[]; msResult=null; Object.keys(chBody).forEach(k=>delete chBody[k]);
+  state=clone(DATA.state); setTree(clone(DATA.commits)); pending=[]; cancelAnalysis(); clearUndos(); LAYOUT={}; ui.view=null; CHAPTERS=[]; msResults={}; msNotes={}; msBusy={}; Object.keys(chBody).forEach(k=>delete chBody[k]);
+  ui.evDraft=null; ui.evSrc=null;
   if(!fresh){
     try{
       const saved=JSON.parse(localStorage.getItem(saveKey(k)));
@@ -1529,7 +1731,7 @@ function loadWorld(k, fresh=false){
   } else savedAt=0;
   lastJson=JSON.stringify(snapshot());
   Object.assign(ui, {ch:null, chVers:false, sel:null, treeSel:null, editing:null, graphVer:'work', relFilter:'all', cmpA:null, cmpB:null, confirm:null, open:{}});
-  try{ localStorage.setItem('gitstory-world', k); }catch(e){}
+  lsSet('gitstory-world', k);
 }
 $('#side-q').oninput=ev=>{ ui.q=ev.target.value; renderSide(); };
 $('#side-toggle').onclick=()=>sideOpen(!$('#side').classList.contains('open'));
@@ -1544,9 +1746,17 @@ $('#world-reset').onclick=()=>{
 /* ---------- 직접 만든 프로젝트 (키 p_...) ----------
    목록은 브라우저에 두고, 각 프로젝트 내용은 다른 세계관처럼 users/{uid}/worlds/{키}에 meta와 함께 저장한다. */
 const projKey=()=>`gitstory-projects-${USER.uid}`;
-let PROJECTS=[];
-try{ PROJECTS=JSON.parse(localStorage.getItem(projKey()))||[]; }catch(e){ PROJECTS=[]; }
-function writeProjects(){ try{ localStorage.setItem(projKey(), JSON.stringify(PROJECTS)); }catch(e){} }
+function readProjects(){ try{ const v=JSON.parse(localStorage.getItem(projKey())); return Array.isArray(v)?v:[]; }catch(e){ return []; } }
+let PROJECTS=readProjects();
+/* 다른 탭이 저장해 둔 목록과 합친다 (두 탭에서 각각 새 프로젝트를 만들어도 하나가 사라지지 않게) */
+function mergeProjects(list){
+  let changed=false;
+  list.forEach(p=>{ if(!p?.key || !p.meta) return; const mine=PROJECTS.find(x=>x.key===p.key);
+    if(!mine){ PROJECTS.push(p); WORLDS[p.key]=customWorld(p); changed=true; }
+    else if(p.meta.title!==mine.meta.title || p.meta.description!==mine.meta.description){ Object.assign(mine.meta, p.meta); changed=true; } });
+  return changed;
+}
+function writeProjects(){ mergeProjects(readProjects().filter(p=>!PROJECTS.some(x=>x.key===p.key))); lsSet(projKey(), JSON.stringify(PROJECTS)); }
 function customWorld(p){
   return {slug:p.key, pos:{}, sample:null, sel:null, zones:[], data:{meta:p.meta, state:{background:[], groups:[], characters:[], relations:[]},
     commits:[{id:p.key.slice(2,9).padEnd(7,'0'), parent:null, kind:'init', message:'프로젝트 시작', created_at:p.meta.created_at, patches:[]}]}};
@@ -1576,10 +1786,7 @@ $('#proj-edit').onclick=()=>{
 };
 /* 다른 기기에서 만든 프로젝트도 목록에 합친다 */
 listProjects().then(list=>{
-  let changed=false;
-  list.forEach(r=>{ const mine=PROJECTS.find(p=>p.key===r.key);
-    if(!mine){ const p={key:r.key, meta:r.meta}; PROJECTS.push(p); WORLDS[r.key]=customWorld(p); changed=true; }
-    else if(r.meta.title!==mine.meta.title || r.meta.description!==mine.meta.description){ Object.assign(mine.meta, r.meta); changed=true; } });
+  const changed=mergeProjects(list.map(r=>({key:r.key, meta:r.meta})));
   if(changed){ writeProjects(); fillPicker(); if(worldKey.startsWith('p_')) render(); }
 }).catch(err=>console.warn('프로젝트 목록 불러오기 실패', err));
 let startWorld='arcane';
@@ -1599,15 +1806,24 @@ const TOUR=[
   ['manuscript','원고','화마다 원고를 쓰거나 붙여넣으면 저장돼요. AI로 읽으면 새 인물, 바뀐 상황, 새 관계, 큰 사건을 후보로 골라줘요. 체크한 것만 반영돼요.'],
   ['history','버전 기록','모든 변화가 이야기 흐름으로 쌓여요. 지난 기록에서 \'만약에\' 전개를 만들어 다른 이야기를 시험하고, 언제든 되돌릴 수 있어요. 내 이야기는 왼쪽 도구창의 + 새 프로젝트로 시작하세요.']
 ];
+/* 안내는 대화상자처럼: 열리면 포커스가 '다음'으로 가고 뒤쪽 화면은 잠기며(inert), 닫으면 열기 전 자리로 돌아간다 */
+let tourBack=null;
+function tourLock(on){ $('.app-header').inert=on; $('.workspace').inert=on; }
 function tour(i=0){
+  if(!$('#tour')) tourBack=document.activeElement;
   $('#tour')?.remove(); $$('.tour-hl').forEach(el=>el.classList.remove('tour-hl'));
-  if(i>=TOUR.length){ try{ localStorage.setItem('gitstory-tour-done','1'); }catch(e){} showTab('world'); return; }
+  if(i>=TOUR.length){ try{ localStorage.setItem('gitstory-tour-done','1'); }catch(e){} tourLock(false); showTab('world');
+    const back=tourBack && tourBack.isConnected && tourBack!==document.body ? tourBack : $('[role=tab][aria-selected=true]'); tourBack=null; back?.focus(); return; }
   const [tab,title,text]=TOUR[i]; showTab(tab);
   const tb=$(`[role=tab][data-tab=${tab}]`); tb.classList.add('tour-hl'); tb.scrollIntoView({inline:'center', block:'nearest'});
-  document.body.insertAdjacentHTML('beforeend', `<div class="tour" id="tour" role="dialog" aria-label="사용 안내"><div class="caption">사용 안내 ${i+1} / ${TOUR.length}</div><h3>${title}</h3><p>${text}</p>
+  document.body.insertAdjacentHTML('beforeend', `<div class="tour" id="tour" role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-text"><div class="caption">사용 안내 ${i+1} / ${TOUR.length}</div><h3 id="tour-title">${title}</h3><p id="tour-text">${text}</p>
     <div class="tour-actions"><button class="btn btn-sm" id="tour-skip">건너뛰기</button>${i?'<button class="btn btn-sm" id="tour-prev">이전</button>':''}<button class="btn btn-sm btn-primary" id="tour-next">${i===TOUR.length-1?'시작하기':'다음'}</button></div></div>`);
   $('#tour-next').onclick=()=>tour(i+1); $('#tour-skip').onclick=()=>tour(TOUR.length);
   const pv=$('#tour-prev'); if(pv) pv.onclick=()=>tour(i-1);
+  // Tab이 안내 밖으로 나가지 않고 안에서 돈다
+  $('#tour').onkeydown=ev=>{ if(ev.key!=='Tab') return; const bs=$$('#tour button'), k=bs.indexOf(document.activeElement);
+    ev.preventDefault(); bs[(k+(ev.shiftKey?-1:1)+bs.length)%bs.length].focus(); };
+  tourLock(true); $('#tour-next').focus();
 }
 $('#help-btn').onclick=()=>tour(0);
 document.addEventListener('keydown', ev=>{ if(ev.key==='Escape' && $('#tour')) tour(TOUR.length); });
@@ -1638,6 +1854,9 @@ function toggleTheme(open){
 $('#theme-btn').onclick=ev=>{ ev.stopPropagation(); toggleTheme(!$('#theme-pop')); };
 document.addEventListener('click', ev=>{ const pop=$('#theme-pop'); if(pop && !ev.target.closest('#theme-pop')) toggleTheme(false); });
 document.addEventListener('keydown', ev=>{ if(ev.key==='Escape' && $('#theme-pop')) toggleTheme(false); });
+/* 화면을 다시 그려도 키보드 포커스를 잃지 않게 감싼다 */
+render=keepFocus(render); renderWorld=keepFocus(renderWorld); renderSide=keepFocus(renderSide); renderEvent=keepFocus(renderEvent);
+renderManuscript=keepFocus(renderManuscript); renderHistory=keepFocus(renderHistory); drawAnalysis=keepFocus(drawAnalysis); drawMs=keepFocus(drawMs); toggleTheme=keepFocus(toggleTheme);
 refreshUsage();
 render('world');
 try{ if(!localStorage.getItem('gitstory-tour-done')) tour(0); }catch(e){}
