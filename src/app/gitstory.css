@@ -42,7 +42,7 @@ svg.oct{width:16px;height:16px;fill:currentColor;flex:none;vertical-align:text-b
 .brand{font-family:var(--font-head);font-size:17px;font-weight:700;white-space:nowrap}
 .crumbs{display:flex;gap:6px;align-items:center;min-width:0;flex-wrap:wrap}
 .header-right{margin-left:auto;display:flex;gap:8px;align-items:center}
-.avatar{width:28px;height:28px;border-radius:50%;background:var(--done);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:600;flex:none}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--done);color:var(--bg);display:grid;place-items:center;font-size:12px;font-weight:600;flex:none}
 @media (max-width:600px){.header-right .Label,.crumbs,.app-header > .muted{display:none}}
 
 .repo-head{padding:16px 16px 0;background:var(--bg-subtle);border-bottom:1px solid var(--border)}
@@ -374,7 +374,7 @@ details.calc summary{cursor:pointer;color:var(--accent);font-size:13px}
 /* ---------- 작업 노트: 줄 노트, 빨간 여백선, 손글씨 제목, 형광펜, 메모 카드 ---------- */
 :root[data-skin="note"] body{background-image:linear-gradient(90deg,transparent 46px,var(--margin) 46px,var(--margin) 48px,transparent 48px),linear-gradient(var(--rule) 1px,transparent 1px);background-size:100% 100%,100% 28px;background-attachment:local}
 :root[data-skin="note"] .Subhead h2,:root[data-skin="note"] .brand{font-size:26px;font-weight:700;letter-spacing:0}
-:root[data-skin="note"] .Box-header h3{font-family:var(--font-head);font-size:19px;font-weight:700;background:linear-gradient(transparent 58%,var(--marker) 58%,var(--marker) 92%,transparent 92%);padding:0 3px}
+:root[data-skin="note"] .Box-header h3{font-family:var(--font-head);font-size:19px;font-weight:700;text-decoration:underline;text-decoration-color:var(--marker);text-decoration-thickness:.42em;text-underline-offset:-.22em;text-decoration-skip-ink:none;padding:0 3px}
 :root[data-skin="note"] .Box{box-shadow:var(--shadow);background:var(--bg-subtle)}
 :root[data-skin="note"] .Box-header{background:var(--bg-subtle);border-bottom:1px dashed var(--border-strong)}
 :root[data-skin="note"] .underline-nav button[aria-selected="true"]{border-bottom:3px solid var(--marker);box-shadow:inset 0 -9px 0 var(--marker);border-radius:2px}
@@ -425,3 +425,51 @@ img.logo{background:none;object-fit:contain;border-radius:22%;display:block}
 .flash-error{border-color:var(--danger);background:var(--danger-subtle)}
 .flash-error > .oct{color:var(--danger)}
 .save-warn{margin:12px max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px))}
+
+/* ---------- QA 보통·낮음 수정 ---------- */
+/* 41: 표 안 이름이 한 글자씩 세로로 쪼개지지 않게 */
+.tbl td:first-child,.tbl td b{white-space:nowrap}
+.tbl td{word-break:keep-all}
+/* 42: 좁은 휴대폰 머리줄 */
+@media (max-width:400px){.app-header{gap:8px;padding-inline:max(10px,env(safe-area-inset-left,0px)) max(10px,env(safe-area-inset-right,0px))}.brand{display:none}.header-right{gap:4px}.header-right .btn{padding-inline:7px}}
+/* 43: 알림은 문구 길이만큼 넓게, 휴대폰에서는 위쪽에 띄워 아래 버튼을 가리지 않게 */
+.toast{width:max-content;max-width:min(560px,calc(100% - 32px));text-align:center}
+@media (max-width:600px){.toast{bottom:auto;top:calc(64px + env(safe-area-inset-top,0px))}}
+/* 44: 긴 이름·태그가 화면을 밀지 않게 */
+.main-col,.wrap,.stack,.Box,.Box-row > div{min-width:0}
+.Label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.Box-header h3,.tree-msg,.commit .msg,.ch-item b,.crumbs b{overflow-wrap:anywhere;min-width:0}
+/* 45: 밤의 서고 숫자는 읽기 쉬운 글꼴로 */
+:root[data-skin="night"] .ov-stats b,:root[data-skin="night"] .ov-n,:root[data-skin="night"] .num,:root[data-skin="night"] .Counter{font-family:"Gowun Batang","Noto Serif KR",Georgia,serif;font-variant-numeric:lining-nums tabular-nums}
+/* 47: 어두운 작업 노트의 형광펜 */
+@media (prefers-color-scheme: dark){ :root[data-skin="note"]:not([data-theme="light"]){--marker:#e8d44d44} }
+:root[data-skin="note"][data-theme="dark"]{--marker:#e8d44d44}
+/* 23: 지난 시점 목록 안내 */
+.side-past{margin:8px 12px;padding:8px 12px;font-size:12px}
+/* 57: 화면 안 입력창 */
+.ask-back{position:fixed;inset:0;background:#0006;display:grid;place-items:center;z-index:40;padding:16px}
+.ask{width:min(440px,100%);margin:0;background:var(--bg-subtle)}
+/* 50: 테마 메뉴에서 '선택됨'과 '포커스'를 다르게 */
+.theme-opts button[aria-pressed="true"]::after{content:"✓ 선택됨";font-size:10px;color:var(--accent)}
+.theme-opts button:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+/* 51: 관계도 노드 포커스 */
+#g-svg .node:focus{outline:none}
+#g-svg .node:focus-visible .nshape{stroke:var(--fg)!important;stroke-width:4px!important;stroke-dasharray:none!important}
+/* 54: 본문으로 건너뛰기 */
+.skip-link{position:absolute;left:12px;top:-60px;z-index:50;background:var(--bg-subtle);color:var(--fg);border:2px solid var(--accent);border-radius:var(--r);padding:8px 12px}
+.skip-link:focus{top:calc(8px + env(safe-area-inset-top,0px))}
+#main:focus{outline:none}
+/* 64: 작업 노트 꾸밈 */
+@media (max-width:900px){:root[data-skin="note"] body{background-image:linear-gradient(var(--rule) 1px,transparent 1px);background-size:100% 28px}}
+:root[data-skin="note"] .main-col{background-image:linear-gradient(90deg,transparent 22px,var(--margin) 22px,var(--margin) 24px,transparent 24px);background-repeat:no-repeat}
+@media (max-width:900px){:root[data-skin="note"] .main-col{background-image:none}}
+:root[data-skin="note"] .app-header .Label--attention{background:var(--attention-subtle);color:#6b5200;border-color:transparent}
+:root[data-skin="note"] .caption,:root[data-skin="note"] .Box-header .caption{font-family:var(--font)}
+/* 65: 밤의 서고 꾸밈 */
+:root[data-skin="night"] body{background-size:397px 397px,541px 541px,613px 613px,467px 467px,100% 100%}
+.swatch i{box-shadow:inset 0 0 0 1px #8885}
+/* 66: 입력칸 안내 글자 */
+.form-control::placeholder{color:var(--fg-muted);opacity:.85}
+/* 67: 휴대폰에서 누르기 쉬운 버튼, 도구창 뒤 스크롤 막기 */
+@media (pointer:coarse){.btn-sm,.seg button,.zoom button,.btn-link{min-height:36px}.btn-sm{padding-block:6px}}
+body.side-lock{overflow:hidden}
