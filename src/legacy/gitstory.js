@@ -384,6 +384,21 @@ new MutationObserver(()=>{
 }).observe(document.querySelector('.workspace'), {childList:true, subtree:true});
 
 /* 화면 안 입력창 (브라우저 기본 prompt 대신). fields=[{label, value, max, required}] → 값 배열, 취소하면 null */
+/* 화면 안 확인창 (브라우저 기본 confirm 대신). 누르면 true, 취소·Esc·바깥 누르기는 false */
+function sure(msg, ok='확인', danger=false){
+  return new Promise(res=>{
+    const back=document.activeElement; $('#ask')?.remove();
+    document.body.insertAdjacentHTML('beforeend', `<div class="ask-back" id="ask"><div class="ask Box" role="alertdialog" aria-modal="true" aria-describedby="ask-msg">
+      <div class="Box-body stack"><p id="ask-msg" style="margin:0;line-height:1.6">${esc(msg)}</p>
+      <div class="row-end" style="gap:8px"><button class="btn" type="button" id="ask-no">취소</button><button class="btn ${danger?'btn-danger':'btn-primary'}" type="button" id="ask-yes">${esc(ok)}</button></div></div></div></div>`);
+    const box=$('#ask'), done=v=>{ box.remove(); try{ if(back?.isConnected) back.focus(); }catch(e){} res(v); };
+    $('#ask-no').focus();
+    $('#ask-no').onclick=()=>done(false); $('#ask-yes').onclick=()=>done(true);
+    box.onclick=ev=>{ if(ev.target===box) done(false); };
+    box.onkeydown=ev=>{ if(ev.key==='Escape'){ ev.stopPropagation(); done(false); }
+      if(ev.key==='Tab'){ ev.preventDefault(); (document.activeElement.id==='ask-no'?$('#ask-yes'):$('#ask-no')).focus(); } };
+  });
+}
 function ask(title, fields, ok='확인'){
   return new Promise(res=>{
     const back=document.activeElement; $('#ask')?.remove();
@@ -458,9 +473,9 @@ function renderSide(){
   $$('[data-addcancel]').forEach(b=>b.onclick=()=>backToAdd(b.closest('[data-addform]').dataset.addform));
   $$('[data-addform]').forEach(f=>{
     f.onkeydown=ev=>{ if(ev.key==='Escape'){ ev.stopPropagation(); backToAdd(f.dataset.addform); } };
-    f.onsubmit=ev=>{ ev.preventDefault();
+    f.onsubmit=async ev=>{ ev.preventDefault();
       const t=f.dataset.addform, name=clean($('#side-add-name').value).trim().slice(0,NAME_MAX); if(!name){ toast('이름을 입력하세요'); return; }
-      const dup=sameName(name); if(dup && !confirm(`${jq(dup.name||dup.title,'가','이')} 이미 있어요. 같은 이름으로 하나 더 만들까요?`)) return;
+      const dup=sameName(name); if(dup && !(await sure(`${jq(dup.name||dup.title,'가','이')} 이미 있어요. 같은 이름으로 하나 더 만들까요?`, '하나 더 만들기'))) return;
       const sit={current:'', status:'', history:[]};
       if(t==='chr'){ const id=newId('chr'); addManual(`/characters/${id}`, {id, name, aliases:[], memberships:[], traits:[], situation:sit}); ui.sel=id; }
       else if(t==='grp'){ const id=newId('grp'); addManual(`/groups/${id}`, {id, name, kind:'organization', parent:null, traits:[], situation:sit}); ui.sel=id; }
@@ -540,9 +555,9 @@ function wireEntityEdit(e){
   const done=msg=>{ toast(msg); render('world'); };
   $('#ent-edit').onclick=()=>{ ui.editing = ui.editing===e.id?null:e.id; render('world'); if(ui.editing) $('#ed-name')?.focus(); };
   const cc=$('#ed-cancel'); if(cc) cc.onclick=()=>{ ui.editing=null; render('world'); };
-  const sv=$('#ed-save'); if(sv) sv.onclick=()=>{
+  const sv=$('#ed-save'); if(sv) sv.onclick=async ()=>{
     const name=clean($('#ed-name').value).trim().slice(0,NAME_MAX); if(!name){ toast('이름을 입력하세요'); return; }
-    const dup=name!==e.name && sameName(name, e.id); if(dup && !confirm(`${jq(dup.name||dup.title,'가','이')} 이미 있어요. 그래도 이 이름으로 바꿀까요?`)) return;
+    const dup=name!==e.name && sameName(name, e.id); if(dup && !(await sure(`${jq(dup.name||dup.title,'가','이')} 이미 있어요. 그래도 이 이름으로 바꿀까요?`, '바꾸기'))) return;
     const before=pending.length;
     setManual(base+'/name', name);
     const al=$('#ed-alias'); if(al){ const v=al.value.split(',').map(x=>x.trim()).filter(Boolean); if(v.length || e.aliases?.length) setManual(base+'/aliases', v); }
@@ -930,10 +945,11 @@ function newChapter(){
   ui.ch=id; ui.chDraft=null; saveChapter(id, true); return id;
 }
 let msBusy=null;   // AI로 읽는 중인 화 {cid, wk}
-function removeChapter(id){
-  const i=CHAPTERS.findIndex(c=>c.id===id); if(i<0) return;
+async function removeChapter(id){
+  let i=CHAPTERS.findIndex(c=>c.id===id); if(i<0) return;
   const meta=CHAPTERS[i], body=loadChapter(id);
-  if(body.text.trim() && !confirm(`${jq(meta.title,'를','을')} 지울까요? 원고 ${body.text.length.toLocaleString()}자와 이전 버전이 함께 지워져요.`)) return;
+  if(body.text.trim() && !(await sure(`${jq(meta.title,'를','을')} 지울까요? 원고 ${body.text.length.toLocaleString()}자와 이전 버전이 함께 지워져요.`, '지우기', true))) return;
+  i=CHAPTERS.findIndex(c=>c.id===id); if(i<0) return;
   CHAPTERS.splice(i,1); try{ localStorage.removeItem(chLocalKey(id)); }catch(e){}
   saveCloud(chCloudKey(id), {deleted:true}, Date.now()).catch(()=>{});
   if(ui.ch===id) ui.ch=CHAPTERS[Math.min(i,CHAPTERS.length-1)]?.id||null;
@@ -1071,8 +1087,8 @@ function drawMs(){
       ${r.events.map((e,i)=>`<div class="Box-row" style="align-items:flex-start;flex-wrap:wrap"><div style="flex:1 1 220px;min-width:0"><b>${esc(e.title)}</b>${e.story_time?` <span class="caption">${esc(e.story_time)}</span>`:''}<div class="caption">${esc(e.description)}</div></div>
         <button class="btn btn-sm" data-msev="${i}">${icon('bolt')}사건 입력으로 보내기</button></div>`).join('')}</div>`:'');
   $$('[data-ms]').forEach(c=>c.onchange=()=>{ const [k,i]=c.dataset.ms.split('|'); r[k][i].on=c.checked; drawMs(); });
-  $$('[data-msev]').forEach(b=>b.onclick=()=>{
-    if(analysis && !confirm('사건 입력 탭에 아직 기록하지 않은 분석 결과가 있어요. 버리고 이 후보를 보낼까요?')) return;
+  $$('[data-msev]').forEach(b=>b.onclick=async ()=>{
+    if(analysis && !(await sure('사건 입력 탭에 아직 기록하지 않은 분석 결과가 있어요. 버리고 이 후보를 보낼까요?', '버리고 보내기', true))) return;
     const e=r.events[+b.dataset.msev]; ui.evDraft={title:e.title, description:e.description, story_time:e.story_time}; ui.evFrom=e; analysis=null; showTab('event'); });
   const ap=$('#ms-apply'); if(ap) ap.onclick=applyMs;
 }
@@ -1143,13 +1159,26 @@ function renderWorld(){
   const V=ui.view||(ui.view=fitView(innerWidth<600));
   const linked=new Set(sel?[sel]:[]); s.relations.forEach(r=>{ if(r.from===sel) linked.add(r.to); if(r.to===sel) linked.add(r.from); });
   const isNode=id=>id.startsWith('grp_')||id.startsWith('chr_');
+  /* 선이 다른 노드를 지나가면 휘는 정도를 바꿔 피해 간다. 가장 덜 겹치는 곡선의 조절점을 돌려준다 */
+  const NPOS=[...s.groups,...s.characters].map(x=>({id:x.id, p:pos(x.id), r:x.id.startsWith('grp_')?Math.max(30,(x.name||'').length*8+12):30}));
+  const bend=(a,b,x1,y1,x2,y2,base)=>{
+    const dx=x2-x1, dy=y2-y1, L=Math.hypot(dx,dy)||1, nx=-dy/L, ny=dx/L;
+    const others=NPOS.filter(n=>n.id!==a && n.id!==b && Math.abs(n.p[0]-(x1+x2)/2)<L/2+n.r+80 && Math.abs(n.p[1]-(y1+y2)/2)<L/2+n.r+80);
+    const hits=off=>{ const cx=(x1+x2)/2+nx*off, cy=(y1+y2)/2+ny*off; let h=0;
+      for(let t=0.08;t<0.93;t+=0.06){ const u=1-t, px=u*u*x1+2*u*t*cx+t*t*x2, py=u*u*y1+2*u*t*cy+t*t*y2;
+        for(const n of others){ const ex=n.r, ey=n.id.startsWith('grp_')?24:30; const q=((px-n.p[0])/ex)**2+((py-n.p[1])/ey)**2; if(q<1) h+=1-q; } }
+      return h; };
+    let best=base, bh=hits(base);
+    if(bh>0) for(const d of [50,-50,90,-90,140,-140,200,-200]){ const h=hits(base+d); if(h<bh-0.01){ bh=h; best=base+d; if(!h) break; } }
+    return [(x1+x2)/2+nx*best, (y1+y2)/2+ny*best];
+  };
   const INI=initials(s.characters.filter(c=>!c.photo));
   const edge=(r)=>{
     const k=[r.from,r.to].sort().join('|'); const grp=pairs[k]; const i=grp.indexOf(r), n=grp.length;
     let [x1,y1]=pos(r.from), [x2,y2]=pos(r.to);
     const dx=x2-x1, dy=y2-y1, L=Math.hypot(dx,dy)||1; const off=(i-(n-1)/2)*34;
     const sgn = r.from<r.to?1:-1;
-    const cx=(x1+x2)/2 - dy/L*off*sgn, cy=(y1+y2)/2 + dx/L*off*sgn;
+    const [cx,cy]=bend(r.from, r.to, x1,y1,x2,y2, off*sgn);
     if(r.directed){ const ex=x2-cx, ey=y2-cy, el=Math.hypot(ex,ey)||1; x2-=ex/el*30; y2-=ey/el*30; }
     const R=REL[r.type]||REL.personal; const dim = sel && !(r.from===sel||r.to===sel);
     const w=1+r.intensity*3.5;
@@ -1161,8 +1190,8 @@ function renderWorld(){
   const memberLines = () => ui.showMembers ? [
     ...s.groups.filter(g=>g.parent).map(g=>({a:g.id,b:g.parent,bond:g.parent_bond??0.6,active:true})),
     ...s.characters.flatMap(c=>(c.memberships||[]).map(m=>({a:c.id,b:m.group,bond:m.bond,active:m.active!==false})))
-  ].map(m=>{ const [x1,y1]=pos(m.a),[x2,y2]=pos(m.b); const dim=sel && !(m.a===sel||m.b===sel);
-    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" style="stroke:var(--border-strong);stroke-width:${0.6+m.bond*1.6};stroke-dasharray:2 4" opacity="${m.active?(dim?.35:.9):.2}"><title>${esc(nm(s,m.a))} → ${esc(nm(s,m.b))} 소속 · 소속감 ${lvOf(m.bond)}</title></line>`; }).join('') : '';
+  ].map(m=>{ const [x1,y1]=pos(m.a),[x2,y2]=pos(m.b); const dim=sel && !(m.a===sel||m.b===sel); const [cx,cy]=bend(m.a,m.b,x1,y1,x2,y2,0);
+    return `<path d="M${x1},${y1} Q${cx},${cy} ${x2},${y2}" style="fill:none;stroke:var(--border-strong);stroke-width:${0.6+m.bond*1.6};stroke-dasharray:2 4" opacity="${m.active?(dim?.35:.9):.2}"><title>${esc(nm(s,m.a))} → ${esc(nm(s,m.b))} 소속 · 소속감 ${lvOf(m.bond)}</title></path>`; }).join('') : '';
   const node=e=>{
     const [x,y]=pos(e.id); const col=nationColor(nationOf(s,e)); const isSel=e.id===sel; const dead=e.situation?.status==='사망';
     const dim = sel && !linked.has(e.id) && !(ui.showMembers && memberOf(s,e.id,sel));
@@ -1342,12 +1371,13 @@ function wireDetail(e){
   const pd=$('#ent-photo-del'); if(pd) pd.onclick=()=>{ setManual(base+'/photo', null); toast('사진을 뺐어요'); render('world'); };
   // 지우기: 바로 지우고 알림의 되돌리기로 되살린다
   const undoable=(msg, done)=>{ if(!done.length) return; render(); toastUndo(msg, ()=>{ restore(done); toast('되살렸어요'); render(); }); };
-  const dl=$('#ent-del'); if(dl) dl.onclick=()=>{
+  const dl=$('#ent-del'); if(dl) dl.onclick=async ()=>{
     const name=e.name||e.title, rels=state.relations.filter(r=>r.from===e.id||r.to===e.id).length;
     const mem=e.id.startsWith('grp_')?state.characters.filter(ch=>(ch.memberships||[]).some(m=>m.group===e.id)).length:0;
     const more=[rels?`관계 ${rels}개`:'', mem?`소속 인물 ${mem}명의 소속`:''].filter(Boolean).join(', ');
     const subs=e.id.startsWith('grp_')?state.groups.filter(g=>g.parent===e.id).length:0;
-    if(!confirm(`${jq(name,'를','을')} 지울까요?${more?` ${more}도 함께 지워져요.`:''}${subs?` 하위 단체 ${subs}개는 최상위 단체가 돼요.`:''} 지운 뒤에도 알림의 되돌리기로 되살릴 수 있어요.`)) return;
+    if(!(await sure(`${jq(name,'를','을')} 지울까요?${more?` ${more}도 함께 지워져요.`:''}${subs?` 하위 단체 ${subs}개는 최상위 단체가 돼요.`:''} 지운 뒤에도 알림의 되돌리기로 되살릴 수 있어요.`, '지우기', true))) return;
+    if(!ent(state,e.id)) return;
     ui.sel=null; ui.editing=null; undoable(`${jq(name,'를','을')} 지웠어요`, removeEntity(e.id)); };
   $$('[data-rmt]').forEach(b=>b.onclick=()=>{ const t=e.traits.find(x=>x.key===b.dataset.rmt); const p=removeManual(`${base}/traits/${b.dataset.rmt}`); undoable(`성격 ${jq(t?.label,'를','을')} 지웠어요`, p?[p]:[]); });
   $$('[data-rmm]').forEach(b=>b.onclick=()=>{ const g=b.dataset.rmm; const p=removeManual(`${base}/memberships/${g}`); undoable(`'${nm(state,g)}' 소속을 지웠어요`, p?[p]:[]); });
@@ -1485,8 +1515,9 @@ function renderTree(){
     let name=v[0]; if(branches.some(b=>b.name===name)){ let k=2; while(branches.some(b=>b.name===`${name} (${k})`)) k++; name=`${name} (${k})`; toast(`같은 이름이 있어 '${name}'으로 만들었어요`); }
     createBranch(sel, name); render(); };
   $('#t-graph').onclick=()=>{ ui.graphVer = sel===head().id?'work':sel; showTab('graph'); };
-  $$('[data-delb]').forEach(b=>b.onclick=()=>{ const br=branches.find(x=>x.id===b.dataset.delb);
-    if(!confirm(`'${br.name}' 전개를 지울까요? 이 전개에만 있는 기록도 함께 지워져요.`)) return;
+  $$('[data-delb]').forEach(b=>b.onclick=async ()=>{ const br=branches.find(x=>x.id===b.dataset.delb);
+    if(!(await sure(`'${br.name}' 전개를 지울까요? 이 전개에만 있는 기록도 함께 지워져요.`, '지우기', true))) return;
+    if(!branches.some(x=>x.id===br.id) || br.id===branchId) return;
     deleteBranch(br.id); toast('전개를 지웠어요'); render(); });
   wirePending();
 }
@@ -1740,8 +1771,8 @@ $('#side-close').onclick=()=>sideOpen(false);
 $('#side-backdrop').onclick=()=>sideOpen(false);
 document.addEventListener('keydown',ev=>{ if(ev.key==='Escape' && $('#side').classList.contains('open')) sideOpen(false); });
 $('#world-pick').onchange=ev=>{ loadWorld(ev.target.value); render(); syncFromCloud(worldKey); toast(`${DATA.meta.title} 세계관을 불러왔어요`); };
-$('#world-reset').onclick=()=>{
-  if(!confirm(`${DATA.meta.title}의 모든 변경을 지우고 처음 상태로 되돌릴까요?${worldKey.startsWith('p_')?' (직접 만든 프로젝트는 빈 상태가 됩니다)':''}`)) return;
+$('#world-reset').onclick=async ()=>{
+  if(!(await sure(`${DATA.meta.title}의 모든 변경을 지우고 처음 상태로 되돌릴까요?${worldKey.startsWith('p_')?' (직접 만든 프로젝트는 빈 상태가 됩니다)':''}`, '처음 상태로 되돌리기', true))) return;
   loadWorld(worldKey, true); lastJson=null; render(); toast('처음 상태로 되돌렸어요');
 };
 /* ---------- 직접 만든 프로젝트 (키 p_...) ----------
@@ -1842,6 +1873,21 @@ function tour(i=0){
   const pv=$('#tour-prev'); if(pv) pv.onclick=()=>tour(i-1);
 }
 $('#help-btn').onclick=()=>tour(0);
+/* 휴대폰 뒤로가기: 열린 창·패널·상세를 먼저 닫고, 더 닫을 게 없으면 한 번 더 눌러야 나간다 */
+{ const guard=()=>{ try{ history.pushState(null, '', location.href); }catch(e){} };
+  let backAt=0; guard();
+  addEventListener('popstate', ()=>{
+    if(Date.now()-backAt<2000 && backAt){ backAt=0; history.back(); return; }
+    if($('#ask')) $('#ask-no')?.click();
+    else if($('#theme-pop')) toggleTheme(false, 'btn');
+    else if($('#tour')) tour(TOUR.length);
+    else if($('#side').classList.contains('open')) sideOpen(false);
+    else if(cur()==='world' && ui.sel){ ui.sel=null; ui.editing=null; render('world'); }
+    else if(cur()!=='world') showTab('world');
+    else { backAt=Date.now(); toast('뒤로가기를 한 번 더 누르면 나가요'); }
+    guard();
+  });
+}
 { const sk=$('#skip-link'); if(sk) sk.onclick=ev=>{ ev.preventDefault(); $('[role=tab][aria-selected=true]').focus(); }; }
 document.addEventListener('keydown', ev=>{ if(ev.key==='Escape' && $('#tour')) tour(TOUR.length); });
 /* ---------- 테마 고르기: 원고지(기본)·밤의 서고·작업 노트 × 시스템·밝게·어둡게. 이 브라우저에 기억한다 ---------- */
