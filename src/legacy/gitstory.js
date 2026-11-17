@@ -1891,17 +1891,17 @@ $('#help-btn').onclick=()=>tour(0);
 { const sk=$('#skip-link'); if(sk) sk.onclick=ev=>{ ev.preventDefault(); $('[role=tab][aria-selected=true]').focus(); }; }
 document.addEventListener('keydown', ev=>{ if(ev.key==='Escape' && $('#tour')) tour(TOUR.length); });
 /* ---------- 테마 고르기: 원고지(기본)·밤의 서고·작업 노트 × 시스템·밝게·어둡게. 이 브라우저에 기억한다 ---------- */
-const SKINS=[['paper','원고지',['#fbfbf7','#2f7a5b','#1c211f']],['night','밤의 서고',['#1a1630','#e6b85c','#93d6ea']],['note','작업 노트',['#fdfcf5','#2c5ccf','#fff07a']]];
+const SKINS=[['studio','스튜디오',['#f5f5f7','#5847e0','#18181b']],['paper','원고지',['#fbfbf7','#2f7a5b','#1c211f']],['night','밤의 서고',['#1a1630','#e6b85c','#93d6ea']],['note','작업 노트',['#fdfcf5','#2c5ccf','#fff07a']]];
 const MODES=[['system','시스템'],['light','밝게'],['dark','어둡게']];
 const pref=(k,d)=>{ try{ return localStorage.getItem(k)||d; }catch(e){ return d; } };
 function applyTheme(skin, mode){
   const r=document.documentElement;
-  if(skin==='paper') delete r.dataset.skin; else r.dataset.skin=skin;
+  if(skin==='studio') delete r.dataset.skin; else r.dataset.skin=skin;
   if(mode==='system') delete r.dataset.theme; else r.dataset.theme=mode;
   try{ localStorage.setItem('gitstory-skin',skin); localStorage.setItem('gitstory-mode',mode); }catch(e){}
 }
 function themePop(){
-  const skin=pref('gitstory-skin','paper'), mode=pref('gitstory-mode','system');
+  const skin=pref('gitstory-skin','studio'), mode=pref('gitstory-mode','system');
   return `<div class="theme-pop" id="theme-pop" role="dialog" aria-label="테마">
     <div class="lab">테마</div><div class="theme-opts">${SKINS.map(([k,l,c])=>`<button type="button" data-skin="${k}" aria-pressed="${skin===k}"><span class="swatch">${c.map(x=>`<i style="background:${x}"></i>`).join('')}</span>${l}</button>`).join('')}</div>
     <div class="lab">밝기</div><div class="theme-opts">${MODES.map(([k,l])=>`<button type="button" data-mode="${k}" aria-pressed="${mode===k}" ${skin==='night'?'disabled':''}>${l}</button>`).join('')}</div>
@@ -1917,7 +1917,7 @@ function toggleTheme(open, keep){
   pop.onkeydown=ev=>{ if(ev.key!=='Tab') return; const f=[...pop.querySelectorAll('button:not([disabled])')], a=f[0], z=f[f.length-1];
     if(ev.shiftKey && document.activeElement===a){ ev.preventDefault(); z.focus(); } else if(!ev.shiftKey && document.activeElement===z){ ev.preventDefault(); a.focus(); } };
   $$('#theme-pop [data-skin]').forEach(b=>b.onclick=()=>{ const sk=b.dataset.skin; applyTheme(sk, sk==='night'?'system':pref('gitstory-mode','system')); toggleTheme(true, `[data-skin="${sk}"]`); render(); });
-  $$('#theme-pop [data-mode]').forEach(b=>b.onclick=()=>{ const md=b.dataset.mode; applyTheme(pref('gitstory-skin','paper'), md); toggleTheme(true, `[data-mode="${md}"]`); render(); });
+  $$('#theme-pop [data-mode]').forEach(b=>b.onclick=()=>{ const md=b.dataset.mode; applyTheme(pref('gitstory-skin','studio'), md); toggleTheme(true, `[data-mode="${md}"]`); render(); });
 }
 $('#theme-btn').onclick=ev=>{ ev.stopPropagation(); toggleTheme(!$('#theme-pop')); };
 document.addEventListener('click', ev=>{ const pop=$('#theme-pop'); if(pop && !ev.target.closest('#theme-pop') && !ev.target.closest('#theme-btn')){ ev.preventDefault(); ev.stopPropagation(); toggleTheme(false); } }, true);
