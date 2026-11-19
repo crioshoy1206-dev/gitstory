@@ -1415,12 +1415,15 @@ function wireGraph(svg, body){
   const pt=ev=>{ const p=new DOMPoint(ev.clientX, ev.clientY).matrixTransform(svg.getScreenCTM().inverse()); return [p.x, p.y]; };
   const wire=()=>svg.querySelectorAll('.node').forEach(n=>n.onkeydown=ev=>{ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); pick(n.dataset.id); } });
   const zoom=(k,c=[V.x+V.w/2, V.y+V.h/2])=>{ const [mn,mx]=zoomRange(V), w=clamp(V.w*k, mn, mx), f=w/V.w; V.touched=true; V.x=c[0]-(c[0]-V.x)*f; V.y=c[1]-(c[1]-V.y)*f; V.h=w*V.h/V.w; V.w=w; setVB(); };
-  /* 빈 곳으로 너무 멀리 끌면 살짝 버티다가, 놓으면 내용이 조금 보이는 자리까지 부드럽게 돌아온다.
-     내용(인물·단체·관계선)이 화면 가로·세로의 45%쯤은 걸쳐 있으면 그대로 둔다. */
-  const KEEP=0.45, PULL=0.35;
+  /* 빈 곳으로 너무 멀리 끌면 살짝 버티다가, 놓으면 허용 범위 안으로 부드럽게 돌아온다. */
+  const PULL=0.35, MARGIN=0.12;
+  /* 내용 가장자리 밖으로는 화면의 12%까지만 빈 곳이 보이게 한다. 내용이 화면보다 작으면 화면 안에 머문다.
+     휴대폰에서는 위쪽 필터 줄과 아래 시트에 가리는 만큼을 더 내어 준다 */
+  const span=(lo,len,view,m,a,z)=>len+a+z+2*m>=view ? [lo-m-a, lo+len-view+m+z] : [lo+len-view+m+z, lo-m-a];
   const range=()=>{ const g=$('#g-body'); let b; try{ b=g.getBBox(); }catch(e){ return null; } if(!b.width&&!b.height) return null;
-    const nx=Math.min(b.width, V.w)*KEEP, ny=Math.min(b.height, V.h)*KEEP;
-    return {x0:b.x+nx-V.w, x1:b.x+b.width-nx, y0:b.y+ny-V.h, y1:b.y+b.height-ny}; };
+    const k=V.w/(svg.clientWidth||1), ph=isPhone(), top=ph?58*k:0, bot=ph?(($('#g-peek')?.offsetHeight||0)+14)*k:0, m=Math.min(V.w,V.h)*MARGIN;
+    const [x0,x1]=span(b.x,b.width,V.w,m,0,0), [y0,y1]=span(b.y,b.height,V.h,m,top,bot);
+    return {x0, x1, y0, y1}; };
   const soft=(v,lo,hi)=>v<lo?lo-(lo-v)*PULL:v>hi?hi+(v-hi)*PULL:v;
   let anim=0;
   const settle=()=>{ const r=range(); if(!r) return;
