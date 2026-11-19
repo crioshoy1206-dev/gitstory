@@ -445,7 +445,7 @@ img.logo{background:none;object-fit:contain;border-radius:22%;display:block}
 .tbl td:first-child,.tbl td b{white-space:nowrap}
 .tbl td{word-break:keep-all}
 /* 42: 좁은 휴대폰 머리줄 */
-@media (max-width:400px){.app-header{gap:8px;padding-inline:max(10px,env(safe-area-inset-left,0px)) max(10px,env(safe-area-inset-right,0px))}.brand{display:none}.header-right{gap:4px}.header-right .btn{padding-inline:7px}}
+@media (max-width:400px){.app-header{gap:8px;padding-inline:max(10px,env(safe-area-inset-left,0px)) max(10px,env(safe-area-inset-right,0px))}.header-right{gap:4px}.header-right .btn{padding-inline:7px}}
 /* 43: 알림은 문구 길이만큼 넓게, 휴대폰에서는 위쪽에 띄워 아래 버튼을 가리지 않게 */
 .toast{width:max-content;max-width:min(560px,calc(100% - 32px));text-align:center}
 @media (max-width:600px){.toast{bottom:auto;top:calc(64px + env(safe-area-inset-top,0px))}}
@@ -663,3 +663,13 @@ body:has(.detail.g-full){overflow:hidden}
   #tab-world > .Subhead #g-ver{flex:1;min-width:0;width:100%!important}
   .main-col .wrap:has(#tab-world:not([hidden])){padding-block:10px}
 }
+
+/* 아래 시트 움직임: 나타날 때 아래에서 올라오고, 끄는 동안 손가락을 따라간다 */
+.g-peek{touch-action:none;will-change:transform}
+.ws-phone .detail.g-full{will-change:transform}
+.ws-phone .detail.g-full > .detail-bar{touch-action:none}
+.g-sheet.enter,.detail.g-full.enter{animation:sheet-in .3s cubic-bezier(.2,.8,.2,1)}
+.g-full-scrim.enter{animation:fade-in .25s ease-out}
+@keyframes sheet-in{from{transform:translateY(100%)}to{transform:none}}
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.g-sheet.enter,.detail.g-full.enter,.g-full-scrim.enter{animation:none}}

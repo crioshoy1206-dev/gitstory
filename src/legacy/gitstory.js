@@ -1222,7 +1222,7 @@ function renderWorld(){
     return `<g class="node" data-id="${e.id}" tabindex="0" role="button" aria-label="${esc(e.name)}">${under}<g opacity="${dead?.5:dim?.4:1}">${shape}${badge}</g></g>`;
   };
   const zones=()=>W.zones.map((z,i)=>VERT
-    ? `<rect x="-400" y="${z.x}" width="1340" height="${z.w}" style="fill:var(${z.fill})"/>${i?`<line x1="-400" y1="${z.x}" x2="940" y2="${z.x}" style="stroke:var(--border);stroke-dasharray:2 6"/>`:''}<text x="14" y="${z.x+22}" font-size="14" font-weight="700" letter-spacing="1" style="fill:var(${z.c})">${esc(z.label)}</text>`
+    ? `<rect x="-3000" y="${z.x}" width="6540" height="${z.w}" style="fill:var(${z.fill})"/>${i?`<line x1="-3000" y1="${z.x}" x2="3540" y2="${z.x}" style="stroke:var(--border);stroke-dasharray:2 6"/>`:''}<text x="14" y="${z.x+22}" font-size="14" font-weight="700" letter-spacing="1" style="fill:var(${z.c})">${esc(z.label)}</text>`
     : `<rect x="${z.x}" y="0" width="${z.w}" height="540" style="fill:var(${z.fill})"/>${i?`<line x1="${z.x}" y1="0" x2="${z.x}" y2="540" style="stroke:var(--border);stroke-dasharray:2 6"/>`:''}<text x="${z.x+14}" y="528" font-size="11" font-weight="600" letter-spacing="1" style="fill:var(${z.c})">${esc(z.label)}</text>`).join('');
   let labelsAt=[];
   const body=()=>{ labelsAt=[]; return `${memberLines()}${rels.map(edge).join('')}${[...s.groups,...s.characters].filter(x=>isNode(x.id)).map(node).join('')}`; };
@@ -1329,8 +1329,39 @@ function fitPhone(V){
   if(!b||!b.width) b={x:0, y:0, width:ui.vert?540:1100, height:ui.vert?1100:540};
   const top=58, bot=($('#g-peek')?.offsetHeight||64)+14, side=10, ah=Math.max(120, ch-top-bot);
   const k=Math.max(b.width/(cw-side*2), b.height/ah);
-  V.w=cw*k; V.h=ch*k; V.x=b.x+b.width/2-V.w/2; V.y=b.y-top*k-(ah*k-b.height)/2; delete V.fresh;
+  V.w=cw*k; V.h=ch*k; V.x=b.x+b.width/2-V.w/2; V.y=b.y-top*k-(ah*k-b.height)/2; delete V.fresh; delete V.touched;
+  V.fitW=V.w; V.fitSize=`${cw}x${ch}`;
   svg.setAttribute('viewBox', `${V.x} ${V.y} ${V.w} ${V.h}`);
+}
+/* 확대·축소 한계: 휴대폰에서는 '전체 맞춤'보다 조금 더 작게까지만 줄어든다 */
+function zoomRange(V){ return isPhone() ? [150, Math.max(400, (V.fitW||2200)*1.15)] : [280, 2200]; }
+/* 영역 크기가 바뀌었는데(주소창이 사라지는 등) 아직 손대지 않았으면 다시 맞춘다 */
+function refitPhone(){ const V=ui.view, svg=$('#g-svg'); if(!V||!svg) return;
+  if(V.fresh || (!V.touched && V.fitSize!==`${svg.clientWidth}x${svg.clientHeight}`)) fitPhone(V); }
+/* 아래 시트를 손가락으로 끌기: 따라 움직이다가, 놓으면 펼치거나 접거나 제자리로 부드럽게 */
+const SHEET_EASE='transform .28s cubic-bezier(.2,.8,.2,1)';
+function sheetDrag(sheet, handles, {up, down}){
+  if(!sheet) return;
+  let st=null;
+  const begin=ev=>{ if(ev.button || ev.target.closest('input,textarea,select,a,button:not(.sheet-grab)')) return;
+    st={y:ev.clientY, t:performance.now(), dy:0, moved:false, id:ev.pointerId, el:ev.currentTarget};
+    try{ ev.currentTarget.setPointerCapture(ev.pointerId); }catch(e){} };
+  const move=ev=>{ if(!st || ev.pointerId!==st.id) return; const dy=ev.clientY-st.y;
+    if(!st.moved && Math.abs(dy)<6) return; st.moved=true; st.dy=dy;
+    /* 펼칠 수 없는 쪽으로는 살짝만 끌린다 */
+    const t = dy<0 ? (up?Math.max(dy*0.45,-80):dy*0.15) : (down?dy:dy*0.15);
+    sheet.style.transition='none'; sheet.style.transform=`translateY(${t}px)`; };
+  const end=ev=>{ if(!st || ev.pointerId!==st.id) return; const {dy, moved, t}=st; st=null;
+    if(!moved){ return; }
+    ev.currentTarget.dataset.dragged='1';
+    const v=dy/Math.max(1, performance.now()-t);
+    if(up && (dy<-40 || v<-0.45)){ sheet.style.transition=SHEET_EASE; sheet.style.transform='translateY(-24px)'; up(); return; }
+    if(down && (dy>70 || v>0.5)){ sheet.style.transition='transform .2s ease-in'; sheet.style.transform='translateY(110%)';
+      const sc=$('.g-full-scrim'); if(sc && sheet.classList.contains('g-full')){ sc.style.transition='opacity .2s'; sc.style.opacity='0'; }
+      setTimeout(down, 190); return; }
+    sheet.style.transition=SHEET_EASE; sheet.style.transform=''; };
+  handles.filter(Boolean).forEach(h=>{ h.onpointerdown=begin; h.onpointermove=move; h.onpointerup=end; h.onpointercancel=end;
+    h.addEventListener('click', ev=>{ if(h.dataset.dragged){ ev.stopImmediatePropagation(); ev.preventDefault(); delete h.dataset.dragged; } }, true); });
 }
 /* 고른 항목이 시트에 가려 있으면 보이는 곳 가운데로 옮긴다 (새로 골랐을 때만) */
 function revealPhone(V, p){
@@ -1349,21 +1380,24 @@ function wirePhone(pe, pos){
   const V=ui.view;
   sizePhoneGraph();
   const pk=$('#g-peek'); $('#g-wrap')?.style.setProperty('--peek-h', (pk?pk.offsetHeight:0)+'px');
-  if(V.fresh) fitPhone(V);
+  refitPhone();
   const selId = pe && !pe.id.startsWith('bg_') ? pe.id : null;
   if(selId && ui.revealed!==selId && $('#g-peek')) revealPhone(V, pos(selId));
   ui.revealed=selId;
   const open=to=>{ if(to==='peek' && pe?.id.startsWith('bg_')){ ui.sel=null; ui.editing=null; }
     ui.sheet=to; render('world'); if(to==='full') focusDetail(); else $('#g-view')?.focus({preventScroll:true}); };
   $$('[data-sheet]').forEach(b=>b.onclick=()=>open(b.dataset.sheet));
-  /* 손잡이를 위로 밀면 펼치고, 아래로 밀면 접는다 */
-  $$('.sheet-grab').forEach(g=>{ let y0=null;
-    g.onpointerdown=ev=>{ y0=ev.clientY; try{ g.setPointerCapture(ev.pointerId); }catch(e){} };
-    g.onpointerup=ev=>{ if(y0===null) return; const dy=ev.clientY-y0; y0=null;
-      if(Math.abs(dy)<8) return; g.dataset.swiped='1'; open(dy<0?'full':'peek'); };
-    g.addEventListener('click', ev=>{ if(g.dataset.swiped){ ev.stopImmediatePropagation(); delete g.dataset.swiped; } }, true);
-  });
-  const pc=$('#peek-close'); if(pc) pc.onclick=()=>{ ui.sel=null; ui.editing=null; render('world'); };
+  const close=()=>{ ui.sel=null; ui.editing=null; render('world'); };
+  /* 새로 나타난 시트만 아래에서 올라오게 (다시 그릴 때마다 움직이지 않게) */
+  const full=$('.detail.g-full'), peekEl=$('#g-peek');
+  const key=full?`full:${pe?.id||''}`:peekEl?`peek:${selId||''}`:'';
+  if(key && key!==ui.sheetKey){ (full||peekEl).classList.add('enter'); if(full) $('.g-full-scrim')?.classList.add('enter'); }
+  ui.sheetKey=key;
+  /* 요약 시트: 위로 밀면 자세히, 아래로 밀면 닫기(고른 항목이 있을 때) */
+  sheetDrag(peekEl, [peekEl], {up:()=>open('full'), down:selId?close:null});
+  /* 자세히 시트: 손잡이나 맨 위 줄을 아래로 밀면 접힌다 */
+  if(full) sheetDrag(full, [full.querySelector('.sheet-grab'), full.querySelector('.detail-bar')], {down:()=>open('peek')});
+  const pc=$('#peek-close'); if(pc) pc.onclick=close;
   const gv=$('#g-view'); if(gv) gv.onclick=()=>{ ui.viewSheet=true; renderWorld(); $('.g-viewsheet input')?.focus(); };
   $$('[data-close-view]').forEach(b=>b.onclick=()=>{ ui.viewSheet=false; renderWorld(); $('#g-view')?.focus({preventScroll:true}); });
   /* 처음 한 번만: 사용법 안내 */
@@ -1380,7 +1414,7 @@ function wireGraph(svg, body){
   const V=ui.view, setVB=()=>svg.setAttribute('viewBox', `${V.x} ${V.y} ${V.w} ${V.h}`);
   const pt=ev=>{ const p=new DOMPoint(ev.clientX, ev.clientY).matrixTransform(svg.getScreenCTM().inverse()); return [p.x, p.y]; };
   const wire=()=>svg.querySelectorAll('.node').forEach(n=>n.onkeydown=ev=>{ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); pick(n.dataset.id); } });
-  const zoom=(k,c=[V.x+V.w/2, V.y+V.h/2])=>{ const w=clamp(V.w*k, 280, 2200), f=w/V.w; V.x=c[0]-(c[0]-V.x)*f; V.y=c[1]-(c[1]-V.y)*f; V.h=w*V.h/V.w; V.w=w; setVB(); };
+  const zoom=(k,c=[V.x+V.w/2, V.y+V.h/2])=>{ const [mn,mx]=zoomRange(V), w=clamp(V.w*k, mn, mx), f=w/V.w; V.touched=true; V.x=c[0]-(c[0]-V.x)*f; V.y=c[1]-(c[1]-V.y)*f; V.h=w*V.h/V.w; V.w=w; setVB(); };
   /* 빈 곳으로 너무 멀리 끌면 살짝 버티다가, 놓으면 내용이 조금 보이는 자리까지 부드럽게 돌아온다.
      내용(인물·단체·관계선)이 화면 가로·세로의 45%쯤은 걸쳐 있으면 그대로 둔다. */
   const KEEP=0.45, PULL=0.35;
@@ -1403,7 +1437,7 @@ function wireGraph(svg, body){
     let hw=24; if(n){ try{ hw=Math.max(24, n.getBBox().width/2); }catch(e){} }
     d={id:n?.dataset.id, ro, hw, sx:ev.clientX, sy:ev.clientY, vx:V.x, vy:V.y, moved:false, r:(n&&!ro)?null:range()}; };
   svg.onpointermove=ev=>{ if(pts.has(ev.pointerId)) pts.set(ev.pointerId, {x:ev.clientX, y:ev.clientY});
-    if(pinch && pts.size>=2){ const t=two(); const [cx,cy]=pt({clientX:t.cx, clientY:t.cy}); zoom(clamp(pinch.w*pinch.dist/t.dist, 280, 2200)/V.w, [cx,cy]); return; }
+    if(pinch && pts.size>=2){ const t=two(); const [cx,cy]=pt({clientX:t.cx, clientY:t.cy}); zoom(pinch.w*pinch.dist/t.dist/V.w, [cx,cy]); return; }
     if(!d) return;
     if(!d.moved && Math.hypot(ev.clientX-d.sx, ev.clientY-d.sy)<5) return; d.moved=true;
     if(d.id && !d.ro){ const [x,y]=pt(ev), hw=Math.min(d.hw+4, 540);
@@ -1411,7 +1445,7 @@ function wireGraph(svg, body){
       LAYOUT[d.id] = ui.vert ? [Math.round(clamp(y,28,1072)), Math.round(clamp(x,28,500))] : [Math.round(clamp(x,hw,1100-hw)), Math.round(clamp(y,28,500))];
       $('#g-body').innerHTML=body(); wire(); }
     else { const k=V.w/svg.clientWidth, x=d.vx-(ev.clientX-d.sx)*k, y=d.vy-(ev.clientY-d.sy)*k, r=d.r;
-      V.x=r?soft(x,r.x0,r.x1):x; V.y=r?soft(y,r.y0,r.y1):y; setVB(); } };
+      V.x=r?soft(x,r.x0,r.x1):x; V.y=r?soft(y,r.y0,r.y1):y; V.touched=true; setVB(); } };
   const lift=ev=>{ pts.delete(ev.pointerId); if(pinch){ if(pts.size<2){ pinch=null; settle(); } return true; } return false; };
   svg.onpointerup=ev=>{ if(lift(ev)) return; const x=d; d=null; if(!x) return; if(!x.moved){ if(x.id){ ui.sheet='peek'; pick(x.id); } else if(isPhone() && ui.sel){ ui.sel=null; ui.editing=null; render('world'); } return; } if(x.id && !x.ro) saveWorld(); else settle(); };
   svg.onpointercancel=ev=>{ if(lift(ev)) return; const x=d; d=null; if(x && !x.id) settle(); };
@@ -1972,7 +2006,7 @@ document.addEventListener('click', ev=>{ if($('#user-menu') && !ev.target.closes
   addEventListener('resize', ()=>{ clearTimeout(t); t=setTimeout(()=>{
     const m=`${isPhone()}:${isPortrait()}`, typing=document.activeElement?.matches?.('input,textarea,select,[contenteditable]');
     if(m!==mode){ mode=m; ui.view=null; ui.viewSheet=false; if(cur()==='world' && !typing) renderWorld(); }
-    else if(cur()==='world' && isPhone() && !typing) sizePhoneGraph();
+    else if(cur()==='world' && isPhone() && !typing){ sizePhoneGraph(); refitPhone(); }
   }, 150); });
 }
 /* ---------- 사용 안내 (처음 한 번, 이후 도움말 버튼) ---------- */
