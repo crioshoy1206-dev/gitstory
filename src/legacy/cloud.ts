@@ -105,3 +105,10 @@ export type ExtractResult = {
 export function extractManuscript(text: string, world: unknown) {
   return callApi<{ result: ExtractResult; tokens: number; model: string; provider: "claude" | "gemini"; usage: Usage }>("/api/extract", { method: "POST", body: JSON.stringify({ text, world }) });
 }
+
+export type AskResult = { answer: string; sources: { id: string; why: string; from_notes: boolean }[] };
+
+/** 원고·세계관·기록을 읽고 질문에 답한다. 자료는 서버에 저장되지 않는다. */
+export function askWorld(payload: unknown) {
+  return callApi<{ result: AskResult; tokens: number; model: string; provider: "claude" | "gemini"; usage: Usage }>("/api/ask", { method: "POST", body: JSON.stringify(payload) });
+}
