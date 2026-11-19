@@ -480,7 +480,7 @@ function renderSide(){
       if(t==='chr'){ const id=newId('chr'); addManual(`/characters/${id}`, {id, name, aliases:[], memberships:[], traits:[], situation:sit}); ui.sel=id; }
       else if(t==='grp'){ const id=newId('grp'); addManual(`/groups/${id}`, {id, name, kind:'organization', parent:null, traits:[], situation:sit}); ui.sel=id; }
       else { const id=newId('bg'); addManual(`/background/${id}`, {id, category:'기타', title:name, content:'', introduced_in:null}); ui.sel=id; }
-      ui.adding=null; ui.editing=null; ui.graphVer='work'; toast(`${jq(name,'를','을')} 추가했어요`); sideOpen(false); showTab('world'); focusDetail(); };
+      ui.adding=null; ui.editing=null; ui.graphVer='work'; ui.sheet='full'; toast(`${jq(name,'를','을')} 추가했어요`); sideOpen(false); showTab('world'); focusDetail(); };
   });
 }
 /* 인물·단체·배경을 골라 오른쪽 상세 패널로 연다 */
@@ -489,7 +489,7 @@ function pick(id){
   if(cur()!=='world') showTab('world'); else render('world');
   focusDetail();
 }
-function focusDetail(){ const d=$('#detail'); if(!d) return; d.setAttribute('tabindex','-1'); d.focus({preventScroll:true}); if(window.innerWidth<1200) d.scrollIntoView({behavior:'smooth', block:'start'}); }
+function focusDetail(){ const d=$('#detail'); if(!d) return; d.setAttribute('tabindex','-1'); d.focus({preventScroll:true}); if(window.innerWidth<1200 && !isPhone()) d.scrollIntoView({behavior:'smooth', block:'start'}); }
 function sideOpen(open){
   const side=$('#side'), was=side.classList.contains('open'), inside=side.contains(document.activeElement);
   side.classList.toggle('open', open); $('#side-backdrop').hidden=!open; document.body.classList.toggle('side-lock', open);
@@ -1155,8 +1155,11 @@ function renderWorld(){
     missing.forEach(x=>{ let p; for(let tries=0; tries<400; tries++, k++){ p=slot(k); if(!taken.some(t=>Math.hypot(t[0]-p[0], t[1]-p[1])<60)) break; } k++;
       auto[x.id]=p; taken.push(p); if(s===state) LAYOUT[x.id]=p; });
   }
-  const pos=id=>LAYOUT[id]||POS[id]||auto[id]||[430,300];
-  const V=ui.view||(ui.view=fitView(innerWidth<600));
+  /* 휴대폰 세로 화면에서는 지역이 위→아래로 쌓이게 가로·세로를 바꿔 그린다 (저장되는 위치는 그대로) */
+  const PH=isPhone(), VERT=PH && isPortrait(); ui.vert=VERT;
+  const raw=id=>LAYOUT[id]||POS[id]||auto[id]||[430,300];
+  const pos=id=>{ const p=raw(id); return VERT?[p[1],p[0]]:p; };
+  const V=ui.view||(ui.view=PH?{x:0,y:0,w:VERT?540:1100,h:VERT?1100:540,fresh:true}:fitView());
   const linked=new Set(sel?[sel]:[]); s.relations.forEach(r=>{ if(r.from===sel) linked.add(r.to); if(r.to===sel) linked.add(r.from); });
   const isNode=id=>id.startsWith('grp_')||id.startsWith('chr_');
   /* 선이 다른 노드를 지나가면 휘는 정도를 바꿔 피해 간다. 가장 덜 겹치는 곡선의 조절점을 돌려준다 */
@@ -1218,37 +1221,68 @@ function renderWorld(){
     }
     return `<g class="node" data-id="${e.id}" tabindex="0" role="button" aria-label="${esc(e.name)}">${under}<g opacity="${dead?.5:dim?.4:1}">${shape}${badge}</g></g>`;
   };
+  const zones=()=>W.zones.map((z,i)=>VERT
+    ? `<rect x="-400" y="${z.x}" width="1340" height="${z.w}" style="fill:var(${z.fill})"/>${i?`<line x1="-400" y1="${z.x}" x2="940" y2="${z.x}" style="stroke:var(--border);stroke-dasharray:2 6"/>`:''}<text x="14" y="${z.x+22}" font-size="14" font-weight="700" letter-spacing="1" style="fill:var(${z.c})">${esc(z.label)}</text>`
+    : `<rect x="${z.x}" y="0" width="${z.w}" height="540" style="fill:var(${z.fill})"/>${i?`<line x1="${z.x}" y1="0" x2="${z.x}" y2="540" style="stroke:var(--border);stroke-dasharray:2 6"/>`:''}<text x="${z.x+14}" y="528" font-size="11" font-weight="600" letter-spacing="1" style="fill:var(${z.c})">${esc(z.label)}</text>`).join('');
   let labelsAt=[];
   const body=()=>{ labelsAt=[]; return `${memberLines()}${rels.map(edge).join('')}${[...s.groups,...s.characters].filter(x=>isNode(x.id)).map(node).join('')}`; };
   const verLabel = ui.graphVer==='preview'?'AI 제안 미리보기':ui.graphVer==='work'?`지금 · ${cname(head().id)}`:cnum(ui.graphVer)+cname(ui.graphVer);
   const ovSrc = ui.graphVer==='preview'?'미리보기 사건':(ui.graphVer==='work'?head():byId(ui.graphVer))?.message;
   const other = !['work','preview'].includes(ui.graphVer) && !commits.some(c=>c.id===ui.graphVer) ? byId(ui.graphVer) : null;
-  const panel = pe ? `<aside class="detail" id="detail" aria-label="${esc(pe.name||pe.title)} 자세히">
-      <div class="detail-bar"><span class="caption">${editable?'여기서 바로 고칠 수 있어요':'지난 시점이라 보기만 할 수 있어요'}</span><button class="btn btn-sm" id="detail-close">닫기</button></div>
-      ${editable ? (pe.id.startsWith('bg_')?bgDetail(pe):entityDetail(pe)) : pastDetail(s,pe,ov,ovSrc)}</aside>` : overview(s);
-  const graph = first ? graphBox() : `<div class="Box"><div class="Box-body caption" style="text-align:center;padding:48px 16px">아직 인물이나 단체가 없어요.<br>왼쪽 도구창의 <b>+ 인물 추가</b>, <b>+ 단체 추가</b>로 시작하면 여기에 관계도가 그려져요.</div></div>`;
-  function graphBox(){ return `<div class="Box">
-      <div class="Box-header" style="gap:12px">
-        <div class="seg" role="group" aria-label="관계 필터">${[['all','전체'],['conflict','대립·경쟁'],['coop','공존·동맹'],['dominate','지배'],['personal','가족·개인']].map(([k,l])=>`<button aria-pressed="${ui.relFilter===k}" data-f="${k}">${l}</button>`).join('')}</div>
-        <label class="check"><input type="checkbox" id="g-mem" ${ui.showMembers?'checked':''}>소속 선</label>
-        <label class="check"><input type="checkbox" id="g-ov" ${ui.overlay?'checked':''}>사건 영향 표시</label>
-        <div class="zoom" role="group" aria-label="확대와 축소"><button type="button" data-zoom="in" aria-label="확대">+</button><button type="button" data-zoom="out" aria-label="축소">−</button><button type="button" data-zoom="fit">전체</button></div>
-      </div>
-      <div class="graph-wrap"><svg id="g-svg" viewBox="${V.x} ${V.y} ${V.w} ${V.h}" role="img" aria-label="단체·인물 관계도">
+  const FILTERS=[['all','전체'],['conflict','대립·경쟁'],['coop','공존·동맹'],['dominate','지배'],['personal','가족·개인']];
+  const svgHTML=`<svg id="g-svg" viewBox="${V.x} ${V.y} ${V.w} ${V.h}" role="img" aria-label="단체·인물 관계도">
         <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--done)"/></marker></defs>
-        ${W.zones.map((z,i)=>`<rect x="${z.x}" y="0" width="${z.w}" height="540" style="fill:var(${z.fill})"/>${i?`<line x1="${z.x}" y1="0" x2="${z.x}" y2="540" style="stroke:var(--border);stroke-dasharray:2 6"/>`:''}<text x="${z.x+14}" y="528" font-size="11" font-weight="600" letter-spacing="1" style="fill:var(${z.c})">${esc(z.label)}</text>`).join('')}
+        ${zones()}
         <g id="g-body">${body()}</g>
-      </svg></div>
-      <div class="Box-row caption graph-tip">인물이나 단체를 끌어서 자리를 옮길 수 있어요. 빈 곳을 끌면 화면이 움직여요. 확대는 + − 버튼, Ctrl(⌘)+휠, 휴대폰에서는 두 손가락으로 해요.</div>
-      <div class="Box-row" style="flex-wrap:wrap"><div class="legend">
+      </svg>`;
+  const legendHTML=`
         ${Object.values(REL).map(R=>`<span><i style="border-top:2px ${R.dash?'dashed':'solid'} ${R.c}"></i>${R.l}</span>`).join('')}
         <span><i style="border-top:2px dotted var(--border-strong)"></i>소속</span>
         <span>선 굵기 = 강도</span>
         ${W.zones.map(z=>`<span><span class="sq" style="background:var(${z.c})"></span>${esc(nm(state,z.id))}</span>`).join('')}
         <span><span class="dot" style="background:var(--danger);opacity:.6"></span>피해</span><span><span class="dot" style="background:var(--success);opacity:.6"></span>이득</span>
-      </div></div>
+      `;
+  const panel = pe ? `<aside class="detail" id="detail" aria-label="${esc(pe.name||pe.title)} 자세히">
+      <div class="detail-bar"><span class="caption">${editable?'여기서 바로 고칠 수 있어요':'지난 시점이라 보기만 할 수 있어요'}</span><button class="btn btn-sm" id="detail-close">닫기</button></div>
+      ${editable ? (pe.id.startsWith('bg_')?bgDetail(pe):entityDetail(pe)) : pastDetail(s,pe,ov,ovSrc)}</aside>` : overview(s);
+  const SHEET = !PH ? null : (ui.sheet==='full' || pe?.id.startsWith('bg_')) ? 'full' : 'peek';
+  const graph = first ? (PH?phoneBox():graphBox()) : `<div class="Box"><div class="Box-body caption" style="text-align:center;padding:48px 16px">아직 인물이나 단체가 없어요.<br>왼쪽 도구창의 <b>+ 인물 추가</b>, <b>+ 단체 추가</b>로 시작하면 여기에 관계도가 그려져요.</div></div>`;
+  function graphBox(){ return `<div class="Box">
+      <div class="Box-header" style="gap:12px">
+        <div class="seg" role="group" aria-label="관계 필터">${FILTERS.map(([k,l])=>`<button aria-pressed="${ui.relFilter===k}" data-f="${k}">${l}</button>`).join('')}</div>
+        <label class="check"><input type="checkbox" id="g-mem" ${ui.showMembers?'checked':''}>소속 선</label>
+        <label class="check"><input type="checkbox" id="g-ov" ${ui.overlay?'checked':''}>사건 영향 표시</label>
+        <div class="zoom" role="group" aria-label="확대와 축소"><button type="button" data-zoom="in" aria-label="확대">+</button><button type="button" data-zoom="out" aria-label="축소">−</button><button type="button" data-zoom="fit">전체</button></div>
+      </div>
+      <div class="graph-wrap">${svgHTML}</div>
+      <div class="Box-row caption graph-tip">인물이나 단체를 끌어서 자리를 옮길 수 있어요. 빈 곳을 끌면 화면이 움직여요. 확대는 + − 버튼, Ctrl(⌘)+휠, 휴대폰에서는 두 손가락으로 해요.</div>
+      <div class="Box-row" style="flex-wrap:wrap"><div class="legend">${legendHTML}</div></div>
     </div>
 `; }
+  /* 휴대폰: 관계도가 화면을 채우고, 필터는 위에 한 줄로 떠 있고, 설정·범례는 '보기' 시트, 고른 항목은 아래 시트로 */
+  function phoneBox(){ return `<div class="Box g-phone"><div class="graph-wrap" id="g-wrap">${svgHTML}
+      <div class="g-chips" role="group" aria-label="관계 필터"><button type="button" class="g-chip g-chip-ic" id="g-view" aria-haspopup="dialog" aria-expanded="${!!ui.viewSheet}">${ICON_LAYERS}보기</button>${FILTERS.map(([k,l])=>`<button type="button" class="g-chip" aria-pressed="${ui.relFilter===k}" data-f="${k}">${l}</button>`).join('')}</div>
+      <button type="button" class="g-fab" data-zoom="fit" aria-label="전체가 보이게 맞추기" title="전체 맞춤">${ICON_FIT}</button>
+      ${SHEET==='peek'?peek():''}
+      ${ui.viewSheet?viewSheet():''}
+    </div></div>`; }
+  function peek(){
+    if(!pe || pe.id.startsWith('bg_')) return `<div class="g-sheet g-peek" id="g-peek"><button type="button" class="sheet-grab" data-sheet="full" aria-label="세계관 요약 펼치기"></button>
+      <div class="g-stats">${[['인물',s.characters.length],['단체',s.groups.length],['관계',s.relations.length]].map(([l,n])=>`<span><b class="num">${n}</b>${l}</span>`).join('')}<button type="button" class="btn-link" data-sheet="full">요약 보기 ›</button></div></div>`;
+    const my=s.relations.filter(r=>r.from===pe.id||r.to===pe.id), grp=pe.id.startsWith('grp_');
+    const col=nationColor(nationOf(s,pe)), st=pe.situation?.status;
+    return `<div class="g-sheet g-peek" id="g-peek" aria-label="${esc(pe.name)} 요약"><button type="button" class="sheet-grab" data-sheet="full" aria-label="자세히 펼치기"></button>
+      <div class="g-peek-h">${grp?`<span class="sq" style="background:${col}"></span>`:`<span class="dot" style="background:${col}"></span>`}<h3>${esc(pe.name)}</h3><span class="Label">${grp?KIND[pe.kind]:'인물'}</span>${st?`<span class="Label ${statusCls(st)}">${esc(st)}</span>`:''}<button type="button" class="rm" id="peek-close" aria-label="닫기">×</button></div>
+      ${pe.situation?.current?`<p class="g-peek-sit">${esc(pe.situation.current)}</p>`:''}
+      <ul class="g-peek-rels">${my.length?my.slice(0,3).map(r=>{ const R=REL[r.type]||REL.personal, o=r.from===pe.id?r.to:r.from;
+        return `<li><i style="border-top:3px ${R.dash?'dashed':'solid'} ${R.c}"></i><span class="nm">${esc(nm(s,o))}</span><span class="caption">${R.l} · ${lvOf(r.intensity)}</span></li>`; }).join('')+(my.length>3?`<li class="caption">외 ${my.length-3}개</li>`:''):'<li class="caption">아직 관계가 없어요</li>'}</ul>
+      <div class="g-peek-act"><button type="button" class="btn btn-sm btn-primary" data-sheet="full">${editable?'자세히 보고 고치기':'자세히 보기'}</button></div></div>`;
+  }
+  function viewSheet(){ return `<div class="g-scrim" data-close-view></div>
+    <div class="g-sheet g-viewsheet" role="dialog" aria-label="보기 설정"><div class="g-sheet-h"><h3>보기 설정</h3><button type="button" class="btn btn-sm" data-close-view>닫기</button></div>
+      <label class="g-switch"><span>소속 선<small>인물이 어느 단체에 속하는지 점선으로 보여요</small></span><input type="checkbox" role="switch" id="g-mem" ${ui.showMembers?'checked':''}></label>
+      <label class="g-switch"><span>사건 영향 표시<small>이 시점의 사건으로 이득·피해를 본 곳에 표시해요</small></span><input type="checkbox" role="switch" id="g-ov" ${ui.overlay?'checked':''}></label>
+      <div class="g-legend-h">범례</div><div class="legend">${legendHTML}</div></div>`; }
   $('#tab-world').innerHTML = pendingBanner() + `<div class="Subhead"><h2>세계관</h2><span class="muted">${esc(verLabel)}</span>${ui.graphVer==='preview'?'<span class="Label Label--done">아직 기록 안 됨</span>':''}
     <div class="actions">
       <select class="form-control" id="g-ver" style="width:auto;padding:3px 8px;font-size:12px" aria-label="버전">
@@ -1258,7 +1292,7 @@ function renderWorld(){
         ${commits.slice().reverse().filter(c=>c.id!==head().id).map(c=>`<option value="${c.id}" ${ui.graphVer===c.id?'selected':''}>${cnum(c.id)}${esc(cname(c.id))}</option>`).join('')}
       </select>
     </div></div>
-  <div class="ws has-detail"><div class="ws-graph">${graph}</div>${panel}</div>`;
+  <div class="ws has-detail${PH?' ws-phone':''}"><div class="ws-graph">${graph}</div>${!PH?panel:SHEET==='full'?fullSheet(panel):''}</div>`;
   $$('[data-f]').forEach(b=>b.onclick=()=>{ ui.relFilter=b.dataset.f; renderWorld(); });
   $('#g-ver').onchange=ev=>{ ui.graphVer=ev.target.value; ui.editing=null; renderWorld(); };
   const gm=$('#g-mem'); if(gm) gm.onchange=ev=>{ ui.showMembers=ev.target.checked; renderWorld(); };
@@ -1270,11 +1304,77 @@ function renderWorld(){
   const oe=$('#ov-event'); if(oe) oe.onclick=()=>showTab('event');
   const oh=$('#ov-hist'); if(oh) oh.onclick=()=>showTab('history');
   const gn=$('#g-now'); if(gn) gn.onclick=()=>{ ui.graphVer='work'; render('world'); };
-  if(pe && editable) wireDetail(pe);
+  if(pe && editable && (!PH || SHEET==='full')) wireDetail(pe);
+  if(PH) wirePhone(pe, pos);
   wirePending();
 }
-/* 휴대폰에서는 관계도를 세로로 길게 보여 준다 (왼쪽 절반쯤 확대해서 시작) */
-const fitView=tall=>tall?{x:0,y:-10,w:600,h:560}:{x:0,y:0,w:1100,h:540};
+const fitView=()=>({x:0,y:0,w:1100,h:540});
+/* ---------- 휴대폰 관계도 ---------- */
+/* 폭이 좁거나, 눕힌 휴대폰처럼 높이가 낮은 터치 화면 */
+const isPhone=()=>innerWidth<600 || (innerHeight<500 && matchMedia('(pointer:coarse)').matches);
+const isPortrait=()=>{ const t=screen.orientation?.type; return t ? t.startsWith('portrait') : innerHeight>=innerWidth; };
+const ICON_LAYERS='<svg class="oct" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 15 4.6 8 8.2 1 4.6Zm-5.3 6.3L8 10l5.3-2.7L15 8.2 8 11.8 1 8.2Zm0 3.6L8 13.6l5.3-2.7 1.7.9L8 15.4 1 11.8Z"/></svg>';
+const ICON_FIT='<svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" style="fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round"><path d="M1.8 5.5V1.8h3.7M14.2 5.5V1.8h-3.7M1.8 10.5v3.7h3.7M14.2 10.5v3.7h-3.7"/></svg>';
+/* 관계도 영역이 화면 아래까지 차도록 높이를 맞춘다 */
+function sizePhoneGraph(){
+  const gw=$('#g-wrap'); if(!gw) return;
+  const top=gw.getBoundingClientRect().top+scrollY;
+  gw.style.height=Math.max(360, Math.round(innerHeight-top-10))+'px';
+}
+/* 내용 전체가 위쪽 필터 줄과 아래 시트 사이에 들어오게 viewBox를 맞춘다 (화면 비율 그대로라 위아래가 비지 않는다) */
+function fitPhone(V){
+  const svg=$('#g-svg'), g=$('#g-body'); if(!svg||!g) return;
+  const cw=svg.clientWidth, ch=svg.clientHeight; if(!cw||!ch) return;
+  let b=null; try{ b=g.getBBox(); }catch(e){}
+  if(!b||!b.width) b={x:0, y:0, width:ui.vert?540:1100, height:ui.vert?1100:540};
+  const top=58, bot=($('#g-peek')?.offsetHeight||64)+14, side=10, ah=Math.max(120, ch-top-bot);
+  const k=Math.max(b.width/(cw-side*2), b.height/ah);
+  V.w=cw*k; V.h=ch*k; V.x=b.x+b.width/2-V.w/2; V.y=b.y-top*k-(ah*k-b.height)/2; delete V.fresh;
+  svg.setAttribute('viewBox', `${V.x} ${V.y} ${V.w} ${V.h}`);
+}
+/* 고른 항목이 시트에 가려 있으면 보이는 곳 가운데로 옮긴다 (새로 골랐을 때만) */
+function revealPhone(V, p){
+  const svg=$('#g-svg'); if(!svg) return; const cw=svg.clientWidth, ch=svg.clientHeight; if(!cw||!ch) return;
+  const k=V.w/cw, sh=$('#g-peek')?.offsetHeight||0, lo=60, hi=ch-sh-50;
+  const sx=(p[0]-V.x)/k, sy=(p[1]-V.y)/k;
+  if(sx>36 && sx<cw-36 && sy>lo && sy<hi) return;
+  V.x=p[0]-cw/2*k; V.y=p[1]-Math.max(lo,(lo+hi)/2)*k;
+  svg.setAttribute('viewBox', `${V.x} ${V.y} ${V.w} ${V.h}`);
+}
+/* 자세히(또는 세계관 요약)는 아래에서 올라오는 큰 시트로 */
+function fullSheet(panel){
+  return `<div class="g-scrim g-full-scrim" data-sheet="peek"></div>`+panel.replace('<aside class="detail"', '<aside class="detail g-full"').replace(/(<aside[^>]*>)/, '$1<button type="button" class="sheet-grab" data-sheet="peek" aria-label="접기"></button>');
+}
+function wirePhone(pe, pos){
+  const V=ui.view;
+  sizePhoneGraph();
+  const pk=$('#g-peek'); $('#g-wrap')?.style.setProperty('--peek-h', (pk?pk.offsetHeight:0)+'px');
+  if(V.fresh) fitPhone(V);
+  const selId = pe && !pe.id.startsWith('bg_') ? pe.id : null;
+  if(selId && ui.revealed!==selId && $('#g-peek')) revealPhone(V, pos(selId));
+  ui.revealed=selId;
+  const open=to=>{ if(to==='peek' && pe?.id.startsWith('bg_')){ ui.sel=null; ui.editing=null; }
+    ui.sheet=to; render('world'); if(to==='full') focusDetail(); else $('#g-view')?.focus({preventScroll:true}); };
+  $$('[data-sheet]').forEach(b=>b.onclick=()=>open(b.dataset.sheet));
+  /* 손잡이를 위로 밀면 펼치고, 아래로 밀면 접는다 */
+  $$('.sheet-grab').forEach(g=>{ let y0=null;
+    g.onpointerdown=ev=>{ y0=ev.clientY; try{ g.setPointerCapture(ev.pointerId); }catch(e){} };
+    g.onpointerup=ev=>{ if(y0===null) return; const dy=ev.clientY-y0; y0=null;
+      if(Math.abs(dy)<8) return; g.dataset.swiped='1'; open(dy<0?'full':'peek'); };
+    g.addEventListener('click', ev=>{ if(g.dataset.swiped){ ev.stopImmediatePropagation(); delete g.dataset.swiped; } }, true);
+  });
+  const pc=$('#peek-close'); if(pc) pc.onclick=()=>{ ui.sel=null; ui.editing=null; render('world'); };
+  const gv=$('#g-view'); if(gv) gv.onclick=()=>{ ui.viewSheet=true; renderWorld(); $('.g-viewsheet input')?.focus(); };
+  $$('[data-close-view]').forEach(b=>b.onclick=()=>{ ui.viewSheet=false; renderWorld(); $('#g-view')?.focus({preventScroll:true}); });
+  /* 처음 한 번만: 사용법 안내 */
+  let seen='1'; try{ seen=localStorage.getItem('gitstory-graph-tip'); }catch(e){}
+  const gw=$('#g-wrap');
+  if(!seen && gw && !ui.viewSheet && !$('#g-tip')){
+    gw.insertAdjacentHTML('beforeend', '<div class="g-tip" id="g-tip" role="status">끌어서 이동 · 두 손가락으로 확대 · 눌러서 자세히</div>');
+    const done=()=>{ const tip=$('#g-tip'); if(tip) tip.outerHTML=''; try{ localStorage.setItem('gitstory-graph-tip','1'); }catch(e){} };
+    $('#g-svg')?.addEventListener('pointerdown', done, {once:true}); setTimeout(done, 7000);
+  }
+}
 /* 관계도 조작: 노드 끌어 옮기기(위치 저장), 빈 곳 끌어 이동, 확대·축소. 4px 안 움직이면 클릭으로 본다. */
 function wireGraph(svg, body){
   const V=ui.view, setVB=()=>svg.setAttribute('viewBox', `${V.x} ${V.y} ${V.w} ${V.h}`);
@@ -1306,14 +1406,17 @@ function wireGraph(svg, body){
     if(pinch && pts.size>=2){ const t=two(); const [cx,cy]=pt({clientX:t.cx, clientY:t.cy}); zoom(clamp(pinch.w*pinch.dist/t.dist, 280, 2200)/V.w, [cx,cy]); return; }
     if(!d) return;
     if(!d.moved && Math.hypot(ev.clientX-d.sx, ev.clientY-d.sy)<5) return; d.moved=true;
-    if(d.id && !d.ro){ const [x,y]=pt(ev), hw=Math.min(d.hw+4, 540); LAYOUT[d.id]=[Math.round(clamp(x,hw,1100-hw)), Math.round(clamp(y,28,500))]; $('#g-body').innerHTML=body(); wire(); }
+    if(d.id && !d.ro){ const [x,y]=pt(ev), hw=Math.min(d.hw+4, 540);
+      /* 세로 화면에서는 가로·세로를 바꿔 그렸으니 저장할 때 되돌린다 */
+      LAYOUT[d.id] = ui.vert ? [Math.round(clamp(y,28,1072)), Math.round(clamp(x,28,500))] : [Math.round(clamp(x,hw,1100-hw)), Math.round(clamp(y,28,500))];
+      $('#g-body').innerHTML=body(); wire(); }
     else { const k=V.w/svg.clientWidth, x=d.vx-(ev.clientX-d.sx)*k, y=d.vy-(ev.clientY-d.sy)*k, r=d.r;
       V.x=r?soft(x,r.x0,r.x1):x; V.y=r?soft(y,r.y0,r.y1):y; setVB(); } };
   const lift=ev=>{ pts.delete(ev.pointerId); if(pinch){ if(pts.size<2){ pinch=null; settle(); } return true; } return false; };
-  svg.onpointerup=ev=>{ if(lift(ev)) return; const x=d; d=null; if(!x) return; if(!x.moved){ if(x.id) pick(x.id); return; } if(x.id && !x.ro) saveWorld(); else settle(); };
+  svg.onpointerup=ev=>{ if(lift(ev)) return; const x=d; d=null; if(!x) return; if(!x.moved){ if(x.id){ ui.sheet='peek'; pick(x.id); } else if(isPhone() && ui.sel){ ui.sel=null; ui.editing=null; render('world'); } return; } if(x.id && !x.ro) saveWorld(); else settle(); };
   svg.onpointercancel=ev=>{ if(lift(ev)) return; const x=d; d=null; if(x && !x.id) settle(); };
   svg.onwheel=ev=>{ if(!ev.ctrlKey && !ev.metaKey) return; ev.preventDefault(); zoom(ev.deltaY<0?0.88:1/0.88, pt(ev)); clearTimeout(svg.st); svg.st=setTimeout(settle,250); };
-  $$('[data-zoom]').forEach(b=>b.onclick=()=>{ const z=b.dataset.zoom; if(z==='fit'){ Object.assign(V, fitView(V.h/V.w>0.6)); setVB(); } else { zoom(z==='in'?0.8:1.25); settle(); } });
+  $$('[data-zoom]').forEach(b=>b.onclick=()=>{ const z=b.dataset.zoom; if(z==='fit'){ if(isPhone()) fitPhone(V); else { Object.assign(V, fitView()); setVB(); } } else { zoom(z==='in'?0.8:1.25); settle(); } });
   wire();
 }
 /* 아무것도 고르지 않았을 때 오른쪽 패널: 세계관 한눈에 보기 */
@@ -1762,7 +1865,7 @@ function loadWorld(k, fresh=false){
     }catch(e){ savedAt=0; }
   } else savedAt=0;
   lastJson=JSON.stringify(snapshot());
-  Object.assign(ui, {ch:null, chDraft:null, chVers:false, sel:null, treeSel:null, editing:null, graphVer:'work', relFilter:'all', cmpA:null, cmpB:null, confirm:null, open:{}});
+  Object.assign(ui, {ch:null, chDraft:null, chVers:false, sel:null, treeSel:null, editing:null, graphVer:'work', relFilter:'all', sheet:'peek', viewSheet:false, revealed:null, cmpA:null, cmpB:null, confirm:null, open:{}});
   try{ localStorage.setItem('gitstory-world', k); }catch(e){}
 }
 $('#side-q').oninput=ev=>{ ui.q=ev.target.value; renderSide(); };
@@ -1851,12 +1954,33 @@ const av=$('#user-avatar'); av.title=USER.name;
 if(USER.photo){ const img=document.createElement('img'); img.src=USER.photo; img.alt=''; img.referrerPolicy='no-referrer'; img.style.cssText='width:100%;height:100%;border-radius:50%'; av.appendChild(img); }
 else av.textContent=(USER.name||'?').slice(0,1).toUpperCase();
 $('#sign-out').onclick=()=>signOutUser().then(()=>location.reload());
+/* 프로필 사진 메뉴: 휴대폰에서는 테마·도움말·로그아웃 버튼을 여기로 모은다 */
+av.setAttribute('role','button'); av.tabIndex=0; av.setAttribute('aria-haspopup','menu'); av.setAttribute('aria-expanded','false'); av.setAttribute('aria-label', `${USER.name} 메뉴`);
+function userMenu(open){
+  const old=$('#user-menu'); if(old) old.outerHTML=''; av.setAttribute('aria-expanded', !!open); if(!open) return;
+  $('.app-header').insertAdjacentHTML('beforeend', `<div class="user-menu" id="user-menu" role="menu" aria-label="${esc(USER.name)} 메뉴"><div class="caption">${esc(USER.name)}</div>
+    <button type="button" role="menuitem" data-um="theme-btn">테마</button><button type="button" role="menuitem" data-um="help-btn">도움말</button><button type="button" role="menuitem" data-um="sign-out">로그아웃</button></div>`);
+  $$('[data-um]').forEach(b=>b.onclick=ev=>{ ev.stopPropagation(); userMenu(false); $('#'+b.dataset.um).click(); });
+  $('#user-menu').onkeydown=ev=>{ if(ev.key==='Escape'){ userMenu(false); av.focus(); } };
+  $('#user-menu button').focus();
+}
+av.onclick=ev=>{ ev.stopPropagation(); userMenu(!$('#user-menu')); };
+av.onkeydown=ev=>{ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); userMenu(!$('#user-menu')); } };
+document.addEventListener('click', ev=>{ if($('#user-menu') && !ev.target.closest('#user-menu')) userMenu(false); });
+/* 화면을 돌리거나 크기가 바뀌면: 휴대폰·세로 여부가 바뀔 때만 관계도를 다시 그린다 (입력 중에는 건드리지 않는다) */
+{ let mode=`${isPhone()}:${isPortrait()}`, t=0;
+  addEventListener('resize', ()=>{ clearTimeout(t); t=setTimeout(()=>{
+    const m=`${isPhone()}:${isPortrait()}`, typing=document.activeElement?.matches?.('input,textarea,select,[contenteditable]');
+    if(m!==mode){ mode=m; ui.view=null; ui.viewSheet=false; if(cur()==='world' && !typing) renderWorld(); }
+    else if(cur()==='world' && isPhone() && !typing) sizePhoneGraph();
+  }, 150); });
+}
 /* ---------- 사용 안내 (처음 한 번, 이후 도움말 버튼) ---------- */
 const TOUR=[
   ['world','세계관','세계관 전체가 관계도로 보여요. 인물이나 단체를 누르면 상황, 성격, 관계가 자세히 열리고 바로 고칠 수 있어요. 도구창(휴대폰에서는 ☰ 목록)의 + 인물 추가, + 단체 추가로 새로 만들어요. 오른쪽 위에서 시점을 고르면 그때의 관계도로 바뀌어요.'],
   ['event','사건 입력','이야기에서 일어난 일을 적고 AI 영향 분석을 누르면, 누가 직접 영향을 받고 소속을 따라 어떻게 퍼지는지 보여줘요. 확인한 뒤 사건 기록하기를 누르면 버전으로 남아요.'],
   ['manuscript','원고','화마다 원고를 쓰거나 붙여넣으면 저장돼요. AI로 읽으면 새 인물, 바뀐 상황, 새 관계, 큰 사건을 후보로 골라줘요. 체크한 것만 반영돼요.'],
-  ['history','버전 기록','모든 변화가 이야기 흐름으로 쌓여요. 지난 기록에서 \'만약에\' 전개를 만들어 다른 이야기를 시험하고, 언제든 되돌릴 수 있어요. 내 이야기는 도구창의 + 새 프로젝트로 시작하세요. 이 안내는 머리줄의 도움말로 다시 볼 수 있어요.']
+  ['history','버전 기록','모든 변화가 이야기 흐름으로 쌓여요. 지난 기록에서 \'만약에\' 전개를 만들어 다른 이야기를 시험하고, 언제든 되돌릴 수 있어요. 내 이야기는 도구창의 + 새 프로젝트로 시작하세요. 이 안내는 머리줄의 도움말(휴대폰에서는 프로필 사진 메뉴)로 다시 볼 수 있어요.']
 ];
 let tourFrom=null;
 function tour(i=0){
@@ -1879,9 +2003,12 @@ $('#help-btn').onclick=()=>tour(0);
   addEventListener('popstate', ()=>{
     if(Date.now()-backAt<2000 && backAt){ backAt=0; history.back(); return; }
     if($('#ask')) $('#ask-no')?.click();
+    else if($('#user-menu')) userMenu(false);
     else if($('#theme-pop')) toggleTheme(false, 'btn');
     else if($('#tour')) tour(TOUR.length);
     else if($('#side').classList.contains('open')) sideOpen(false);
+    else if(cur()==='world' && ui.viewSheet){ ui.viewSheet=false; renderWorld(); }
+    else if(cur()==='world' && isPhone() && ui.sheet==='full' && !ui.sel?.startsWith('bg_')){ ui.sheet='peek'; render('world'); }
     else if(cur()==='world' && ui.sel){ ui.sel=null; ui.editing=null; render('world'); }
     else if(cur()!=='world') showTab('world');
     else { backAt=Date.now(); toast('뒤로가기를 한 번 더 누르면 나가요'); }
