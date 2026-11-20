@@ -1509,19 +1509,28 @@ function renderWorld(){
     }
     const badge = (w!==undefined && Math.abs(w)>=0.25) ? `<g><rect x="${x+16}" y="${y-36}" width="44" height="18" rx="9" style="fill:${w<0?'var(--danger)':'var(--success)'}"/><text x="${x+38}" y="${y-23}" text-anchor="middle" font-size="11" font-weight="600" style="fill:var(--bg)" class="num">${sf2(w)}</text></g>` : '';
     let shape, under;
+    /* 노드 모양: 단체는 왼쪽에 지역 색 점이 있는 알약 모양, 인물은 지역 색이 옅게 깔린 원. 굵은 테두리 대신 가는 선과 옅은 색면 */
+    const hit = w!==undefined && Math.abs(w)>=0.25, hc = w<0?'var(--danger)':'var(--success)';
     if(e.id.startsWith('grp_')){
-      const nat=e.kind==='nation'; const wd=e.name.length*(nat?17:15)+(nat?36:26), h=nat?40:34;
-      const hb = (w!==undefined && Math.abs(w)>=0.25) ? `<rect x="${x-wd/2-6}" y="${y-h/2-6}" width="${wd+12}" height="${h+12}" rx="10" style="fill:${w<0?'var(--danger)':'var(--success)'};opacity:.16;stroke:${w<0?'var(--danger)':'var(--success)'};stroke-width:1.5"/>` : '';
-      under = `<rect x="${x-wd/2}" y="${y-h/2}" width="${wd}" height="${h}" rx="6" style="fill:var(--bg)"/>`;
-      shape = `${hb}<rect class="nshape" x="${x-wd/2}" y="${y-h/2}" width="${wd}" height="${h}" rx="6" style="fill:${nat?'var(--bg-muted)':'var(--bg-subtle)'};stroke:${col};stroke-width:${isSel?3:nat?2:1.5};${e.kind==='solo'?'stroke-dasharray:4 3':''}"/>
-        <text x="${x}" y="${y+6}" text-anchor="middle" font-size="${nat?17:15}" font-weight="${nat?700:600}" style="fill:var(--fg)">${esc(e.name)}</text>`;
+      const nat=e.kind==='nation', fs=nat?15:13.5, h=nat?36:30, wd=Math.round(e.name.length*fs*1.02+(nat?46:40)), x0=x-wd/2, y0=y-h/2, r=h/2;
+      const hb = hit ? `<rect x="${x0-5}" y="${y0-5}" width="${wd+10}" height="${h+10}" rx="${r+5}" style="fill:${hc};opacity:.16;stroke:${hc};stroke-width:1.5"/>` : '';
+      under = `<rect x="${x0}" y="${y0}" width="${wd}" height="${h}" rx="${r}" style="fill:var(--bg)"/>`;
+      shape = `${hb}${isSel?`<rect x="${x0-4}" y="${y0-4}" width="${wd+8}" height="${h+8}" rx="${r+4}" style="fill:none;stroke:${col};stroke-width:2;opacity:.55"/>`:''}
+        <rect x="${x0}" y="${y0}" width="${wd}" height="${h}" rx="${r}" style="fill:var(--bg-subtle)"/>
+        <rect x="${x0}" y="${y0}" width="${wd}" height="${h}" rx="${r}" style="fill:${col};opacity:${nat?.2:.11}"/>
+        <rect class="nshape" x="${x0}" y="${y0}" width="${wd}" height="${h}" rx="${r}" style="fill:none;stroke:${col};stroke-width:${isSel?1.8:1};stroke-opacity:${isSel?1:.55};${e.kind==='solo'?'stroke-dasharray:3 3':''}"/>
+        <circle cx="${x0+(nat?17:15)}" cy="${y}" r="${nat?4.5:3.5}" style="fill:${col}"/>
+        <text x="${x+(nat?7:6)}" y="${y+fs*0.36}" text-anchor="middle" font-size="${fs}" font-weight="${nat?700:600}" letter-spacing="-.2" style="fill:var(--fg)">${esc(e.name)}</text>`;
     } else {
-      under = `<circle cx="${x}" cy="${y}" r="34" style="fill:transparent"/><circle cx="${x}" cy="${y}" r="22" style="fill:var(--bg)"/>`;
-      const face = e.photo ? `<clipPath id="cp-${e.id}"><circle cx="${x}" cy="${y}" r="21"/></clipPath><image href="${esc(e.photo)}" x="${x-21}" y="${y-21}" width="42" height="42" preserveAspectRatio="xMidYMid slice" clip-path="url(#cp-${e.id})"/>`
-        : `<text x="${x}" y="${y+6}" text-anchor="middle" font-size="${INI[e.id]?.length>1?14:17}" font-weight="700" style="fill:${col}">${esc(INI[e.id]||initial(e.name))}</text>`;
-      shape = `${halo}<circle class="nshape" cx="${x}" cy="${y}" r="22" style="fill:var(--bg);stroke:${col};stroke-width:${isSel?3.5:2}"/>
-        ${face}<circle cx="${x}" cy="${y}" r="22" style="fill:none;stroke:${col};stroke-width:${isSel?3.5:2}"/>
-        <text x="${x}" y="${y+42}" text-anchor="middle" font-size="15" font-weight="500" style="fill:var(--fg);paint-order:stroke;stroke:var(--bg);stroke-width:4px">${esc(e.name)}${dead?' (사망)':''}</text>`;
+      const R=20;
+      under = `<circle cx="${x}" cy="${y}" r="34" style="fill:transparent"/><circle cx="${x}" cy="${y}" r="${R}" style="fill:var(--bg)"/>`;
+      const face = e.photo ? `<clipPath id="cp-${e.id}"><circle cx="${x}" cy="${y}" r="${R-1}"/></clipPath><image href="${esc(e.photo)}" x="${x-R+1}" y="${y-R+1}" width="${2*R-2}" height="${2*R-2}" preserveAspectRatio="xMidYMid slice" clip-path="url(#cp-${e.id})"/>`
+        : `<text x="${x}" y="${y+5.5}" text-anchor="middle" font-size="${INI[e.id]?.length>1?13:15.5}" font-weight="700" style="fill:${col}">${esc(INI[e.id]||initial(e.name))}</text>`;
+      shape = `${halo}${isSel?`<circle cx="${x}" cy="${y}" r="${R+5}" style="fill:none;stroke:${col};stroke-width:2;opacity:.55"/>`:''}
+        <circle cx="${x}" cy="${y}" r="${R}" style="fill:var(--bg-subtle)"/>
+        <circle cx="${x}" cy="${y}" r="${R}" style="fill:${col};opacity:.16"/>
+        ${face}<circle class="nshape" cx="${x}" cy="${y}" r="${R}" style="fill:none;stroke:${col};stroke-width:${isSel?2:1.25};stroke-opacity:${isSel?1:.7}"/>
+        <text x="${x}" y="${y+R+17}" text-anchor="middle" font-size="13.5" font-weight="${isSel?700:500}" letter-spacing="-.2" style="fill:var(--fg);paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round">${esc(e.name)}${dead?' (사망)':''}</text>`;
     }
     const out=RNG && !RNG.has(e.id);
     return `<g class="node${out?' n-out':''}" data-id="${e.id}" tabindex="0" role="button" aria-label="${esc(e.name)}${out?' (고른 화에 안 나옴)':''}">${under}<g opacity="${out?.15:dead?.5:dim?.4:1}">${shape}${badge}</g></g>`;
