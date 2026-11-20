@@ -822,6 +822,18 @@ function renderEvent(){
   wirePending();
 }
 let evBusy=false, evSeq=0;
+/* 사건 여파와 인물별 손익·행동. 분석 화면과 기록 화면에서 같이 쓴다 */
+function reactionsHtml(aftermath, list, st=state){
+  const rs=(list||[]).filter(r=>ent(st,r.id));
+  if(!aftermath && !rs.length) return '';
+  return `${aftermath?`<div class="Box-body" style="line-height:1.6">${esc(aftermath)}</div>`:''}
+    ${rs.map(r=>`<div class="Box-row" style="align-items:flex-start;gap:12px">
+      <div style="flex:0 0 110px;min-width:0"><b>${esc(nm(st,r.id))}</b><div class="caption"><span class="Label ${r.involvement==='연루'?'Label--attention':''}">${esc(r.involvement)}</span></div></div>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+        <div><span class="caption">손익 </span>${esc(r.impact)}</div>
+        <div><span class="caption">앞으로 </span>${esc(r.action)}</div>
+      </div></div>`).join('')}`;
+}
 function drawAnalysis(){
   const a=analysis, box=$('#ev-result'); if(!box) return;
   const cand=[...state.groups, ...state.characters].filter(e=>!a.direct.some(d=>d.target===e.id));
@@ -840,6 +852,7 @@ function drawAnalysis(){
     <div class="Box-row" style="background:var(--bg-subtle);flex-wrap:wrap"><select class="form-control" id="add-target" style="width:auto;flex:1 1 200px" aria-label="대상 추가">
       ${cand.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select><button class="btn btn-sm" id="add-direct">+ 직접 영향 추가</button></div>
   </div>
+  ${(a.aftermath||a.reactions?.length)?`<div class="Box"><div class="Box-header"><h3>여파와 인물별 반응</h3><span class="ai-badge">${icon('spark')}AI 판단</span><span class="caption right">누가 무엇을 잃고 어떻게 움직일지</span></div>${reactionsHtml(a.aftermath, a.reactions)}</div>`:''}
   <div class="Box" id="prop-box"></div>
   ${a.relations.length?`<div class="Box"><div class="Box-header"><span class="step-badge">3</span><h3>관계 변화 제안</h3><span class="ai-badge">${icon('spark')}AI 판단</span></div>
     ${a.relations.map((r,i)=>`<label class="Box-row" style="cursor:pointer;align-items:flex-start"><input type="checkbox" data-rel="${i}" ${r.on?'checked':''} style="margin-top:4px">
@@ -883,7 +896,7 @@ function drawProp(){
     const id=newSha(); const ps=buildPatches(a,id); const {items:its}=finals(a);
     ps.forEach(p=>applyPatch(state,p));
     addCommit({id, parent:head().id, kind:'event', message:$('#ev-msg').value.trim()||'사건: '+a.title, created_at:new Date().toISOString(),
-      event:{title:a.title, description:a.description, story_time:a.story_time, involved:a.direct.map(d=>d.target)},
+      event:{title:a.title, description:a.description, story_time:a.story_time, involved:a.direct.map(d=>d.target), ...(a.aftermath?{aftermath:a.aftermath}:{}), ...(a.reactions?.length?{reactions:a.reactions}:{})},
       impacts:its.map(it=>({target:it.target, source:it.source, via:it.via, tags:it.tags, magnitude:Math.round(it.w*100)/100, summary:it.summary||''})), patches:ps});
     if(a.from && msResult) msResult.events=msResult.events.filter(e=>e!==a.from);   // 원고 후보에서 기록한 사건은 뺀다
     analysis=null; ui.evDraft=null; ui.evFrom=null; ui.graphVer='work'; ui.open={[id]:true}; toast(`'${cname(id)}' 사건을 기록했어요 · 변경 ${ps.length}건`); showTab('history');
@@ -1926,6 +1939,7 @@ function renderTree(){
         <div class="Box-body stack" style="gap:8px">
           <div class="caption" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="Label">${COMMIT_KIND[c.kind]||c.kind}</span>${fmtDate(c.created_at)}${realCount(c)?` · 변경 ${realCount(c)}건`:''}</div>
           ${c.event?`<div style="padding:8px 12px;background:var(--bg-subtle);border-radius:6px">${esc(c.event.description)}${c.event.story_time?`<div class="caption" style="margin-top:4px">작중 시점: ${esc(c.event.story_time)}</div>`:''}</div>`:''}
+          ${c.event&&(c.event.aftermath||c.event.reactions?.length)?`<div class="Box" style="margin:0"><div class="Box-header"><h3>여파와 인물별 반응</h3></div>${reactionsHtml(c.event.aftermath, c.event.reactions)}</div>`:''}
           ${onLine.has(c.id)?'':`<div class="caption">지금 전개('${esc(curBranch().name)}')에는 없는 기록이에요.</div>`}
         </div>
         <div class="Box-row" style="flex-wrap:wrap;gap:8px">
@@ -1983,7 +1997,7 @@ function renderHistory(){
         ${c.event?`<div style="margin-top:8px;padding:8px 12px;background:var(--bg-subtle);border-radius:6px"><div>${esc(c.event.description)}</div>
           <div class="caption" style="margin-top:4px">${c.event.story_time?`작중 시점: ${esc(c.event.story_time)} · `:''}관련: ${(c.event.involved||[]).map(id=>esc(nm(state,id))).join(', ')}</div></div>`:''}
         ${(c.impacts?.length||c.patches.length)?`<button class="btn-link" data-open="${c.id}" style="margin-top:8px;font-size:12px">${open?'접기':'영향과 변경 보기'}</button>`:''}
-        ${open?`${impactTable(c)}${c.patches.length?`<div class="stack" style="gap:3px;margin-top:12px">${c.patches.flatMap(p=>patchLines(stateAt(i),p)).map(([k,l])=>`<span class="diffline ${k}">${esc(l)}</span>`).join('')}</div>`:''}`:''}
+        ${open?`${c.event&&(c.event.aftermath||c.event.reactions?.length)?`<div class="Box" style="margin-top:8px"><div class="Box-header"><h3>여파와 인물별 반응</h3></div>${reactionsHtml(c.event.aftermath, c.event.reactions, stateAt(i))}</div>`:''}${impactTable(c)}${c.patches.length?`<div class="stack" style="gap:3px;margin-top:12px">${c.patches.flatMap(p=>patchLines(stateAt(i),p)).map(([k,l])=>`<span class="diffline ${k}">${esc(l)}</span>`).join('')}</div>`:''}`:''}
         ${ui.confirm===c.id?`<div class="confirm">${icon('alert')}<span style="flex:1 1 200px">이후 기록 ${n-1-i}개의 변경을 거꾸로 되돌려요. 기존 기록은 지워지지 않고 되돌리기 기록이 새로 쌓여요.</span>
           <button class="btn btn-sm" data-cancel>취소</button><button class="btn btn-sm btn-primary" data-ok="${c.id}">되돌리기</button></div>`:''}
       </div></div>`; }).join('')}

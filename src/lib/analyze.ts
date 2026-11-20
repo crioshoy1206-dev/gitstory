@@ -41,8 +41,9 @@ export type WorldInput = {
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["direct", "relevance", "rewrite", "relations"],
+  required: ["aftermath", "direct", "relevance", "rewrite", "reactions", "relations"],
   properties: {
+    aftermath: { type: "string", description: "사건 직후 세계가 어떻게 흘러가는지 2~4문장. 무엇이 무너지거나 생기고, 누가 움직이기 시작하는지." },
     direct: {
       type: "array",
       description: "사건이 직접 닿는 단체·인물. 간접 전파는 앱이 계산하므로 넣지 않는다.",
@@ -82,6 +83,22 @@ const SCHEMA = {
         },
       },
     },
+    reactions: {
+      type: "array",
+      description:
+        "사건에 연루된 인물·단체와, 직접 연루되지 않았어도 소속·관계·성격 때문에 영향받는 인물·단체가 각각 무엇을 잃거나 얻었고 앞으로 어떻게 행동할지. 중요한 순서로 최대 10개, 인물을 우선.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "involvement", "impact", "action"],
+        properties: {
+          id: { type: "string", description: "세계관에 있는 인물/단체 id" },
+          involvement: { type: "string", enum: ["연루", "파급"], description: "연루: 사건 현장·당사자. 파급: 소속·관계를 통해 영향받음" },
+          impact: { type: "string", description: "이 사건으로 잃은 것(손해) 또는 얻은 것. 구체적으로 1~2문장" },
+          action: { type: "string", description: "성격과 상황에 근거해 앞으로 어떻게 행동할지. 구체적으로 1~2문장" },
+        },
+      },
+    },
     relations: {
       type: "array",
       description: "사건으로 바뀌는 관계. 기존 관계는 change, 새 관계는 add.",
@@ -110,7 +127,8 @@ const SYSTEM = `당신은 스토리 세계관의 개연성을 지키는 편집�
 - 각 인물의 성격(traits)과 현재 상황에 근거해 판단하고, 세계관에 없는 사실을 지어내지 않습니다.
 - 모든 문장은 한국어로, 세계관의 말투에 맞게 씁니다.
 - id는 반드시 세계관에 있는 것만 씁니다 (새 관계 id만 예외).
-- 간결하게: direct는 정말 직접 닿는 대상만(보통 1~5개), rewrite는 크게 바뀌는 대상만(최대 6개), relations는 실제로 바뀌는 것만(최대 5개). 문장은 짧게.`;
+- direct는 정말 직접 닿는 대상만(보통 1~5개), rewrite는 크게 바뀌는 대상만(최대 6개), relations는 실제로 바뀌는 것만(최대 5개).
+- reactions는 작가가 다음 장면을 쓸 수 있게 구체적으로 씁니다: 누가 무엇을 잃거나 얻었는지(사람, 지위, 자원, 신뢰 등), 그래서 각자 무엇을 하려 하는지. 직접 연루된 대상뿐 아니라 소속·관계·성격 때문에 흔들리는 인물도 포함합니다. 성격 수치와 관계를 근거로 삼고, 죽은 인물(상태가 사망이거나 소속이 비활성)은 행동시키지 않습니다.`;
 
 function clamp(x: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, Number.isFinite(x) ? x : 0));
@@ -290,8 +308,10 @@ export async function analyzeEvent(event: EventInput, world: WorldInput, plan: R
     relevance: { trait: string; tag: string; rel: number }[];
     rewrite: { id: string; status: string; text: string }[];
     relations: { op: string; id: string; from: string; to: string; type: string; intensity: number; why: string }[];
+    aftermath: string;
+    reactions: { id: string; involvement: string; impact: string; action: string }[];
   };
-  const { data: raw, tokens, model, provider } = await generate<Out>(plan, { system: SYSTEM, schema: SCHEMA, user, maxTokens: 4000 }, "analyze");
+  const { data: raw, tokens, model, provider } = await generate<Out>(plan, { system: SYSTEM, schema: SCHEMA, user, maxTokens: 8000 }, "analyze");
 
   // 검증: 세계관에 있는 id·태그만 남기고 숫자 범위를 자른다
   const ids = new Set([...world.groups, ...world.characters].map((e) => e.id));
@@ -322,5 +342,11 @@ export async function analyzeEvent(event: EventInput, world: WorldInput, plan: R
     }
     return [];
   });
-  return { analysis: { title: event.title, description: event.description, story_time: event.story_time ?? "", direct, relevance, rewrite, relations }, tokens, model, provider };
+  const seen = new Set<string>();
+  const reactions = (raw.reactions ?? [])
+    .filter((x) => ids.has(x.id) && !seen.has(x.id) && seen.add(x.id))
+    .slice(0, 12)
+    .map((x) => ({ id: x.id, involvement: x.involvement === "연루" ? "연루" : "파급", impact: String(x.impact ?? ""), action: String(x.action ?? "") }));
+  const aftermath = String(raw.aftermath ?? "");
+  return { analysis: { title: event.title, description: event.description, story_time: event.story_time ?? "", aftermath, direct, reactions, relevance, rewrite, relations }, tokens, model, provider };
 }
