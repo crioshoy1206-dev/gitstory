@@ -3,7 +3,7 @@
 import DATA_ARCANE from "@/data/arcane.json";
 import DATA_HP from "@/data/harry-potter.json";
 import DATA_JG from "@/data/janggu.json";
-import { loadCloud, saveCloud, signOutUser, fetchUsage, analyzeEvent, extractManuscript, listProjects, askWorld, getAiModel, setAiModel } from "@/legacy/cloud";
+import { loadCloud, saveCloud, signOutUser, fetchUsage, analyzeEvent, extractManuscript, listProjects, askWorld, getAiModel, setAiModel, fetchAiRuns } from "@/legacy/cloud";
 
 let started = false;
 let USER;
@@ -2182,7 +2182,12 @@ function showUsage(u){
 /* 관리자만: 어떤 AI 모델로 부를지 고르는 메뉴. 고른 값은 이 브라우저에 기억하고 요청마다 서버에 알린다 */
 function showModelPicker(u){
   let sel=$('#ai-model');
-  if(!u.admin||!u.models?.length){ if(sel) sel.remove(); return; }
+  if(!u.admin||!u.models?.length){ if(sel) sel.remove(); $('#ai-runs')?.remove(); return; }
+  if(!$('#ai-runs')){
+    const b=document.createElement('button'); b.id='ai-runs'; b.type='button'; b.className='btn btn-sm'; b.textContent='AI 기록 복사';
+    b.title='관리자용: 최근 AI 실행 20개(모델·시간·토큰·결과)를 비교용으로 복사';
+    b.onclick=copyAiRuns; $('#token-meter').before(b);
+  }
   if(!sel){
     sel=document.createElement('select'); sel.id='ai-model'; sel.className='form-control'; sel.style.cssText='width:auto;max-width:160px;height:28px;padding:0 6px;font-size:12px';
     sel.setAttribute('aria-label','AI 모델 (관리자)'); sel.title='관리자용: AI 모델 고르기';
@@ -2193,6 +2198,16 @@ function showModelPicker(u){
   if(cur&&!known) setAiModel('');
   sel.innerHTML=`<option value="">요금제대로 (${u.plan==='pro'?'Pro':'무료'})</option>`+u.models.map(m=>`<option value="${esc(m.id)}">${esc(m.label)}</option>`).join('');
   sel.value=known?cur:'';
+}
+/* 관리자: 최근 AI 실행 기록을 비교하기 좋은 글로 복사한다 */
+async function copyAiRuns(){
+  try{
+    const {runs}=await fetchAiRuns();
+    if(!runs.length){ toast('아직 저장된 AI 실행 기록이 없어요'); return; }
+    const text=runs.map(r=>`## ${new Date(r.at).toLocaleString('ko-KR')} · ${r.kind} · ${r.model} · ${(r.ms/1000).toFixed(1)}초 · 토큰 ${r.tokens} (${r.detail})\n입력: ${JSON.stringify(r.input)}\n결과: ${JSON.stringify(r.output)}`).join('\n\n');
+    await navigator.clipboard.writeText(text);
+    toast(`AI 실행 기록 ${runs.length}개를 복사했어요`);
+  }catch(err){ console.warn('AI 기록 복사 실패', err); toast(`AI 기록을 복사하지 못했어요. ${friendlyErr(err)}`); }
 }
 /* 결과 알림에 쓸 AI 이름. 관리자에게는 실제 모델 이름까지 보여준다 */
 const aiName=r=>r.usage?.admin?r.model:(r.provider==='claude'?'Claude':'Gemini');

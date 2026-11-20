@@ -107,7 +107,7 @@ const norm = (s: string) => s.replace(/\s+/g, "").toLowerCase();
 
 export async function extractManuscript(text: string, world: WorldInput, plan: Route = "free") {
   const user = `## 세계관\n${worldText(world)}\n\n## 원고\n${text}`;
-  const { data: raw, tokens, model, provider } = await generate<Out>(plan, { system: SYSTEM, schema: SCHEMA, user, maxTokens: 6000 }, "extract");
+  const { data: raw, tokens, model, provider, detail, ms } = await generate<Out>(plan, { system: SYSTEM, schema: SCHEMA, user, maxTokens: 6000 }, "extract");
 
   // 검증: 이미 있는 이름(다른 이름 포함)과 겹치는 새 항목은 버리고, id·관계 유형·숫자 범위를 맞춘다
   const ids = new Set([...world.groups, ...world.characters].map((e) => e.id));
@@ -142,5 +142,5 @@ export async function extractManuscript(text: string, world: WorldInput, plan: R
   });
   const updates = raw.updates.filter((u) => ids.has(u.id));
   const events = raw.events.filter((e) => e.description?.trim()).slice(0, 5);
-  return { result: { characters, groups, updates, relations, events }, tokens, model, provider };
+  return { result: { characters, groups, updates, relations, events }, tokens, model, provider, detail, ms };
 }

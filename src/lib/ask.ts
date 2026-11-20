@@ -54,7 +54,7 @@ export async function askWorld(input: AskInput, plan: Route = "free") {
   if (input.commits?.length) parts.push(`## 기록(사건 순서)\n${JSON.stringify(input.commits)}`);
   if (input.chapters?.length) parts.push(`## 원고\n${input.chapters.map((c) => `### [${c.id}] ${c.title}\n${c.text}${c.memos?.length ? `\n(복선 메모: ${c.memos.join(" / ")})` : ""}`).join("\n\n")}`);
   parts.push(input.quote ? `## 작가가 고른 문장\n${input.quote}\n\n## 질문\n${input.question}` : `## 질문\n${input.question}`);
-  const { data, tokens, model, provider } = await generate<{ answer: string; sources: { id: string; why: string; from_notes: boolean }[] }>(
+  const { data, tokens, model, provider, detail, ms } = await generate<{ answer: string; sources: { id: string; why: string; from_notes: boolean }[] }>(
     plan,
     { system: SYSTEM, schema: SCHEMA, user: parts.join("\n\n"), maxTokens: 2000 },
     "ask",
@@ -65,5 +65,5 @@ export async function askWorld(input: AskInput, plan: Route = "free") {
     .filter((s) => ids.has(s.id) && !seen.has(s.id) && seen.add(s.id))
     .slice(0, 6)
     .map((s) => ({ id: s.id, why: String(s.why || "").slice(0, 120), from_notes: !!s.from_notes }));
-  return { result: { answer: String(data.answer || "").trim(), sources }, tokens, model, provider };
+  return { result: { answer: String(data.answer || "").trim(), sources }, tokens, model, provider, detail, ms };
 }

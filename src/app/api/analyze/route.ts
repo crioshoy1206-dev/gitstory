@@ -8,13 +8,14 @@ export async function POST(req: Request) {
   const wantModel = req.headers.get("x-ai-model");
   let mods;
   try {
-    const [admin, api, quota, ai] = await Promise.all([
+    const [admin, api, quota, ai, runs] = await Promise.all([
       import("@/lib/admin"),
       import("@/lib/api"),
       import("@/lib/quota"),
       import("@/lib/analyze"),
+      import("@/lib/runs"),
     ]);
-    mods = { ...admin, ...api, ...quota, ...ai };
+    mods = { ...admin, ...api, ...quota, ...ai, ...runs };
   } catch (e) {
     console.error(e);
     return Response.json({ error: `서버 라이브러리 로드 실패: ${(e as Error).message?.slice(0, 160)}` }, { status: 500 });
@@ -33,7 +34,8 @@ export async function POST(req: Request) {
       return Response.json({ error: "세계관이 너무 큽니다" }, { status: 413 });
     }
     const before = await mods.assertQuota(uid, mods.ESTIMATE, me.admin);
-    const { analysis, tokens, model, provider } = await mods.analyzeEvent(body.event, body.world, mods.routeFor(me.admin, wantModel, before.plan));
+    const { analysis, tokens, model, provider, detail, ms } = await mods.analyzeEvent(body.event, body.world, mods.routeFor(me.admin, wantModel, before.plan));
+    if (me.admin) await mods.saveRun(uid, { kind: "analyze", model, provider, ms, tokens, detail, input: body.event, output: analysis });
     const usage = mods.withAdmin(me.admin, await mods.consume(uid, tokens, me.admin));
     return Response.json({ analysis, tokens, model, provider, usage });
   } catch (e) {
