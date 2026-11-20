@@ -135,3 +135,10 @@ export type AskResult = { answer: string; sources: { id: string; why: string; fr
 export function askWorld(payload: unknown) {
   return callApi<{ result: AskResult; tokens: number; model: string; provider: "claude" | "gemini"; usage: Usage }>("/api/ask", { method: "POST", body: JSON.stringify(payload) });
 }
+
+export type AiRun = { id: string; at: number; kind: string; model: string; provider: string; ms: number; tokens: number; detail: string; input: unknown; output: unknown };
+
+/** 관리자 AI 실행 기록 (최근 20개) */
+export function fetchAiRuns() {
+  return callApi<{ runs: AiRun[] }>("/api/ai-runs");
+}

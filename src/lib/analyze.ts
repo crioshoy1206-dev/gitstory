@@ -227,7 +227,7 @@ function pickModel(route: Route): { provider: "claude" | "gemini"; model: string
 }
 
 /** 요금제 모델로 JSON 응답을 받는다. 붐비면 모델을 돌려가며 재시도하고, 거절·형식 오류는 쓴 토큰과 함께 던진다. */
-export async function generate<T>(plan: Route, prompt: Prompt, label: string): Promise<{ data: T; tokens: number; model: string; provider: "claude" | "gemini" }> {
+export async function generate<T>(plan: Route, prompt: Prompt, label: string): Promise<{ data: T; tokens: number; model: string; provider: "claude" | "gemini"; detail: string; ms: number }> {
   const { provider, model } = pickModel(plan);
   const user = prompt.user;
   const t0 = Date.now();
@@ -272,7 +272,7 @@ export async function generate<T>(plan: Route, prompt: Prompt, label: string): P
   const tokens = res.tokens;
   if (res.refused) throw Object.assign(new AiRefused("AI가 이 요청을 거절했습니다"), { tokens });
   try {
-    return { data: JSON.parse(res.text) as T, tokens, model: res.model, provider };
+    return { data: JSON.parse(res.text) as T, tokens, model: res.model, provider, detail: res.detail, ms: Date.now() - t0 };
   } catch {
     throw Object.assign(new Error(`AI 응답을 읽지 못했습니다 (${res.stop})`), { tokens });
   }
@@ -311,7 +311,7 @@ export async function analyzeEvent(event: EventInput, world: WorldInput, plan: R
     aftermath: string;
     reactions: { id: string; involvement: string; impact: string; action: string }[];
   };
-  const { data: raw, tokens, model, provider } = await generate<Out>(plan, { system: SYSTEM, schema: SCHEMA, user, maxTokens: 8000 }, "analyze");
+  const { data: raw, tokens, model, provider, detail, ms } = await generate<Out>(plan, { system: SYSTEM, schema: SCHEMA, user, maxTokens: 8000 }, "analyze");
 
   // 검증: 세계관에 있는 id·태그만 남기고 숫자 범위를 자른다
   const ids = new Set([...world.groups, ...world.characters].map((e) => e.id));
@@ -348,5 +348,5 @@ export async function analyzeEvent(event: EventInput, world: WorldInput, plan: R
     .slice(0, 12)
     .map((x) => ({ id: x.id, involvement: x.involvement === "연루" ? "연루" : "파급", impact: String(x.impact ?? ""), action: String(x.action ?? "") }));
   const aftermath = String(raw.aftermath ?? "");
-  return { analysis: { title: event.title, description: event.description, story_time: event.story_time ?? "", aftermath, direct, reactions, relevance, rewrite, relations }, tokens, model, provider };
+  return { analysis: { title: event.title, description: event.description, story_time: event.story_time ?? "", aftermath, direct, reactions, relevance, rewrite, relations }, tokens, model, provider, detail, ms };
 }
