@@ -11,8 +11,7 @@ const PLAN_MODEL: Record<Plan, string> = {
   free: process.env.AI_MODEL_FREE || "gemini:gemini-3.8-flash",
   pro: process.env.AI_MODEL_PRO || "claude:claude-sonnet-5-5",
 };
-/** 사건 분석 기본 모델과 "깊게 분석" 모델. Claude 키가 없으면 요금제 모델로 대신한다. */
-const ANALYZE_MODEL = process.env.AI_MODEL_ANALYZE || "claude:claude-sonnet-5-5";
+/** 유료 회원의 "깊게 분석" 모델. 기본 분석은 요금제 모델(무료 Gemini, 유료 Sonnet)을 쓴다. */
 const DEEP_MODEL = process.env.AI_MODEL_DEEP || "claude:claude-opus-5-5";
 /** 서버 함수 제한(maxDuration 180초) 전에 AI 호출을 끊어, 시간 초과도 알아볼 수 있는 오류로 돌려준다 */
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 150000);
@@ -216,12 +215,15 @@ export function inactive(x?: { status?: string }): boolean {
   return INACTIVE.test(x?.status ?? "");
 }
 
-/** 사건 분석 모델: 깊게 분석이면 Opus, 관리자가 고른 모델이 있으면 그것, 아니면 Sonnet. Claude 키가 없으면 요금제대로. */
+/** 깊게 분석을 쓸 수 있는지: 유료 회원과 관리자만 */
+export function canDeep(admin: boolean, plan: Plan): boolean {
+  return (admin || plan === "pro") && !!process.env.ANTHROPIC_API_KEY?.trim();
+}
+
+/** 사건 분석 모델: 깊게 분석이면 Opus(유료·관리자만), 아니면 관리자가 고른 모델이나 요금제대로 */
 export function analyzeRoute(admin: boolean, requested: string | null, plan: Plan, deep: boolean): Route {
-  const hasClaude = !!process.env.ANTHROPIC_API_KEY?.trim();
-  if (deep) return hasClaude ? (DEEP_MODEL as Route) : plan;
-  if (admin && requested) return routeFor(admin, requested, plan);
-  return hasClaude ? (ANALYZE_MODEL as Route) : plan;
+  if (deep && canDeep(admin, plan)) return DEEP_MODEL as Route;
+  return routeFor(admin, requested, plan);
 }
 
 export function routeFor(admin: boolean, requested: string | null, plan: Plan): Route {

@@ -796,7 +796,7 @@ function renderEvent(){
     let a, note='';
     try{
       const r=await analyzeEvent({title, description:text, story_time:time}, worldForAi(title+' '+text), deep);
-      a=r.analysis; if(r.deep) a.deep=true; Object.entries(a.relevance||{}).forEach(([k,v])=>{ RELEVANCE[k]={...(RELEVANCE[k]||{}), ...v}; });
+      a=r.analysis; if(r.deep) a.deep=true; a.canDeep=r.usage?.admin||r.usage?.plan==='pro'; Object.entries(a.relevance||{}).forEach(([k,v])=>{ RELEVANCE[k]={...(RELEVANCE[k]||{}), ...v}; });
       showUsage(r.usage); toast(`AI 분석 완료 (${aiName(r)}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
       if(!a.direct.length) note='AI가 직접 영향을 받는 대상을 찾지 못했습니다. 사건에 단체나 인물 이름을 넣어 보세요.';
     }catch(err){
@@ -855,7 +855,7 @@ function drawAnalysis(){
       ${cand.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select><button class="btn btn-sm" id="add-direct">+ 직접 영향 추가</button></div>
   </div>
   ${(a.aftermath||a.reactions?.length)?`<div class="Box"><div class="Box-header"><h3>여파와 인물별 반응</h3><span class="ai-badge">${icon('spark')}AI 판단</span>${a.deep?'<span class="Label Label--success">깊게 분석</span>':''}<span class="caption right">누가 무엇을 잃고 어떻게 움직일지</span></div>${reactionsHtml(a.aftermath, a.reactions)}</div>`:''}
-  ${!a.guess&&!a.deep?`<div class="Box"><div class="Box-row" style="background:var(--bg-subtle);flex-wrap:wrap;gap:8px"><span class="caption" style="flex:1 1 240px">여파와 인물 반응을 더 풍부하게 보고 싶다면 더 깊이 생각하는 AI로 한 번 더 분석해요. 30~60초쯤 걸리고 토큰을 조금 더 써요.</span><button class="btn btn-sm" id="ev-deep">${icon('spark')}깊게 분석</button></div></div>`:''}
+  ${a.canDeep&&!a.guess&&!a.deep?`<div class="Box"><div class="Box-row" style="background:var(--bg-subtle);flex-wrap:wrap;gap:8px"><span class="caption" style="flex:1 1 240px">여파와 인물 반응을 더 풍부하게 보고 싶다면 더 깊이 생각하는 AI로 한 번 더 분석해요. 30~60초쯤 걸리고 토큰을 조금 더 써요.</span><button class="btn btn-sm" id="ev-deep">${icon('spark')}깊게 분석</button></div></div>`:''}
   <div class="Box" id="prop-box"></div>
   ${a.relations.length?`<div class="Box"><div class="Box-header"><span class="step-badge">3</span><h3>관계 변화 제안</h3><span class="ai-badge">${icon('spark')}AI 판단</span></div>
     ${a.relations.map((r,i)=>`<label class="Box-row" style="cursor:pointer;align-items:flex-start"><input type="checkbox" data-rel="${i}" ${r.on?'checked':''} style="margin-top:4px">

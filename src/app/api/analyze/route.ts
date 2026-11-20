@@ -34,6 +34,9 @@ export async function POST(req: Request) {
       return Response.json({ error: "세계관이 너무 큽니다" }, { status: 413 });
     }
     const before = await mods.assertQuota(uid, mods.ESTIMATE, me.admin);
+    if (body.deep === true && !mods.canDeep(me.admin, before.plan)) {
+      return Response.json({ error: "깊게 분석은 유료 회원만 쓸 수 있어요" }, { status: 403 });
+    }
     const { analysis, tokens, model, provider, detail, ms } = await mods.analyzeEvent(body.event, body.world, mods.analyzeRoute(me.admin, wantModel, before.plan, body.deep === true));
     if (me.admin) await mods.saveRun(uid, { kind: "analyze", model, provider, ms, tokens, detail, input: body.event, output: analysis });
     const usage = mods.withAdmin(me.admin, await mods.consume(uid, tokens, me.admin));
