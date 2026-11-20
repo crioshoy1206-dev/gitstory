@@ -34,10 +34,10 @@ export async function POST(req: Request) {
       return Response.json({ error: "세계관이 너무 큽니다" }, { status: 413 });
     }
     const before = await mods.assertQuota(uid, mods.ESTIMATE, me.admin);
-    const { analysis, tokens, model, provider, detail, ms } = await mods.analyzeEvent(body.event, body.world, mods.routeFor(me.admin, wantModel, before.plan));
+    const { analysis, tokens, model, provider, detail, ms } = await mods.analyzeEvent(body.event, body.world, mods.analyzeRoute(me.admin, wantModel, before.plan, body.deep === true));
     if (me.admin) await mods.saveRun(uid, { kind: "analyze", model, provider, ms, tokens, detail, input: body.event, output: analysis });
     const usage = mods.withAdmin(me.admin, await mods.consume(uid, tokens, me.admin));
-    return Response.json({ analysis, tokens, model, provider, usage });
+    return Response.json({ analysis, tokens, model, provider, usage, deep: body.deep === true });
   } catch (e) {
     // 거절·파싱 실패여도 AI가 쓴 토큰은 차감한다
     const spent = (e as { tokens?: number }).tokens;
