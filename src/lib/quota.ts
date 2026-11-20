@@ -30,15 +30,16 @@ export class QuotaExceeded extends Error {
   }
 }
 
-/** 남은 토큰이 needed 이상인지 확인한다. 모자라면 QuotaExceeded. */
-export async function assertQuota(uid: string, needed: number): Promise<Usage> {
+/** 남은 토큰이 needed 이상인지 확인한다. 모자라면 QuotaExceeded. 관리자(unlimited)는 확인만 하고 막지 않는다. */
+export async function assertQuota(uid: string, needed: number, unlimited = false): Promise<Usage> {
   const usage = await getUsage(uid);
+  if (unlimited) return usage;
   if (Math.max(0, usage.limit - usage.used) + usage.credits < needed) throw new QuotaExceeded(usage);
   return usage;
 }
 
 /** 실제 사용한 토큰을 기록한다. 하루 한도를 넘는 부분은 충전 잔액에서 뺀다. */
-export async function consume(uid: string, tokens: number): Promise<Usage> {
+export async function consume(uid: string, tokens: number, unlimited = false): Promise<Usage> {
   const db = adminDb();
   const date = today();
   const usageRef = db.doc(`users/${uid}/usage/${date}`);
@@ -48,7 +49,8 @@ export async function consume(uid: string, tokens: number): Promise<Usage> {
     const used: number = u.get("tokens") ?? 0;
     const credits: number = user.get("credits") ?? 0;
     const freeLeft = Math.max(0, DAILY_LIMIT - used);
-    const fromCredits = Math.min(credits, Math.max(0, tokens - freeLeft));
+    // 관리자는 사용량만 기록하고 충전 잔액은 건드리지 않는다
+    const fromCredits = unlimited ? 0 : Math.min(credits, Math.max(0, tokens - freeLeft));
     tx.set(usageRef, { tokens: used + tokens, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     if (fromCredits > 0) tx.set(userRef, { credits: credits - fromCredits }, { merge: true });
     return { date, used: used + tokens, limit: DAILY_LIMIT, credits: credits - fromCredits, plan: user.get("plan") === "pro" ? "pro" : "free" };
