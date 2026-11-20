@@ -762,3 +762,9 @@ body:has(.detail.g-full){overflow:hidden}
 .g-viewsheet .g-range .form-control{flex:1;font-size:14px;padding:8px}
 .pin-btn[aria-pressed="true"]{color:var(--attention);border-color:var(--attention-muted)}
 .pin-star{color:var(--attention);width:12px;text-align:center;flex:none}
+
+/* 관계도 노드: 옅은 그림자로 선 위에 살짝 떠 보이게 */
+#g-svg .node > g{filter:drop-shadow(0 1px 1.5px rgb(0 0 0 / .14))}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) #g-svg .node > g{filter:drop-shadow(0 1px 2px rgb(0 0 0 / .45))} }
+:root[data-theme="dark"] #g-svg .node > g,:root[data-skin="night"] #g-svg .node > g{filter:drop-shadow(0 1px 2px rgb(0 0 0 / .45))}
+#g-svg .node:hover .nshape{stroke-opacity:1}
