@@ -35,6 +35,16 @@ const JWKS = createRemoteJWKSet(
 
 /** Authorization 헤더(Bearer <ID 토큰>)를 검증하고 uid를 돌려준다. */
 export async function requireUser(authorization: string | null): Promise<string> {
+  return (await verifyUser(authorization)).uid;
+}
+
+export type Me = { uid: string; email: string; admin: boolean };
+
+/** 관리자 이메일. Vercel 환경변수 ADMIN_EMAILS에 쉼표로 적는다. */
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+
+/** ID 토큰을 검증하고 uid·이메일·관리자 여부를 돌려준다. 관리자는 인증된 이메일로만 판단한다. */
+export async function verifyUser(authorization: string | null): Promise<Me> {
   const m = authorization?.match(/^Bearer (.+)$/);
   if (!m) throw new Unauthorized();
   try {
@@ -44,7 +54,9 @@ export async function requireUser(authorization: string | null): Promise<string>
       algorithms: ["RS256"],
     });
     if (!payload.sub) throw new Unauthorized();
-    return payload.sub;
+    const email = typeof payload.email === "string" ? payload.email.toLowerCase() : "";
+    const admin = !!email && payload.email_verified === true && ADMIN_EMAILS.includes(email);
+    return { uid: payload.sub, email, admin };
   } catch {
     throw new Unauthorized();
   }

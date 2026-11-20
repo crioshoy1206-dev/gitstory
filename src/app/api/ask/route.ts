@@ -3,6 +3,7 @@ export const maxDuration = 180;
 
 export async function POST(req: Request) {
   const authorization = req.headers.get("authorization");
+  const wantModel = req.headers.get("x-ai-model");
   let mods;
   try {
     const [admin, api, quota, ai, ask] = await Promise.all([
@@ -19,7 +20,8 @@ export async function POST(req: Request) {
   }
   let uid: string | undefined;
   try {
-    uid = await mods.requireUser(authorization);
+    const me = await mods.verifyUser(authorization);
+    uid = me.uid;
     const body = await req.json().catch(() => null);
     const question = typeof body?.question === "string" ? body.question.trim().slice(0, 500) : "";
     if (!question || !body?.world) return Response.json({ error: "질문과 세계관이 필요합니다" }, { status: 400 });
@@ -37,7 +39,7 @@ export async function POST(req: Request) {
         commits: Array.isArray(body.commits) ? body.commits : undefined,
         ids,
       },
-      before.plan,
+      mods.routeFor(me.admin, wantModel, before.plan),
     );
     const usage = await mods.consume(uid, tokens);
     return Response.json({ result, tokens, model, provider, usage });

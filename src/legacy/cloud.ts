@@ -55,12 +55,31 @@ export async function saveCloud(key: string, data: unknown, savedAt: number): Pr
   });
 }
 
+const AI_MODEL_KEY = "gitstory.aiModel";
+
+/** 관리자가 고른 AI 모델 ("" = 요금제대로). 이 브라우저에만 기억한다. 서버는 관리자가 아니면 무시한다. */
+export function getAiModel(): string {
+  try {
+    return localStorage.getItem(AI_MODEL_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setAiModel(id: string) {
+  try {
+    if (id) localStorage.setItem(AI_MODEL_KEY, id);
+    else localStorage.removeItem(AI_MODEL_KEY);
+  } catch {}
+}
+
 /** 서버 API 호출. 로그인 토큰을 붙인다. */
 export async function callApi<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = await currentUser().getIdToken();
+  const model = getAiModel();
   const res = await fetch(path, {
     ...init,
-    headers: { ...init.headers, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: { ...init.headers, Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(model ? { "X-AI-Model": model } : {}) },
   });
   const text = await res.text();
   let body: Record<string, unknown> = {};
@@ -80,7 +99,11 @@ export async function callApi<T>(path: string, init: RequestInit = {}): Promise<
   return body as T;
 }
 
-export type Usage = { date: string; used: number; limit: number; credits: number; plan: "free" | "pro" };
+export type Usage = {
+  date: string; used: number; limit: number; credits: number; plan: "free" | "pro";
+  /** 관리자에게만 온다 */
+  admin?: boolean; models?: { id: string; label: string }[];
+};
 
 export function fetchUsage() {
   return callApi<Usage>("/api/usage");

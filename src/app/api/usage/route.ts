@@ -4,15 +4,17 @@ export async function GET(req: Request) {
   // 서버 라이브러리를 여기서 불러와, 불러오기 실패도 오류 내용으로 돌려준다
   let mods;
   try {
-    const [admin, api, quota] = await Promise.all([import("@/lib/admin"), import("@/lib/api"), import("@/lib/quota")]);
-    mods = { ...admin, ...api, ...quota };
+    const [admin, api, quota, ai] = await Promise.all([import("@/lib/admin"), import("@/lib/api"), import("@/lib/quota"), import("@/lib/analyze")]);
+    mods = { ...admin, ...api, ...quota, ...ai };
   } catch (e) {
     console.error(e);
     return Response.json({ error: `서버 라이브러리 로드 실패: ${(e as Error).message?.slice(0, 160)}` }, { status: 500 });
   }
   try {
-    const uid = await mods.requireUser(authorization);
-    return Response.json(await mods.getUsage(uid));
+    const me = await mods.verifyUser(authorization);
+    const usage = await mods.getUsage(me.uid);
+    // 관리자에게만 고를 수 있는 모델 목록을 준다
+    return Response.json(me.admin ? { ...usage, admin: true, models: mods.adminModels() } : usage);
   } catch (e) {
     return mods.errorResponse(e);
   }
