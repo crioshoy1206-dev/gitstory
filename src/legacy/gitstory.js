@@ -780,30 +780,32 @@ function renderEvent(){
   $('#ev-title').oninput=e=>{ $('#ev-pos-title').textContent=e.target.value.trim()||'새 사건'; keep(); };
   $('#ev-text').oninput=keep; $('#ev-time').oninput=keep;
   if(evBusy){ $('#ev-run').disabled=true; $('#ev-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 사건을 분석하고 있어요</span></div></div>`; }
-  $('#ev-run').onclick=async ()=>{
+  $('#ev-run').onclick=async (e, deep=false)=>{
     const text=$('#ev-text').value.trim(), time=$('#ev-time').value.trim();
     // 제목을 비우면 내용 앞부분을 이름으로 쓴다 (타임라인에 '새 사건'만 줄줄이 생기지 않게)
     const title=$('#ev-title').value.trim() || (text.length>18 ? text.slice(0,18).trim()+'…' : text) || '새 사건';
     if(!text){ $('#ev-result').innerHTML=`<div class="flash flash-warn" role="alert">${icon('alert')}<div>사건 내용을 입력하세요.</div></div>`; $('#ev-text').focus(); return; }
     const btn=$('#ev-run'); btn.disabled=true;
     // 이전 결과는 버린다: 기다리는 동안 예전 결과가 기록되지 않게
+    const prev=deep&&analysis&&!analysis.guess&&!analysis.done?analysis:null;
     analysis=null; evBusy=true; ui.evDraft={title:$('#ev-title').value, description:text, story_time:time};
     const req=++evSeq, wk=worldKey, from=ui.evFrom;
     if(innerWidth<900) requestAnimationFrame(()=>$('#ev-result')?.scrollIntoView({behavior:'smooth', block:'nearest'}));
-    $('#ev-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 사건이 단체·인물에 주는 직접 영향을 판단하고 있습니다 <span id="ev-wait"></span></span></div></div>`;
-    const t0=Date.now(), tick=setInterval(()=>{ const w=$('#ev-wait'), s=Math.round((Date.now()-t0)/1000); if(w) w.textContent=`· ${s}초`+(s>=25?' (AI 서버가 붐벼 다른 모델로 다시 시도하는 중이에요)':''); },1000);
+    $('#ev-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">${deep?'AI가 사건을 깊게 다시 분석하고 있어요. 30~60초쯤 걸려요':'AI가 사건이 단체·인물에 주는 직접 영향을 판단하고 있습니다'} <span id="ev-wait"></span></span></div></div>`;
+    const t0=Date.now(), tick=setInterval(()=>{ const w=$('#ev-wait'), s=Math.round((Date.now()-t0)/1000); if(w) w.textContent=`· ${s}초`+(s>=(deep?70:25)?' (AI 서버가 붐벼 다시 시도하는 중이에요)':''); },1000);
     let a, note='';
     try{
-      const r=await analyzeEvent({title, description:text, story_time:time}, worldForAi(title+' '+text));
-      a=r.analysis; Object.entries(a.relevance||{}).forEach(([k,v])=>{ RELEVANCE[k]={...(RELEVANCE[k]||{}), ...v}; });
+      const r=await analyzeEvent({title, description:text, story_time:time}, worldForAi(title+' '+text), deep);
+      a=r.analysis; if(r.deep) a.deep=true; Object.entries(a.relevance||{}).forEach(([k,v])=>{ RELEVANCE[k]={...(RELEVANCE[k]||{}), ...v}; });
       showUsage(r.usage); toast(`AI 분석 완료 (${aiName(r)}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
       if(!a.direct.length) note='AI가 직접 영향을 받는 대상을 찾지 못했습니다. 사건에 단체나 인물 이름을 넣어 보세요.';
     }catch(err){
       console.warn('AI 분석 실패', err);
       if(err.status===429) note=quotaNote(err);
+      else if(deep) note=`깊게 분석하지 못했어요. ${friendlyErr(err)}. 다시 눌러 보세요.`;
       else note=`AI 분석을 쓸 수 없어 간단 추정으로 대신했어요. ${friendlyErr(err)}.`;
-      a = (title===SAMPLE.title) ? {...clone(SAMPLE), description:text} : guessAnalysis(title, text);
-      a.guess=true;
+      if(deep && prev){ a=prev; }   // 깊게 분석이 실패하면 앞의 결과를 그대로 둔다
+      else { a = (title===SAMPLE.title) ? {...clone(SAMPLE), description:text} : guessAnalysis(title, text); a.guess=true; }
     }
     clearInterval(tick);
     if(req!==evSeq) return;              // 더 새 분석이 시작됨
@@ -852,7 +854,8 @@ function drawAnalysis(){
     <div class="Box-row" style="background:var(--bg-subtle);flex-wrap:wrap"><select class="form-control" id="add-target" style="width:auto;flex:1 1 200px" aria-label="대상 추가">
       ${cand.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select><button class="btn btn-sm" id="add-direct">+ 직접 영향 추가</button></div>
   </div>
-  ${(a.aftermath||a.reactions?.length)?`<div class="Box"><div class="Box-header"><h3>여파와 인물별 반응</h3><span class="ai-badge">${icon('spark')}AI 판단</span><span class="caption right">누가 무엇을 잃고 어떻게 움직일지</span></div>${reactionsHtml(a.aftermath, a.reactions)}</div>`:''}
+  ${(a.aftermath||a.reactions?.length)?`<div class="Box"><div class="Box-header"><h3>여파와 인물별 반응</h3><span class="ai-badge">${icon('spark')}AI 판단</span>${a.deep?'<span class="Label Label--success">깊게 분석</span>':''}<span class="caption right">누가 무엇을 잃고 어떻게 움직일지</span></div>${reactionsHtml(a.aftermath, a.reactions)}</div>`:''}
+  ${!a.guess&&!a.deep?`<div class="Box"><div class="Box-row" style="background:var(--bg-subtle);flex-wrap:wrap;gap:8px"><span class="caption" style="flex:1 1 240px">여파와 인물 반응을 더 풍부하게 보고 싶다면 더 깊이 생각하는 AI로 한 번 더 분석해요. 30~60초쯤 걸리고 토큰을 조금 더 써요.</span><button class="btn btn-sm" id="ev-deep">${icon('spark')}깊게 분석</button></div></div>`:''}
   <div class="Box" id="prop-box"></div>
   ${a.relations.length?`<div class="Box"><div class="Box-header"><span class="step-badge">3</span><h3>관계 변화 제안</h3><span class="ai-badge">${icon('spark')}AI 판단</span></div>
     ${a.relations.map((r,i)=>`<label class="Box-row" style="cursor:pointer;align-items:flex-start"><input type="checkbox" data-rel="${i}" ${r.on?'checked':''} style="margin-top:4px">
@@ -863,6 +866,7 @@ function drawAnalysis(){
   $$('[data-sum]').forEach(inp=>inp.oninput=()=>{ a.direct[inp.dataset.sum].summary=inp.value; });
   $$('[data-del]').forEach(b=>b.onclick=()=>{ a.direct.splice(+b.dataset.del,1); drawAnalysis(); });
   $$('[data-rel]').forEach(c=>c.onchange=()=>{ a.relations[c.dataset.rel].on=c.checked; drawProp(); });
+  const dp=$('#ev-deep'); if(dp) dp.onclick=()=>{ const run=$('#ev-run'); if(run && !run.disabled) run.onclick(null, true); };
   const ad=$('#add-direct'); if(ad) ad.onclick=()=>{ const id=$('#add-target').value; if(!id) return; a.direct.push({target:id, M:-0.5, tags:['위협'], summary:'사건의 직접 영향'}); drawAnalysis(); };
   drawProp();
 }

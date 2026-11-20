@@ -11,6 +11,9 @@ const PLAN_MODEL: Record<Plan, string> = {
   free: process.env.AI_MODEL_FREE || "gemini:gemini-3.8-flash",
   pro: process.env.AI_MODEL_PRO || "claude:claude-sonnet-5-5",
 };
+/** 사건 분석 기본 모델과 "깊게 분석" 모델. Claude 키가 없으면 요금제 모델로 대신한다. */
+const ANALYZE_MODEL = process.env.AI_MODEL_ANALYZE || "claude:claude-sonnet-5-5";
+const DEEP_MODEL = process.env.AI_MODEL_DEEP || "claude:claude-opus-5-5";
 /** 서버 함수 제한(maxDuration 180초) 전에 AI 호출을 끊어, 시간 초과도 알아볼 수 있는 오류로 돌려준다 */
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 150000);
 let lastGoodGemini = "";
@@ -128,7 +131,9 @@ const SYSTEM = `당신은 스토리 세계관의 개연성을 지키는 편집�
 - 모든 문장은 한국어로, 세계관의 말투에 맞게 씁니다.
 - id는 반드시 세계관에 있는 것만 씁니다 (새 관계 id만 예외).
 - direct는 정말 직접 닿는 대상만(보통 1~5개), rewrite는 크게 바뀌는 대상만(최대 6개), relations는 실제로 바뀌는 것만(최대 5개).
-- reactions는 작가가 다음 장면을 쓸 수 있게 구체적으로 씁니다: 누가 무엇을 잃거나 얻었는지(사람, 지위, 자원, 신뢰 등), 그래서 각자 무엇을 하려 하는지. 직접 연루된 대상뿐 아니라 소속·관계·성격 때문에 흔들리는 인물도 포함합니다. 성격 수치와 관계를 근거로 삼고, 죽은 인물(상태가 사망이거나 소속이 비활성)은 행동시키지 않습니다.`;
+- reactions는 작가가 다음 장면을 쓸 수 있게 구체적으로 씁니다: 누가 무엇을 잃거나 얻었는지(사람, 지위, 자원, 신뢰 등), 그래서 각자 무엇을 하려 하는지. 직접 연루된 대상뿐 아니라 소속·관계·성격 때문에 흔들리는 인물도 포함합니다. 성격 수치와 관계를 근거로 삼습니다.
+- 세계관에서 [행동불가] 표시가 붙은 인물(사망·봉인·혼수 등)은 절대 행동하지 않습니다. reactions에 넣지 않고, 말하거나 움직이거나 결정하는 문장의 주어로 쓰지 않습니다. 남은 사람들이 그 인물을 기억하거나 그 빈자리 때문에 흔들리는 것은 쓸 수 있습니다.
+- 사건 내용이 [행동불가] 인물을 움직이게 하면(예: 죽은 인물이 등장), 그 인물이 했다는 행동은 다른 누군가가 했거나 착각·위장일 수 있다고 보고, aftermath 마지막 문장에 "작가 확인 필요: ○○는 세계관상 사망 상태인데 사건에 등장합니다" 식으로 적습니다.`;
 
 function clamp(x: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, Number.isFinite(x) ? x : 0));
@@ -205,6 +210,20 @@ export function withAdmin<U extends object>(admin: boolean, usage: U): U | (U & 
 }
 
 /** 관리자가 고른 모델이 목록에 있으면 그 모델로, 아니면 요금제대로 */
+/** 상태어로 보아 더는 행동할 수 없는 인물인지 */
+export const INACTIVE = /사망|전사|처형|소멸|봉인|활동\s*불가|행동\s*불가|혼수|의식\s*불명|석화/;
+export function inactive(x?: { status?: string }): boolean {
+  return INACTIVE.test(x?.status ?? "");
+}
+
+/** 사건 분석 모델: 깊게 분석이면 Opus, 관리자가 고른 모델이 있으면 그것, 아니면 Sonnet. Claude 키가 없으면 요금제대로. */
+export function analyzeRoute(admin: boolean, requested: string | null, plan: Plan, deep: boolean): Route {
+  const hasClaude = !!process.env.ANTHROPIC_API_KEY?.trim();
+  if (deep) return hasClaude ? (DEEP_MODEL as Route) : plan;
+  if (admin && requested) return routeFor(admin, requested, plan);
+  return hasClaude ? (ANALYZE_MODEL as Route) : plan;
+}
+
 export function routeFor(admin: boolean, requested: string | null, plan: Plan): Route {
   if (!admin || !requested) return plan;
   return adminModels().some((m) => m.id === requested) ? (requested as Route) : plan;
@@ -293,7 +312,7 @@ export function worldText(world: WorldInput): string {
   world.characters.forEach((c) => {
     const aka = c.aliases?.filter(Boolean).length ? `(${c.aliases.filter(Boolean).map(one).join("/")})` : "";
     const ms = (c.memberships ?? []).map((m) => `${m.group}(${[one(m.role), m.bond ?? ""].filter((x) => x !== "").join(",")})`).join(", ") || "-";
-    lines.push(`${c.id} ${one(c.name)}${aka} | ${ms} | ${sit(c.situation)} | ${traits(c.traits)}`);
+    lines.push(`${c.id} ${one(c.name)}${aka}${inactive(c.situation) ? " [행동불가]" : ""} | ${ms} | ${sit(c.situation)} | ${traits(c.traits)}`);
   });
   lines.push("# 관계 (id 출발→도착 종류 강도 메모)");
   world.relations.forEach((r) => lines.push(`${r.id} ${r.from}→${r.to} ${r.type} ${r.intensity}${r.note ? ` ${one(r.note)}` : ""}`));
@@ -342,9 +361,11 @@ export async function analyzeEvent(event: EventInput, world: WorldInput, plan: R
     }
     return [];
   });
+  // 행동할 수 없는 인물의 "앞으로 어떻게 행동할지"는 버린다 (지시를 어겨도 결과에 남지 않게)
+  const gone = new Set(world.characters.filter((c) => inactive(c.situation)).map((c) => c.id));
   const seen = new Set<string>();
   const reactions = (raw.reactions ?? [])
-    .filter((x) => ids.has(x.id) && !seen.has(x.id) && seen.add(x.id))
+    .filter((x) => ids.has(x.id) && !gone.has(x.id) && !seen.has(x.id) && seen.add(x.id))
     .slice(0, 12)
     .map((x) => ({ id: x.id, involvement: x.involvement === "연루" ? "연루" : "파급", impact: String(x.impact ?? ""), action: String(x.action ?? "") }));
   const aftermath = String(raw.aftermath ?? "");

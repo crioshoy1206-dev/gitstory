@@ -109,11 +109,11 @@ export function fetchUsage() {
   return callApi<Usage>("/api/usage");
 }
 
-export type AnalyzeResult = { analysis: Record<string, unknown>; tokens: number; model: string; provider: "claude" | "gemini"; usage: Usage };
+export type AnalyzeResult = { analysis: Record<string, unknown>; tokens: number; model: string; provider: "claude" | "gemini"; usage: Usage; deep?: boolean };
 
-/** 사건을 AI로 분석한다. 쓴 토큰은 서버가 오늘 한도에서 뺀다. */
-export function analyzeEvent(event: { title: string; description: string; story_time: string }, world: unknown) {
-  return callApi<AnalyzeResult>("/api/analyze", { method: "POST", body: JSON.stringify({ event, world }) });
+/** 사건을 AI로 분석한다. deep이면 더 깊이 보는 모델(Opus)로. 쓴 토큰은 서버가 오늘 한도에서 뺀다. */
+export function analyzeEvent(event: { title: string; description: string; story_time: string }, world: unknown, deep = false) {
+  return callApi<AnalyzeResult>("/api/analyze", { method: "POST", body: JSON.stringify({ event, world, ...(deep ? { deep: true } : {}) }) });
 }
 
 export type ExtractResult = {
