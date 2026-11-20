@@ -3,7 +3,7 @@
 import DATA_ARCANE from "@/data/arcane.json";
 import DATA_HP from "@/data/harry-potter.json";
 import DATA_JG from "@/data/janggu.json";
-import { loadCloud, saveCloud, signOutUser, fetchUsage, analyzeEvent, extractManuscript, listProjects, askWorld } from "@/legacy/cloud";
+import { loadCloud, saveCloud, signOutUser, fetchUsage, analyzeEvent, extractManuscript, listProjects, askWorld, getAiModel, setAiModel } from "@/legacy/cloud";
 
 let started = false;
 let USER;
@@ -796,7 +796,7 @@ function renderEvent(){
     try{
       const r=await analyzeEvent({title, description:text, story_time:time}, worldForAi(title+' '+text));
       a=r.analysis; Object.entries(a.relevance||{}).forEach(([k,v])=>{ RELEVANCE[k]={...(RELEVANCE[k]||{}), ...v}; });
-      showUsage(r.usage); toast(`AI 분석 완료 (${r.provider==='claude'?'Claude':'Gemini'}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
+      showUsage(r.usage); toast(`AI 분석 완료 (${aiName(r)}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
       if(!a.direct.length) note='AI가 직접 영향을 받는 대상을 찾지 못했습니다. 사건에 단체나 인물 이름을 넣어 보세요.';
     }catch(err){
       console.warn('AI 분석 실패', err);
@@ -1068,7 +1068,7 @@ function renderManuscript(){
         msResult={cid, characters:known(r.result.characters), groups:known(r.result.groups), updates:on(r.result.updates), relations:on(r.result.relations), events:r.result.events};
         const cm=chMeta(cid); if(cm){ cm.readAt=Date.now(); cm.readCommit=head().id; saveWorld(); }
       }
-      showUsage(r.usage); toast(`원고 읽기 완료 (${r.provider==='claude'?'Claude':'Gemini'}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
+      showUsage(r.usage); toast(`원고 읽기 완료 (${aiName(r)}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
     }catch(err){
       console.warn('원고 읽기 실패', err);
       if(err.status===429) note=quotaNote(err);
@@ -1387,7 +1387,7 @@ async function askSend(question){
   try{
     const r=await askWorld(askPayload(question, quote));
     Object.assign(wait, {busy:false, text:r.result.answer||'답을 받지 못했어요.', sources:r.result.sources});
-    showUsage(r.usage);
+    showUsage(r.usage); if(r.usage?.admin) toast(`답변 모델: ${r.model} · 토큰 ${r.tokens.toLocaleString()} 사용`);
   }catch(err){
     console.warn('물어보기 실패', err);
     Object.assign(wait, {busy:false, error: err.status===429 ? quotaNote(err) : `답하지 못했어요. ${friendlyErr(err)}.`});
@@ -2163,7 +2163,25 @@ function showUsage(u){
   el.textContent=`${u.plan==='pro'?'Pro · ':''}오늘 남은 토큰 ${left.toLocaleString()}`;
   el.className='Label '+(left>0?'':'Label--danger');
   el.title=`하루 ${u.limit.toLocaleString()} 중 ${u.used.toLocaleString()} 사용 · 충전 잔액 ${u.credits.toLocaleString()} · 매일 한국 시간 자정 초기화`;
+  showModelPicker(u);
 }
+/* 관리자만: 어떤 AI 모델로 부를지 고르는 메뉴. 고른 값은 이 브라우저에 기억하고 요청마다 서버에 알린다 */
+function showModelPicker(u){
+  let sel=$('#ai-model');
+  if(!u.admin||!u.models?.length){ if(sel) sel.remove(); return; }
+  if(!sel){
+    sel=document.createElement('select'); sel.id='ai-model'; sel.className='form-control'; sel.style.cssText='width:auto;max-width:160px;height:28px;padding:0 6px;font-size:12px';
+    sel.setAttribute('aria-label','AI 모델 (관리자)'); sel.title='관리자용: AI 모델 고르기';
+    sel.addEventListener('change',()=>{ setAiModel(sel.value); toast(`AI 모델: ${sel.selectedOptions[0]?.textContent}`); });
+    $('#token-meter').before(sel);
+  }
+  const cur=getAiModel(); const known=u.models.some(m=>m.id===cur);
+  if(cur&&!known) setAiModel('');
+  sel.innerHTML=`<option value="">요금제대로 (${u.plan==='pro'?'Pro':'무료'})</option>`+u.models.map(m=>`<option value="${esc(m.id)}">${esc(m.label)}</option>`).join('');
+  sel.value=known?cur:'';
+}
+/* 결과 알림에 쓸 AI 이름. 관리자에게는 실제 모델 이름까지 보여준다 */
+const aiName=r=>r.usage?.admin?r.model:(r.provider==='claude'?'Claude':'Gemini');
 function refreshUsage(){
   fetchUsage().then(showUsage).catch(err=>{ console.warn('토큰 사용량 확인 실패', err); const el=$('#token-meter'); el.textContent='남은 토큰을 확인하지 못했어요'; el.className='Label Label--danger'; el.title=friendlyErr(err); });
 }

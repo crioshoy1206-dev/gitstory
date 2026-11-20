@@ -5,6 +5,7 @@ export const maxDuration = 180;
 export async function POST(req: Request) {
   // 헤더는 try 밖에서 읽는다 (Next가 동적 렌더링 전환용으로 던지는 신호를 잡지 않도록)
   const authorization = req.headers.get("authorization");
+  const wantModel = req.headers.get("x-ai-model");
   let mods;
   try {
     const [admin, api, quota, ai] = await Promise.all([
@@ -20,7 +21,8 @@ export async function POST(req: Request) {
   }
   let uid: string | undefined;
   try {
-    uid = await mods.requireUser(authorization);
+    const me = await mods.verifyUser(authorization);
+    uid = me.uid;
     const body = await req.json().catch(() => null);
     if (!body?.event?.description || !body?.world?.groups) {
       return Response.json({ error: "사건 내용과 세계관이 필요합니다" }, { status: 400 });
@@ -29,7 +31,7 @@ export async function POST(req: Request) {
       return Response.json({ error: "세계관이 너무 큽니다" }, { status: 413 });
     }
     const before = await mods.assertQuota(uid, mods.ESTIMATE);
-    const { analysis, tokens, model, provider } = await mods.analyzeEvent(body.event, body.world, before.plan);
+    const { analysis, tokens, model, provider } = await mods.analyzeEvent(body.event, body.world, mods.routeFor(me.admin, wantModel, before.plan));
     const usage = await mods.consume(uid, tokens);
     return Response.json({ analysis, tokens, model, provider, usage });
   } catch (e) {

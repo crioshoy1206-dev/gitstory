@@ -5,6 +5,8 @@ import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 
 // 요금제별 모델: 무료 = Gemini Flash(원가 낮음), 유료 = Claude Sonnet(판단 품질). 형식 "제공사:모델"
 export type Plan = "free" | "pro";
+/** 요금제 대신 모델을 직접 지정할 때 ("제공사:모델"). 관리자만 쓸 수 있다. */
+export type Route = Plan | `${"claude" | "gemini"}:${string}`;
 const PLAN_MODEL: Record<Plan, string> = {
   free: process.env.AI_MODEL_FREE || "gemini:gemini-3.8-flash",
   pro: process.env.AI_MODEL_PRO || "claude:claude-sonnet-5-5",
@@ -164,9 +166,34 @@ async function callGemini(model: string, { system, schema, user, maxTokens }: Pr
   };
 }
 
+/** 관리자가 고를 수 있는 모델. 키가 등록된 제공사만 보여준다. */
+export function adminModels(): { id: string; label: string }[] {
+  const has = { claude: !!process.env.ANTHROPIC_API_KEY?.trim(), gemini: !!process.env.GEMINI_API_KEY?.trim() };
+  const free = PLAN_MODEL.free.startsWith("gemini:") ? PLAN_MODEL.free : "gemini:gemini-3.8-flash";
+  const list = [
+    { id: free, label: `Gemini (${free.split(":")[1]})` },
+    { id: "claude:claude-haiku-5-5", label: "Claude Haiku 5.5" },
+    { id: "claude:claude-sonnet-5-5", label: "Claude Sonnet 5.5" },
+    { id: "claude:claude-opus-5-5", label: "Claude Opus 5.5" },
+  ];
+  return list.filter((m) => has[m.id.split(":")[0] as "claude" | "gemini"]);
+}
+
+/** 관리자가 고른 모델이 목록에 있으면 그 모델로, 아니면 요금제대로 */
+export function routeFor(admin: boolean, requested: string | null, plan: Plan): Route {
+  if (!admin || !requested) return plan;
+  return adminModels().some((m) => m.id === requested) ? (requested as Route) : plan;
+}
+
 /** 요금제에 맞는 모델을 고른다. 그 제공사 키가 없으면 다른 쪽으로 대신한다. */
-function pickModel(plan: Plan): { provider: "claude" | "gemini"; model: string } {
+function pickModel(route: Route): { provider: "claude" | "gemini"; model: string } {
   const has = { claude: !!process.env.ANTHROPIC_API_KEY, gemini: !!process.env.GEMINI_API_KEY };
+  if (route.includes(":")) {
+    const [p, m] = route.split(":") as ["claude" | "gemini", string];
+    if (!has[p]) throw new AiNotConfigured(`${p} 키가 서버에 등록되지 않았습니다`);
+    return { provider: p, model: m };
+  }
+  const plan = route as Plan;
   const [p, m] = PLAN_MODEL[plan].split(":") as ["claude" | "gemini", string];
   if (has[p]) return { provider: p, model: m };
   if (has.gemini) return { provider: "gemini", model: PLAN_MODEL.free.split(":")[1] };
@@ -175,7 +202,7 @@ function pickModel(plan: Plan): { provider: "claude" | "gemini"; model: string }
 }
 
 /** 요금제 모델로 JSON 응답을 받는다. 붐비면 모델을 돌려가며 재시도하고, 거절·형식 오류는 쓴 토큰과 함께 던진다. */
-export async function generate<T>(plan: Plan, prompt: Prompt, label: string): Promise<{ data: T; tokens: number; model: string; provider: "claude" | "gemini" }> {
+export async function generate<T>(plan: Route, prompt: Prompt, label: string): Promise<{ data: T; tokens: number; model: string; provider: "claude" | "gemini" }> {
   const { provider, model } = pickModel(plan);
   const user = prompt.user;
   const t0 = Date.now();
@@ -226,7 +253,7 @@ export async function generate<T>(plan: Plan, prompt: Prompt, label: string): Pr
   }
 }
 
-export async function analyzeEvent(event: EventInput, world: WorldInput, plan: Plan = "free") {
+export async function analyzeEvent(event: EventInput, world: WorldInput, plan: Route = "free") {
   const user = `## 세계관\n${JSON.stringify(world)}\n\n## 사건\n제목: ${event.title}\n작중 시점: ${event.story_time || "(미정)"}\n내용: ${event.description}`;
   type Out = {
     direct: { target: string; M: number; tags: string[]; summary: string }[];

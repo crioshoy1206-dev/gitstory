@@ -3,6 +3,7 @@ export const maxDuration = 180;
 
 export async function POST(req: Request) {
   const authorization = req.headers.get("authorization");
+  const wantModel = req.headers.get("x-ai-model");
   let mods;
   try {
     const [admin, api, quota, ai, ex] = await Promise.all([
@@ -19,7 +20,8 @@ export async function POST(req: Request) {
   }
   let uid: string | undefined;
   try {
-    uid = await mods.requireUser(authorization);
+    const me = await mods.verifyUser(authorization);
+    uid = me.uid;
     const body = await req.json().catch(() => null);
     const text = typeof body?.text === "string" ? body.text.trim() : "";
     if (!text || !body?.world?.groups) {
@@ -32,7 +34,7 @@ export async function POST(req: Request) {
       return Response.json({ error: "세계관이 너무 큽니다" }, { status: 413 });
     }
     const before = await mods.assertQuota(uid, mods.EXTRACT_ESTIMATE);
-    const { result, tokens, model, provider } = await mods.extractManuscript(text, body.world, before.plan);
+    const { result, tokens, model, provider } = await mods.extractManuscript(text, body.world, mods.routeFor(me.admin, wantModel, before.plan));
     const usage = await mods.consume(uid, tokens);
     return Response.json({ result, tokens, model, provider, usage });
   } catch (e) {

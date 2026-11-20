@@ -1,7 +1,7 @@
 // 물어보기: 원고·세계관·기록·메모를 읽고 작가의 질문에 답한다. 답마다 근거(인물·단체·배경, 화, 기록)를 붙인다.
 // 원고와 세계관은 고치지 않는다. 원고 원문은 저장하지 않는다.
 import "server-only";
-import { generate, type Plan } from "@/lib/analyze";
+import { generate, type Route } from "@/lib/analyze";
 
 /** 질문 하나에 보낼 수 있는 자료 크기 (글자) */
 export const ASK_MAX_CHARS = 60000;
@@ -48,7 +48,7 @@ const SYSTEM = `당신은 작가의 원고와 세계관 설정집을 모두 읽�
 - 근거마다 자료의 id를 sources에 넣습니다.
 - 존댓말(해요체)로 짧고 분명하게 씁니다.`;
 
-export async function askWorld(input: AskInput, plan: Plan = "free") {
+export async function askWorld(input: AskInput, plan: Route = "free") {
   const parts = [`## 세계관\n${JSON.stringify(input.world)}`];
   if (input.notes?.length) parts.push(`## 작가 설정 메모\n${JSON.stringify(input.notes)}`);
   if (input.commits?.length) parts.push(`## 기록(사건 순서)\n${JSON.stringify(input.commits)}`);
