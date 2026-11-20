@@ -1,7 +1,7 @@
 // 원고 붙여넣기: 원고 한 화에서 새 인물·단체, 기존 항목의 상황 변화, 새 관계, 사건 후보를 뽑는다.
 // 원고 원문은 저장하지 않는다. 작가가 후보를 고르면 브라우저가 수동 수정으로 담는다.
 import "server-only";
-import { generate, REL_TYPES, type Route, type WorldInput } from "@/lib/analyze";
+import { generate, REL_TYPES, worldText, type Route, type WorldInput } from "@/lib/analyze";
 
 export const MAX_CHARS = 12000;
 /** 원고 읽기 한 번에 필요하다고 보고 미리 확인하는 토큰 양 */
@@ -106,7 +106,7 @@ type Out = {
 const norm = (s: string) => s.replace(/\s+/g, "").toLowerCase();
 
 export async function extractManuscript(text: string, world: WorldInput, plan: Route = "free") {
-  const user = `## 세계관\n${JSON.stringify(world)}\n\n## 원고\n${text}`;
+  const user = `## 세계관\n${worldText(world)}\n\n## 원고\n${text}`;
   const { data: raw, tokens, model, provider } = await generate<Out>(plan, { system: SYSTEM, schema: SCHEMA, user, maxTokens: 6000 }, "extract");
 
   // 검증: 이미 있는 이름(다른 이름 포함)과 겹치는 새 항목은 버리고, id·관계 유형·숫자 범위를 맞춘다

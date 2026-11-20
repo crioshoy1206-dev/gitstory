@@ -20,9 +20,11 @@ export async function POST(req: Request) {
     return Response.json({ error: `서버 라이브러리 로드 실패: ${(e as Error).message?.slice(0, 160)}` }, { status: 500 });
   }
   let uid: string | undefined;
+  let admin = false;
   try {
     const me = await mods.verifyUser(authorization);
     uid = me.uid;
+    admin = me.admin;
     const body = await req.json().catch(() => null);
     if (!body?.event?.description || !body?.world?.groups) {
       return Response.json({ error: "사건 내용과 세계관이 필요합니다" }, { status: 400 });
@@ -30,14 +32,14 @@ export async function POST(req: Request) {
     if (JSON.stringify(body.world).length > 60000) {
       return Response.json({ error: "세계관이 너무 큽니다" }, { status: 413 });
     }
-    const before = await mods.assertQuota(uid, mods.ESTIMATE);
+    const before = await mods.assertQuota(uid, mods.ESTIMATE, me.admin);
     const { analysis, tokens, model, provider } = await mods.analyzeEvent(body.event, body.world, mods.routeFor(me.admin, wantModel, before.plan));
-    const usage = await mods.consume(uid, tokens);
+    const usage = mods.withAdmin(me.admin, await mods.consume(uid, tokens, me.admin));
     return Response.json({ analysis, tokens, model, provider, usage });
   } catch (e) {
     // 거절·파싱 실패여도 AI가 쓴 토큰은 차감한다
     const spent = (e as { tokens?: number }).tokens;
-    if (uid && spent) await mods.consume(uid, spent).catch(console.error);
+    if (uid && spent) await mods.consume(uid, spent, admin).catch(console.error);
     if (e instanceof mods.AiNotConfigured) return Response.json({ error: e.message }, { status: 503 });
     if (e instanceof mods.AiBusy) return Response.json({ error: e.message }, { status: 503 });
     if (e instanceof mods.AiTimeout) return Response.json({ error: e.message }, { status: 504 });

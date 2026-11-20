@@ -32,8 +32,8 @@ export type EventInput = { title: string; description: string; story_time?: stri
 export type WorldInput = {
   title?: string;
   background?: { title: string; content: string }[];
-  groups: { id: string; name: string; parent?: string | null; traits?: { key: string; label: string; value: number }[]; situation?: { current?: string; status?: string } }[];
-  characters: { id: string; name: string; aliases?: string[]; memberships?: { group: string; role?: string; bond?: number }[]; traits?: { key: string; label: string; value: number }[]; situation?: { current?: string; status?: string } }[];
+  groups: { id: string; name: string; parent?: string | null; traits?: { key: string; label: string; value: number; target?: string }[]; situation?: { current?: string; status?: string } }[];
+  characters: { id: string; name: string; aliases?: string[]; memberships?: { group: string; role?: string; bond?: number }[]; traits?: { key: string; label: string; value: number; target?: string }[]; situation?: { current?: string; status?: string } }[];
   relations: { id: string; from: string; to: string; type: string; intensity: number; note?: string }[];
   unscored_traits?: string[];
 };
@@ -117,7 +117,7 @@ function clamp(x: number, lo: number, hi: number) {
 }
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
-type Raw = { text: string; tokens: number; refused: boolean; stop: string; model: string };
+type Raw = { text: string; tokens: number; refused: boolean; stop: string; model: string; detail: string };
 /** AI 호출 한 번에 필요한 것: 지시문, 응답 형식, 사용자 입력, 최대 출력 토큰 */
 export type Prompt = { system: string; schema: object; user: string; maxTokens: number };
 
@@ -135,7 +135,8 @@ async function callClaude(model: string, { system, schema, user, maxTokens }: Pr
   });
   return {
     text: res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(""),
-    tokens: (res.usage.input_tokens ?? 0) + (res.usage.output_tokens ?? 0),
+    tokens: (res.usage.input_tokens ?? 0) + (res.usage.output_tokens ?? 0) + (res.usage.cache_read_input_tokens ?? 0) + (res.usage.cache_creation_input_tokens ?? 0),
+    detail: `in=${res.usage.input_tokens ?? 0} out=${res.usage.output_tokens ?? 0} cacheRead=${res.usage.cache_read_input_tokens ?? 0} cacheWrite=${res.usage.cache_creation_input_tokens ?? 0}`,
     refused: res.stop_reason === "refusal",
     stop: String(res.stop_reason),
     model: res.model,
@@ -160,6 +161,7 @@ async function callGemini(model: string, { system, schema, user, maxTokens }: Pr
   return {
     text: res.text ?? "",
     tokens: res.usageMetadata?.totalTokenCount ?? 0,
+    detail: `in=${res.usageMetadata?.promptTokenCount ?? 0} out=${res.usageMetadata?.candidatesTokenCount ?? 0} think=${res.usageMetadata?.thoughtsTokenCount ?? 0} cacheRead=${res.usageMetadata?.cachedContentTokenCount ?? 0}`,
     refused: !!res.promptFeedback?.blockReason || ["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII"].includes(finish),
     stop: String(res.promptFeedback?.blockReason || finish),
     model: res.modelVersion || model,
@@ -177,6 +179,11 @@ export function adminModels(): { id: string; label: string }[] {
     { id: "claude:claude-opus-5-5", label: "Claude Opus 5.5" },
   ];
   return list.filter((m) => has[m.id.split(":")[0] as "claude" | "gemini"]);
+}
+
+/** 관리자에게는 사용량 응답에 관리자 표시와 고를 수 있는 모델 목록을 붙인다 */
+export function withAdmin<U extends object>(admin: boolean, usage: U): U | (U & { admin: true; models: { id: string; label: string }[] }) {
+  return admin ? { ...usage, admin: true as const, models: adminModels() } : usage;
 }
 
 /** 관리자가 고른 모델이 목록에 있으면 그 모델로, 아니면 요금제대로 */
@@ -243,7 +250,7 @@ export async function generate<T>(plan: Route, prompt: Prompt, label: string): P
     }
   }
   if (!res) throw new AiBusy("AI 서버가 지금 붐벼요. 잠시 후 다시 눌러 주세요");
-  console.log(`${label} ${provider}/${used} ${Date.now() - t0}ms tokens=${res.tokens} chars=${user.length}`);
+  console.log(`${label} ${provider}/${used} ${Date.now() - t0}ms tokens=${res.tokens} ${res.detail} chars=${user.length}`);
   const tokens = res.tokens;
   if (res.refused) throw Object.assign(new AiRefused("AI가 이 요청을 거절했습니다"), { tokens });
   try {
@@ -253,8 +260,31 @@ export async function generate<T>(plan: Route, prompt: Prompt, label: string): P
   }
 }
 
+/** 세계관을 줄 단위 표로 바꾼다. JSON의 따옴표·키 이름이 토큰의 절반 가까이를 차지해서, 같은 내용을 짧게 보낸다. */
+export function worldText(world: WorldInput): string {
+  const one = (t?: string | null) => (t ?? "").replace(/\s+/g, " ").trim();
+  const traits = (ts?: { key: string; label: string; value: number; target?: string }[]) =>
+    (ts ?? []).map((t) => `${one(t.label)}[${t.key}]=${t.value}${t.target ? `→${t.target}` : ""}`).join(", ") || "-";
+  const sit = (x?: { current?: string; status?: string }) => `${one(x?.status) || "-"}: ${one(x?.current) || "-"}`;
+  const lines: string[] = [];
+  if (world.title) lines.push(`제목: ${one(world.title)}`);
+  if (world.background?.length) lines.push("# 배경", ...world.background.map((b) => `- ${one(b.title)}: ${one(b.content)}`));
+  lines.push("# 단체 (id 이름 | 상위 | 상태: 현재 | 성향)");
+  world.groups.forEach((g) => lines.push(`${g.id} ${one(g.name)} | ${g.parent || "-"} | ${sit(g.situation)} | ${traits(g.traits)}`));
+  lines.push("# 인물 (id 이름(별칭) | 소속(역할,유대) | 상태: 현재 | 성향)");
+  world.characters.forEach((c) => {
+    const aka = c.aliases?.filter(Boolean).length ? `(${c.aliases.filter(Boolean).map(one).join("/")})` : "";
+    const ms = (c.memberships ?? []).map((m) => `${m.group}(${[one(m.role), m.bond ?? ""].filter((x) => x !== "").join(",")})`).join(", ") || "-";
+    lines.push(`${c.id} ${one(c.name)}${aka} | ${ms} | ${sit(c.situation)} | ${traits(c.traits)}`);
+  });
+  lines.push("# 관계 (id 출발→도착 종류 강도 메모)");
+  world.relations.forEach((r) => lines.push(`${r.id} ${r.from}→${r.to} ${r.type} ${r.intensity}${r.note ? ` ${one(r.note)}` : ""}`));
+  if (world.unscored_traits?.length) lines.push(`# relevance를 채울 성향 key: ${world.unscored_traits.join(", ")}`);
+  return lines.join("\n");
+}
+
 export async function analyzeEvent(event: EventInput, world: WorldInput, plan: Route = "free") {
-  const user = `## 세계관\n${JSON.stringify(world)}\n\n## 사건\n제목: ${event.title}\n작중 시점: ${event.story_time || "(미정)"}\n내용: ${event.description}`;
+  const user = `## 세계관\n${worldText(world)}\n\n## 사건\n제목: ${event.title}\n작중 시점: ${event.story_time || "(미정)"}\n내용: ${event.description}`;
   type Out = {
     direct: { target: string; M: number; tags: string[]; summary: string }[];
     relevance: { trait: string; tag: string; rel: number }[];

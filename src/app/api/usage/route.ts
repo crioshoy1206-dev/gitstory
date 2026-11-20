@@ -14,7 +14,7 @@ export async function GET(req: Request) {
     const me = await mods.verifyUser(authorization);
     const usage = await mods.getUsage(me.uid);
     // 관리자에게만 고를 수 있는 모델 목록을 준다
-    return Response.json(me.admin ? { ...usage, admin: true, models: mods.adminModels() } : usage);
+    return Response.json(mods.withAdmin(me.admin, usage));
   } catch (e) {
     return mods.errorResponse(e);
   }

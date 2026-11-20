@@ -676,7 +676,7 @@ const SAMPLE_ARCANE = {
 /* AI에 보낼 세계관 요약. 사건에 이름이 나온 단체·인물과 그 주변(소속·구성원·상하위 단체)만 보낸다.
    이름이 하나도 안 나오면 전체를 보낸다. 이력은 빼고 현재 상태만. 전파 계산은 브라우저가 전체 상태로 한다. */
 function worldForAi(text='', s=state){
-  const tr=e=>(e.traits||[]).map(t=>({key:t.key,label:t.label,value:t.value}));
+  const tr=e=>(e.traits||[]).map(t=>({key:t.key,label:t.label,value:t.value,target:t.target}));
   const sit=e=>({current:e.situation?.current, status:e.situation?.status});
   const hit=e=>text.includes(e.name) || (e.aliases||[]).some(a=>a && text.includes(a));
   let gs=s.groups, cs=s.characters;
@@ -2160,8 +2160,8 @@ let lastUsage=null;
 function showUsage(u){
   lastUsage=u;
   const el=$('#token-meter'); const left=Math.max(0,u.limit-u.used)+u.credits;
-  el.textContent=`${u.plan==='pro'?'Pro · ':''}오늘 남은 토큰 ${left.toLocaleString()}`;
-  el.className='Label '+(left>0?'':'Label--danger');
+  el.textContent=u.admin?`관리자 · 오늘 ${u.used.toLocaleString()} 토큰 사용`:`${u.plan==='pro'?'Pro · ':''}오늘 남은 토큰 ${left.toLocaleString()}`;
+  el.className='Label '+(u.admin||left>0?'':'Label--danger');
   el.title=`하루 ${u.limit.toLocaleString()} 중 ${u.used.toLocaleString()} 사용 · 충전 잔액 ${u.credits.toLocaleString()} · 매일 한국 시간 자정 초기화`;
   showModelPicker(u);
 }
