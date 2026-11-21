@@ -1001,7 +1001,7 @@ function drawProp(){
     const id=newSha(); const ps=buildPatches(a,id); const {items:its}=finals(a);
     ps.forEach(p=>applyPatch(state,p));
     addCommit({id, parent:head().id, kind:'event', message:$('#ev-msg').value.trim()||'사건: '+a.title, created_at:new Date().toISOString(),
-      event:{title:a.title, description:a.description, story_time:a.story_time, involved:a.direct.map(d=>d.target), ...(a.aftermath?{aftermath:a.aftermath}:{}), ...(a.reactions?.length?{reactions:a.reactions}:{})},
+      event:{title:a.title, description:a.description, story_time:a.story_time, involved:a.direct.map(d=>d.target), ...(a.picked?{picked_from:a.picked}:{}), ...(a.aftermath?{aftermath:a.aftermath}:{}), ...(a.reactions?.length?{reactions:a.reactions}:{})},
       impacts:its.map(it=>({target:it.target, source:it.source, via:it.via, tags:it.tags, magnitude:Math.round(it.w*100)/100, summary:it.summary||''})), patches:ps});
     if(a.from && msResult) msResult.events=msResult.events.filter(e=>e!==a.from);   // 원고 후보에서 기록한 사건은 뺀다
     if(a.fromCh && chMeta(a.fromCh)) chMeta(a.fromCh).commit=id;   // 원고에서 보낸 사건이면 그 화를 이 기록 시점에 잇는다
@@ -2216,6 +2216,38 @@ function wireRevise(){
       state=keep.state; render(); toast('고치기 전으로 되돌렸어요'); });
   });
 }
+/* ---------- 다른 전개에서 사건 가져오기 (cherry-pick) ----------
+   patch를 그대로 붙이면 지금 전개 상태와 어긋날 수 있어서, 그 사건의 분석 내용(직접 영향·상황 문장·관계 변화·누가 알게 됐나)을
+   지금 상태에 맞게 걸러 사건 입력 탭에 다시 펼친다. 전파는 지금 상태로 다시 계산되고, 작가가 확인한 뒤 기록한다.
+   AI로 처음부터 다시 분석하려면 거기서 'AI 영향 분석'을 누르면 된다. */
+async function pickEvent(id){
+  const c=byId(id); if(!c?.event) return;
+  if(analysis && !(await sure('사건 입력 탭에 아직 기록하지 않은 분석 결과가 있어요. 버리고 이 사건을 가져올까요?', '버리고 가져오기', true))) return;
+  flushPending();
+  const has=x=>!!ent(state,x), lost=new Set();
+  const direct=(c.impacts||[]).filter(x=>x.source==='direct').filter(x=>has(x.target)||(lost.add(x.target),false))
+    .map(x=>({target:x.target, M:x.magnitude, tags:[...(x.tags||[])], summary:x.summary||''}));
+  const rewrite={}, relations=[];
+  c.patches.forEach(p=>{
+    const m=p.path.match(/^\/(groups|characters)\/([^/]+)\/situation\/(current|status)$/);
+    if(m && p.op==='replace'){ if(!has(m[2])) return; const e=ent(state,m[2]); const r=rewrite[m[2]]||(rewrite[m[2]]=[e.situation?.status, e.situation?.current]); r[m[3]==='status'?0:1]=p.after; return; }
+    const rm=p.path.match(/^\/relations\/([^/]+)(\/.*)?$/); if(!rm) return;
+    if(p.op==='replace' && rm[2]){ if(state.relations.some(r=>r.id===rm[1])) relations.push({on:true, op:'replace', path:p.path, after:clone(p.after), why:'다른 전개에서 가져옴'}); return; }
+    if(p.op==='add' && !rm[2] && p.after && has(p.after.from) && has(p.after.to)){
+      const nid=state.relations.some(r=>r.id===rm[1]) ? newId('rel') : rm[1];
+      relations.push({on:true, op:'add', path:`/relations/${nid}`, after:{...clone(p.after), id:nid}, why:p.after.note||'다른 전개에서 가져옴'}); }
+  });
+  const facts=factsOf(state), knows=[];
+  c.patches.filter(p=>/\/knowledge\/-$/.test(p.path)).forEach(p=>{ const f=p.after, who=p.path.split('/')[2]; if(!has(who)) return;
+    if((ent(state,who).knowledge||[]).some(k=>k.id===f.id)) return;
+    let k=knows.find(x=>x.fid===f.id); if(!k){ k={fid:f.id, fact_id:facts.has(f.id)?f.id:'', fact:f.text, secret:!!f.secret, knowers:[], on:true}; knows.push(k); } k.knowers.push({id:who, how:f.how}); });
+  const from=branches.find(b=>lineOf(b.head).some(x=>x.id===id));
+  analysis={title:c.event.title, description:c.event.description, story_time:c.event.story_time||'', aftermath:c.event.aftermath, reactions:(c.event.reactions||[]).filter(r=>has(r.id)),
+    direct, rewrite, relations, knows, picked:id,
+    note:`'${from?.name||'다른 전개'}'의 '${cname(id)}'를 가져왔어요. 지금 전개 상태로 전파를 다시 계산했어요.${lost.size?` 지금 전개에 없는 ${[...lost].map(x=>ghostName(x)).join(', ')}은(는) 뺐어요.`:''} 지금 흐름에 맞게 처음부터 다시 판단하려면 'AI 영향 분석'을 누르세요.`};
+  ui.evDraft={title:c.event.title, description:c.event.description, story_time:c.event.story_time||''}; ui.evFrom=null; ui.evFromCh=null;
+  showTab('event');
+}
 /* ---------- 버전 기록 ---------- */
 const realCount=c=>c.patches.filter(p=>!(p.op==='add' && /\/situation\/history\/-$/.test(p.path) && p.after?.source==='manual')).length;
 function coalesce(from, to){
@@ -2312,6 +2344,7 @@ function renderTree(){
         </div>
         <div class="Box-row" style="flex-wrap:wrap;gap:8px">
           ${(heads[c.id]||[]).filter(b=>b.id!==branchId).map(b=>`<button class="btn btn-sm btn-primary" data-sw="${b.id}">'${esc(b.name)}' 전개로 이동</button>`).join('')}
+          ${!onLine.has(c.id)&&c.kind==='event'&&c.event?`<button class="btn btn-sm btn-primary" id="t-pick">${icon('bolt')}이 사건을 '${esc(curBranch().name)}'로 가져오기</button>`:''}
           <button class="btn btn-sm" id="t-branch">${icon('commit')}여기서 '만약에' 전개 만들기</button>
           <button class="btn btn-sm" id="t-graph">${icon('graph')}이 시점 관계도</button>
         </div></div>
@@ -2329,6 +2362,7 @@ function renderTree(){
     let name=v[0]; if(branches.some(b=>b.name===name)){ let k=2; while(branches.some(b=>b.name===`${name} (${k})`)) k++; name=`${name} (${k})`; toast(`같은 이름이 있어 '${name}'으로 만들었어요`); }
     createBranch(sel, name); render(); };
   $('#t-graph').onclick=()=>{ ui.graphVer = sel===head().id?'work':sel; showTab('graph'); };
+  const tp=$('#t-pick'); if(tp) tp.onclick=()=>pickEvent(sel);
   $$('[data-delb]').forEach(b=>b.onclick=async ()=>{ const br=branches.find(x=>x.id===b.dataset.delb);
     if(!(await sure(`'${br.name}' 전개를 지울까요? 이 전개에만 있는 기록도 함께 지워져요.`, '지우기', true))) return;
     if(!branches.some(x=>x.id===br.id) || br.id===branchId) return;
