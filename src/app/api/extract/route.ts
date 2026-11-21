@@ -1,6 +1,15 @@
 // 원고 붙여넣기 AI 읽기. 로그인 확인 → 남은 토큰 확인 → AI 호출 → 쓴 토큰만큼 차감. 원고는 저장하지 않는다.
 export const maxDuration = 180;
 
+/** 이 화 시점까지의 사건 (개연성 검사용). 최근 10개, 글자 수를 잘라 받는다 */
+function recentOf(x: unknown): { n: number; title: string; story_time?: string; description?: string }[] {
+  if (!Array.isArray(x)) return [];
+  return x.slice(-10).flatMap((e) => {
+    if (!e || typeof e.title !== "string") return [];
+    return [{ n: Number(e.n) || 0, title: e.title.slice(0, 80), story_time: typeof e.story_time === "string" ? e.story_time.slice(0, 40) : undefined, description: typeof e.description === "string" ? e.description.slice(0, 300) : undefined }];
+  });
+}
+
 export async function POST(req: Request) {
   const authorization = req.headers.get("authorization");
   const wantModel = req.headers.get("x-ai-model");
@@ -37,7 +46,7 @@ export async function POST(req: Request) {
       return Response.json({ error: "세계관이 너무 큽니다" }, { status: 413 });
     }
     const before = await mods.assertQuota(uid, mods.EXTRACT_ESTIMATE, me.admin);
-    const { result, tokens, model, provider, detail, ms } = await mods.extractManuscript(text, body.world, mods.routeFor(me.admin, wantModel, before.plan));
+    const { result, tokens, model, provider, detail, ms } = await mods.extractManuscript(text, body.world, mods.routeFor(me.admin, wantModel, before.plan), recentOf(body.recent));
     if (me.admin) await mods.saveRun(uid, { kind: "extract", model, provider, ms, tokens, detail, input: { chars: text.length, head: text.slice(0, 200) }, output: result });
     const usage = mods.withAdmin(me.admin, await mods.consume(uid, tokens, me.admin));
     return Response.json({ result, tokens, model, provider, usage });
