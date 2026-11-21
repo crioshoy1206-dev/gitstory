@@ -780,6 +780,57 @@ function buildPatches(a, cid, s=state){
     patches.push({op:'add', path:`/characters/${c.id}/knowledge/-`, after:{id:k.fid, text:k.fact, how:w.how, ...(k.secret?{secret:true}:{}), since:cid}}); }));
   return patches;
 }
+/* ---------- 다음에 쓸 거리 (갈등·복선 레이더) ----------
+   AI를 부르지 않고 이미 있는 데이터로 계산한다: 지난 사건 분석의 '앞으로 할 행동' 중 아직 이어지지 않은 것,
+   센 대립인데 최근 사건에 같이 안 나온 쌍, 회수 안 한 복선 메모, 원고에 오래 안 나온 인물.
+   누르면 사건 제목만 채운다 (내용은 작가가 쓴다). */
+const INACTIVE_RE=/사망|전사|처형|소멸|봉인|활동\s*불가|행동\s*불가|혼수|의식\s*불명|석화/;
+const cut=(t,n)=>{ t=String(t||'').replace(/\s+/g,' ').trim(); return t.length>n?t.slice(0,n-1)+'…':t; };
+function nextIdeas(){
+  const alive=c=>c && !INACTIVE_RE.test(c.situation?.status||'');
+  const evs=commits.filter(c=>c.kind==='event' && c.event);
+  const inv=c=>new Set([...(c.event.involved||[]), ...(c.event.reactions||[]).filter(r=>r.involvement==='연루').map(r=>r.id)]);
+  // 1) 못 다 한 행동: 인물마다 가장 최근 반응의 '앞으로', 그 뒤 사건에 연루되지 않았을 때만
+  const acts=[], seen=new Set();
+  evs.slice(-10).reverse().forEach(c=>{ const i=evs.indexOf(c), later=evs.slice(i+1);
+    (c.event.reactions||[]).forEach(r=>{ if(seen.has(r.id) || !r.action) return; seen.add(r.id);
+      const e=ent(state,r.id); if(!e || (r.id.startsWith('chr_') && !alive(e))) return;
+      if(later.some(x=>inv(x).has(r.id))) return;
+      acts.push({kind:'act', id:r.id, label:`${nm(state,r.id)}의 다음 행동`, detail:r.action, from:c.id, title:`${nm(state,r.id)}: ${cut(r.action.split(/[.。]/)[0], 40)}`}); }); });
+  // 2) 터지지 않은 갈등: 대립·경쟁 세기 '강함' 이상인데 최근 사건 5개에 둘이 같이 안 나온 쌍
+  const recent=evs.slice(-5).map(inv);
+  const fights=state.relations.filter(r=>(r.type==='hostile'||r.type==='rival') && r.intensity>=0.75)
+    .filter(r=>{ const a=ent(state,r.from), b=ent(state,r.to); return a && b && (!r.from.startsWith('chr_')||alive(a)) && (!r.to.startsWith('chr_')||alive(b)); })
+    .filter(r=>!recent.some(set=>set.has(r.from) && set.has(r.to)))
+    .sort((x,y)=>y.intensity-x.intensity)
+    .map(r=>({kind:'fight', id:r.from, id2:r.to, label:`${nm(state,r.from)} ↔ ${nm(state,r.to)}`, detail:`${REL[r.type].l} · ${lvOf(r.intensity)}${r.note?' · '+r.note:''}${recent.length?' · 최근 사건에 둘이 같이 안 나왔어요':''}`, title:`${jo(nm(state,r.from),'와','과')} ${nm(state,r.to)}의 충돌`}));
+  // 3) 회수 안 한 복선: 오래된 순
+  const memos=openMemos(null).sort((a,b)=>(a.m.at||0)-(b.m.at||0))
+    .map(({c,m})=>({kind:'memo', ch:c.id, label:cut(m.text,60), detail:`${c.title}에 남긴 복선${m.at?` · ${when(m.at)}`:''}`, title:`복선 회수: ${cut(m.text,34)}`}));
+  // 4) 오래 안 나온 인물: 원고에 나온 적 있는데 최근 3화 넘게 안 나옴
+  let absent=[];
+  if(CHAPTERS.length>=4){ const map=appearMap(), n=CHAPTERS.length;
+    absent=state.characters.filter(alive).map(c=>{ const arr=map[c.id]||[]; let last=-1; arr.forEach((v,i)=>{ if(v) last=i; }); return {c, last, gap:n-1-last}; })
+      .filter(x=>x.last>-1 && x.gap>=3).sort((a,b)=>b.gap-a.gap)
+      .map(({c,last,gap})=>({kind:'absent', id:c.id, label:c.name, detail:`${CHAPTERS[last].title} 이후 ${gap}화째 안 나왔어요`, title:`${c.name}의 재등장`})); }
+  return {acts:acts.slice(0,4), fights:fights.slice(0,4), memos:memos.slice(0,4), absent:absent.slice(0,4)};
+}
+function ideasHtml(){
+  const g=nextIdeas(), total=g.acts.length+g.fights.length+g.memos.length+g.absent.length;
+  const sec=(k,title,items)=>items.length?`<div class="idea-h">${title}</div>${items.map((x,i)=>`<button type="button" class="idea" data-idea="${k}|${i}"><b>${esc(x.label)}</b><span class="caption">${esc(x.detail)}</span></button>`).join('')}`:'';
+  return `<div class="Box ideas"><div class="Box-header"><h3>다음에 쓸 거리</h3>${total?`<span class="Counter">${total}</span>`:''}<span class="code-badge right">${icon('calc')}앱 계산</span></div>
+    ${total?`<div class="Box-body stack" style="gap:6px">
+      ${sec('acts','못 다 한 행동',g.acts)}${sec('fights','터지지 않은 갈등',g.fights)}${sec('memos','회수 안 한 복선',g.memos)}${sec('absent','오래 안 나온 인물',g.absent)}
+      <div class="caption">누르면 사건 제목만 채워요. 내용은 직접 써 주세요.</div></div>`
+    :`<div class="Box-body caption">사건을 분석해 기록하거나, 원고에 복선 메모를 남기면 여기에 다음 화 거리가 모여요.</div>`}</div>`;
+}
+function wireIdeas(){
+  const g=nextIdeas();
+  $$('[data-idea]').forEach(b=>b.onclick=async ()=>{ const [k,i]=b.dataset.idea.split('|'), x=g[k]?.[+i]; if(!x) return;
+    if(analysis && !(await sure('아직 기록하지 않은 분석 결과가 있어요. 버리고 새 사건을 쓸까요?', '버리고 쓰기', true))) return;
+    analysis=null; ui.evFrom=null; ui.evFromCh=null; ui.evDraft={title:x.title.slice(0,60), description:'', story_time:ui.evDraft?.story_time||''};
+    renderEvent(); const t=$('#ev-text'); if(t){ t.focus(); t.scrollIntoView({behavior:'smooth', block:'center'}); } toast('제목을 채웠어요. 무슨 일이 일어나는지 적어 주세요'); });
+}
 function evPosition(){
   const recent=commits.slice(-3), skip=commits.length-recent.length;
   return `<div class="Box"><div class="Box-header"><h3>이 사건이 들어갈 자리</h3>${branches.length>1?`<span class="Label">${esc(curBranch().name)}</span>`:''}</div>
@@ -804,6 +855,7 @@ function renderEvent(){
       <div id="ev-result" class="stack"></div>
     </div>
     <aside class="stack">
+      ${ideasHtml()}
       <div class="Box"><div class="Box-header"><h3>영향은 이렇게 퍼져요</h3></div>
         <div class="Box-body stack" style="gap:10px">
           <p style="margin:0">사건은 먼저 단체에 영향을 주고, 소속을 따라 하위 단체와 구성원에게 퍼져요. 소속감이 클수록, 그 영향에 민감한 성격일수록 더 크게 받아요.</p>
@@ -864,6 +916,7 @@ function renderEvent(){
     if(innerWidth<900) $('#ev-result')?.scrollIntoView({behavior:'smooth', block:'start'});
   };
   if(analysis && !evBusy) drawAnalysis();
+  wireIdeas();
   wirePending();
 }
 let evBusy=false, evSeq=0;
@@ -1761,6 +1814,7 @@ function renderWorld(){
   const dc=$('#detail-close'); if(dc) dc.onclick=()=>{ ui.sel=null; ui.editing=null; render('world'); };
   const oe=$('#ov-event'); if(oe) oe.onclick=()=>showTab('event');
   const oh=$('#ov-hist'); if(oh) oh.onclick=()=>showTab('history');
+  const oi=$('#ov-ideas'); if(oi) oi.onclick=()=>{ showTab('event'); requestAnimationFrame(()=>$('.ideas')?.scrollIntoView({behavior:'smooth', block:'start'})); };
   const gn=$('#g-now'); if(gn) gn.onclick=()=>{ ui.graphVer='work'; render('world'); };
   if(pe && editable && (!PH || SHEET==='full')) wireDetail(pe);
   if(PH) wirePhone(pe, pos);
@@ -1977,6 +2031,9 @@ function overview(s){
     <div class="Box"><div class="Box-header"><h3>${line===commits?'최근 사건':'이 시점까지의 사건'}</h3><span class="Counter">${line.length}</span></div>
       ${recent.map(c=>`<div class="Box-row" style="align-items:flex-start"><span class="ov-n">${cnum(c.id).replace('. ','')}</span><div style="min-width:0"><div>${esc(cname(c.id))}</div>${c.event?.story_time?`<div class="caption">${esc(c.event.story_time)}</div>`:''}</div></div>`).join('')}
       <div class="Box-row"><button class="btn btn-sm" id="ov-event">${icon('bolt')}새 사건 입력</button><button class="btn btn-sm" id="ov-hist">버전 기록 보기</button></div></div>
+    ${(()=>{ if(line!==commits) return ''; const g=nextIdeas(), n=g.acts.length+g.fights.length+g.memos.length+g.absent.length; if(!n) return '';
+      const top=[...g.fights, ...g.acts, ...g.memos, ...g.absent].slice(0,2);
+      return `<div class="Box"><div class="Box-header"><h3>다음에 쓸 거리</h3><span class="Counter">${n}</span></div>${top.map(x=>`<div class="Box-row" style="flex-direction:column;align-items:flex-start;gap:2px"><b>${esc(x.label)}</b><span class="caption">${esc(x.detail)}</span></div>`).join('')}<div class="Box-row"><button class="btn btn-sm" id="ov-ideas">모두 보기</button></div></div>`; })()}
   </aside>`;
 }
 /* 지난 시점을 보고 있을 때의 상세 (보기 전용) */
