@@ -745,15 +745,15 @@ function guessAnalysis(title, text){
   const pos=tags.every(t=>t==='기회'||t==='이익');
   return {title, description:text, story_time:'', direct:found.slice(0,5).map(e=>({target:e.id, M:pos?0.5:-0.5, tags:[...tags], summary:`${title}의 영향을 받음`})), rewrite:{}, relations:[]};
 }
-function finals(a){
-  const rows=propagate(state, a.direct);
+function finals(a, s=state){
+  const rows=propagate(s, a.direct);
   const items=[];
   a.direct.forEach(d=>items.push({target:d.target, w:d.M, source:'direct', tags:d.tags, summary:d.summary}));
   rows.filter(r=>r.rep).forEach(r=>items.push({target:r.target, w:r.w, source:'propagated', via:r.via, tags:r.tags, summary:''}));
   return {rows, items};
 }
 function buildPatches(a, cid, s=state){
-  const {items}=finals(a); const patches=[]; const maxW={};
+  const {items}=finals(a, s); const patches=[]; const maxW={};
   const hit=new Set(items.filter(it=>it.source==='direct').map(it=>it.target));
   items.forEach(it=>{
     if(Math.abs(it.w)<0.25) return;
@@ -2111,6 +2111,111 @@ function memberOf(s,a,b){
   return (ea?.memberships||[]).some(m=>m.group===b) || (eb?.memberships||[]).some(m=>m.group===a) || ea?.parent===b || eb?.parent===a;
 }
 
+/* ---------- 사건 고치기 → 이후 기록 다시 계산 (rebase) ----------
+   지난 사건의 직접 영향(크기·태그)이나 관계 변화를 고치면, 그 사건 직전 상태에서 전파를 다시 계산해 그 기록을 바꾸고
+   이후 기록을 차례로 다시 얹는다. AI는 부르지 않는다. 이후 기록이 고친 내용과 어긋나는 곳(덮어쓰기, 적용할 수 없는 변경,
+   영향이 크게 바뀐 대상을 다룬 사건)은 기록별로 보여 주고, 작가가 확인한 뒤 적용한다. 적용 뒤에도 알림에서 되돌릴 수 있다. */
+function rawBefore(i){ const st=clone(state); for(let k=commits.length-1;k>=i;k--) commits[k].patches.slice().reverse().forEach(p=>applyPatch(st,p,true)); return st; }
+function reviseBlocked(id){
+  if(pending.length) flushPending();
+  const other=branches.find(b=>b.id!==branchId && lineOf(b.head).some(c=>c.id===id));
+  return other ? `'${other.name}' 전개가 이 기록 뒤에서 갈라져 있어 고칠 수 없어요. 그 전개를 지우거나, 여기서 '만약에' 전개를 새로 만들어 다시 분석해 주세요.` : '';
+}
+function reviseOpen(id){
+  const c=byId(id); const why=reviseBlocked(id); if(why){ toast(why); return; }
+  // 기록에서 분석 내용을 되살린다: 직접 영향은 impacts, 상황 문장은 patches의 situation 교체, 관계 변화는 relations patch
+  const direct=(c.impacts||[]).filter(x=>x.source==='direct').map(x=>({target:x.target, M:x.magnitude, tags:[...(x.tags||[])], summary:x.summary||''}));
+  const rewrite={}, relations=[];
+  c.patches.forEach(p=>{ const m=p.path.match(/^\/(groups|characters)\/([^/]+)\/situation\/(current|status)$/);
+    if(m && p.op==='replace'){ const r=rewrite[m[2]]||(rewrite[m[2]]=[undefined,undefined]); r[m[3]==='status'?0:1]=p.after; return; }
+    if(p.path.startsWith('/relations/') && (p.op==='add'||p.op==='replace')) relations.push({on:true, op:p.op, path:p.path, after:clone(p.after), why:''}); });
+  // 상황 태그만 바뀌었거나 문장만 바뀐 경우, 빈 쪽은 그 사건 직전 값으로 채운다
+  const i=commits.findIndex(x=>x.id===id), before=rawBefore(i);
+  Object.entries(rewrite).forEach(([k,r])=>{ const e=ent(before,k); if(r[0]===undefined) r[0]=e?.situation?.status; if(r[1]===undefined) r[1]=e?.situation?.current; });
+  const knows=c.patches.filter(p=>/\/knowledge\/-$/.test(p.path)).reduce((acc,p)=>{ const f=p.after; let k=acc.find(x=>x.fid===f.id); if(!k){ k={fid:f.id, fact:f.text, secret:!!f.secret, knowers:[], on:true}; acc.push(k); } k.knowers.push({id:p.path.split('/')[2], how:f.how}); return acc; }, []);
+  ui.revise={id, a:{title:c.event.title, description:c.event.description, story_time:c.event.story_time, direct, rewrite, relations, knows}};
+  ui.open[id]=true; renderHistory();
+}
+function reviseCompute(){
+  const R=ui.revise, i=commits.findIndex(x=>x.id===R.id), c=commits[i];
+  const S=rawBefore(i);
+  const live=R.a.direct.filter(d=>ent(S,d.target));
+  const a={...R.a, direct:live, knows:R.a.knows};
+  const newP=buildPatches(a, c.id, S), {items}=finals(a, S);
+  const impacts=items.map(it=>({target:it.target, source:it.source, via:it.via, tags:it.tags, magnitude:Math.round(it.w*100)/100, summary:it.summary||''}));
+  newP.forEach(p=>applyPatch(S,p));
+  // 이 기록의 영향 변화: 대상마다 가장 큰 값
+  const peak=list=>{ const m={}; list.forEach(x=>{ if(!m[x.target]||Math.abs(x.magnitude)>Math.abs(m[x.target])) m[x.target]=x.magnitude; }); return m; };
+  const was=peak(c.impacts||[]), now=peak(impacts);
+  const changed=[...new Set([...Object.keys(was), ...Object.keys(now)])].map(t=>({t, a:was[t]??0, b:now[t]??0}))
+    .filter(x=>Math.abs(x.a-x.b)>=0.05).sort((x,y)=>Math.abs(y.b-y.a)-Math.abs(x.b-x.a));
+  const moved=new Set(changed.filter(x=>level(x.a)[0]!==level(x.b)[0] || Math.sign(x.a)!==Math.sign(x.b)).map(x=>x.t));
+  // 이후 기록을 차례로 다시 얹는다
+  const later=[], flags=[];
+  commits.slice(i+1).forEach(k=>{ const ps=[], f=[];
+    k.patches.forEach(p=>{
+      const cur=getv(S,p.path), w=walk(S,p.path);
+      if(p.op==='replace'){
+        if(!w || (w.obj===undefined && !(w.arr && w.idx>-1))){ f.push(['drop', p]); return; }
+        if(JSON.stringify(cur)!==JSON.stringify(p.before)) f.push(['over', p, cur]);
+        ps.push({...p, before:clone(cur)});
+      } else if(p.op==='add'){
+        if(!w){ f.push(['drop', p]); return; }
+        ps.push(p);
+      } else {
+        if(cur===undefined){ f.push(['drop', p]); return; }
+        ps.push({...p, before:clone(cur)});
+      }
+    });
+    ps.forEach(p=>applyPatch(S,p));
+    const touch=k.kind==='event' ? [...new Set([...(k.event?.involved||[]), ...(k.event?.reactions||[]).map(r=>r.id)])].filter(t=>moved.has(t)) : [];
+    if(f.length || touch.length) flags.push({k, f, touch});
+    later.push({k, ps});
+  });
+  return {i, c, newP, impacts, changed, later, flags, S, involved:live.map(d=>d.target)};
+}
+function reviseHtml(c){
+  const R=ui.revise, a=R.a; let r; try{ r=reviseCompute(); }catch(err){ console.warn(err); return `<div class="flash flash-warn">${icon('alert')}<div>다시 계산하지 못했어요. 이 기록은 고칠 수 없어요.</div></div>`; }
+  const s=r.S, B=rawBefore(r.i);
+  const why=(f)=>f.map(([t,p,cur])=>{ const what=describePath(s,p.path);
+    return t==='over' ? `<li><b>${esc(what)}</b>: 고친 뒤 값(${esc(fmtV(p.path,cur))})을 이 기록이 ${esc(fmtV(p.path,p.after))}로 덮어써요</li>` : `<li><b>${esc(what)}</b>: 대상이 없어져 이 변경은 빠져요</li>`; }).join('');
+  return `<div class="Box rev-box"><div class="Box-header"><h3>사건 고치기</h3><span class="code-badge">${icon('calc')}앱 계산 · AI 안 씀</span><span class="caption right">직접 영향과 관계 변화를 고치면 전파와 이후 기록을 다시 계산해요</span></div>
+    ${a.direct.map((d,j)=>`<div class="direct-row">
+      <div><b>${esc(nm(s,d.target))}</b></div>
+      <div class="mrow"><input type="range" min="-1" max="1" step="0.05" value="${d.M}" data-rvm="${j}" aria-label="${esc(nm(s,d.target))} 영향 크기"><span class="num" style="width:44px;text-align:right">${sf2(d.M)}</span></div>
+      <button class="btn btn-sm btn-danger" data-rvdel="${j}" aria-label="빼기" style="padding:2px 6px">×</button>
+      <div class="chips full">${TAGS.map(t=>`<button type="button" class="chip" data-rvtag="${j}|${t}" aria-pressed="${d.tags.includes(t)}">${t}</button>`).join('')}</div></div>`).join('')}
+    ${a.relations.length?`<div class="Box-row caption">관계 변화</div>${a.relations.map((x,j)=>`<label class="Box-row" style="cursor:pointer;align-items:flex-start"><input type="checkbox" data-rvrel="${j}" ${x.on?'checked':''} style="margin-top:4px"><div style="flex:1;min-width:0">${patchLines(s,{...x, before:getv(B,x.path)}).map(([k,l])=>`<span class="diffline ${k}">${esc(l)}</span>`).join('')}</div></label>`).join('')}`:''}
+    ${a.knows?.length?`<div class="Box-row caption">누가 알게 됐나</div>${a.knows.map((k,j)=>`<label class="Box-row" style="cursor:pointer"><input type="checkbox" data-rvknow="${j}" ${k.on?'checked':''}><span>${esc(k.fact)} <span class="caption">(${k.knowers.map(w=>esc(nm(s,w.id))).join(', ')})</span></span></label>`).join('')}`:''}
+    <div class="Box-body stack" style="gap:8px;background:var(--bg-subtle)">
+      <div><b>이 기록의 영향 변화</b> ${r.changed.length?'':'<span class="caption">바뀌는 영향이 없어요</span>'}</div>
+      ${r.changed.slice(0,8).map(x=>`<div class="rev-chg"><span>${esc(nm(s,x.t))}</span><span class="num ${x.a<0?'neg':'pos'}">${sf2(x.a)}</span>→<span class="num ${x.b<0?'neg':'pos'}"><b>${sf2(x.b)}</b></span><span class="caption">${level(x.a)[0]} → ${level(x.b)[0]}</span></div>`).join('')}
+      <div><b>이후 기록 ${r.later.length}개</b> ${r.flags.length?`<span class="Label Label--attention">확인 필요 ${r.flags.length}</span>`:`<span class="caption">${r.later.length?'모두 그대로 이어져요':'이 기록이 마지막이에요'}</span>`}</div>
+      ${r.flags.map(({k,f,touch})=>`<div class="rev-flag"><div><b>${esc(cnum(k.id)+cname(k.id))}</b></div><ul>${why(f)}${touch.length?`<li>영향이 크게 바뀐 ${touch.map(t=>esc(nm(s,t))).join(', ')}${touch.length>1?'을(를)':jo(nm(s,touch[0]),'를','을').slice(nm(s,touch[0]).length)} 다룬 사건이에요. 이어지는지 확인해 주세요</li>`:''}</ul></div>`).join('')}
+    </div>
+    <div class="Box-row" style="flex-wrap:wrap;gap:8px"><span class="caption" style="flex:1 1 220px">적용하면 이 기록과 이후 기록이 바뀌어요. 적용 뒤 알림에서 되돌릴 수 있어요.</span><button class="btn btn-sm" data-rvcancel>취소</button><button class="btn btn-sm btn-primary" data-rvapply ${a.direct.length?'':'disabled'}>고치고 다시 계산</button></div></div>`;
+}
+function wireRevise(){
+  const R=ui.revise; if(!R) return; const a=R.a, redraw=()=>renderHistory();
+  $$('[data-rvm]').forEach(x=>{ x.oninput=()=>{ x.nextElementSibling.textContent=sf2(+x.value); }; x.onchange=()=>{ a.direct[+x.dataset.rvm].M=+x.value; redraw(); }; });
+  $$('[data-rvtag]').forEach(b=>b.onclick=()=>{ const [j,t]=b.dataset.rvtag.split('|'), tg=a.direct[+j].tags, k=tg.indexOf(t); k>-1?tg.splice(k,1):tg.push(t); redraw(); });
+  $$('[data-rvdel]').forEach(b=>b.onclick=()=>{ a.direct.splice(+b.dataset.rvdel,1); redraw(); });
+  $$('[data-rvrel]').forEach(x=>x.onchange=()=>{ a.relations[+x.dataset.rvrel].on=x.checked; redraw(); });
+  $$('[data-rvknow]').forEach(x=>x.onchange=()=>{ a.knows[+x.dataset.rvknow].on=x.checked; redraw(); });
+  $$('[data-rvcancel]').forEach(b=>b.onclick=()=>{ ui.revise=null; redraw(); });
+  $$('[data-rvapply]').forEach(b=>b.onclick=()=>{
+    const why=reviseBlocked(R.id); if(why){ toast(why); return; }
+    const r=reviseCompute(), keep={state:clone(state), commits:commits.slice(r.i).map(k=>({k, patches:k.patches, impacts:k.impacts, involved:k.event?.involved, revised:k.revised}))};
+    r.c.patches=r.newP; r.c.impacts=r.impacts; if(r.c.event) r.c.event.involved=r.involved;
+    r.c.revised=[...(r.c.revised||[]), {at:new Date().toISOString(), flags:r.flags.length}];
+    r.later.forEach(({k,ps})=>{ k.patches=ps; });
+    state=r.S; ui.revise=null; analysis=null; ui.graphVer='work';
+    render();
+    toastUndo(`'${cname(r.c.id)}'를 고치고 이후 기록 ${r.later.length}개를 다시 계산했어요`, ()=>{
+      keep.commits.forEach(x=>{ x.k.patches=x.patches; x.k.impacts=x.impacts; if(x.k.event) x.k.event.involved=x.involved; x.k.revised=x.revised; if(!x.revised) delete x.k.revised; });
+      state=keep.state; render(); toast('고치기 전으로 되돌렸어요'); });
+  });
+}
 /* ---------- 버전 기록 ---------- */
 const realCount=c=>c.patches.filter(p=>!(p.op==='add' && /\/situation\/history\/-$/.test(p.path) && p.after?.source==='manual')).length;
 function coalesce(from, to){
@@ -2255,8 +2360,11 @@ function renderHistory(){
             <label><input type="radio" name="cmpA" value="${c.id}" ${ui.cmpA===c.id?'checked':''}>A</label>
             <label><input type="radio" name="cmpB" value="${c.id}" ${ui.cmpB===c.id?'checked':''}>B</label>
           </div>
+          ${c.kind==='event'&&c.impacts?.some(x=>x.source==='direct')?`<button class="btn btn-sm" data-rev="${c.id}" aria-pressed="${ui.revise?.id===c.id}">사건 고치기</button>`:''}
           ${i<n-1?`<button class="btn btn-sm btn-danger" data-rb="${c.id}">이 시점으로 되돌리기</button>`:''}
         </div>
+        ${c.revised?.length?`<div class="caption" style="margin-top:4px"><span class="Label Label--accent">고침</span> ${fmtDate(c.revised.at(-1).at)}에 고쳐서 이후 기록을 다시 계산했어요</div>`:''}
+        ${ui.revise?.id===c.id?reviseHtml(c,i):''}
         ${c.event?`<div style="margin-top:8px;padding:8px 12px;background:var(--bg-subtle);border-radius:6px"><div>${esc(c.event.description)}</div>
           <div class="caption" style="margin-top:4px">${c.event.story_time?`작중 시점: ${esc(c.event.story_time)} · `:''}관련: ${(c.event.involved||[]).map(id=>esc(nm(state,id))).join(', ')}</div></div>`:''}
         ${(c.impacts?.length||c.patches.length)?`<button class="btn-link" data-open="${c.id}" style="margin-top:8px;font-size:12px">${open?'접기':'영향과 변경 보기'}</button>`:''}
@@ -2278,6 +2386,8 @@ function renderHistory(){
   $$('input[name=cmpB]').forEach(r=>r.onchange=()=>{ ui.cmpB=r.value; renderHistory(); });
   $$('[data-open]').forEach(b=>b.onclick=()=>{ const id=b.dataset.open; const i=commits.findIndex(c=>c.id===id); ui.open[id]=!(ui.open[id] ?? (i===n-1)); renderHistory(); });
   $$('[data-rb]').forEach(b=>b.onclick=()=>{ ui.confirm=b.dataset.rb; renderHistory(); });
+  $$('[data-rev]').forEach(b=>b.onclick=()=>{ const id=b.dataset.rev; if(ui.revise?.id===id){ ui.revise=null; renderHistory(); return; } reviseOpen(id); });
+  wireRevise();
   const cancelRb=()=>{ const id=ui.confirm; ui.confirm=null; renderHistory(); $(`[data-rb="${id}"]`)?.focus(); };
   $$('[data-cancel]').forEach(b=>b.onclick=cancelRb);
   const cf=$('.confirm'); if(cf){ cf.querySelector('[data-cancel]')?.focus(); cf.onkeydown=ev=>{ if(ev.key==='Escape'){ ev.stopPropagation(); cancelRb(); } }; }
