@@ -1105,11 +1105,12 @@ async function removeChapter(id){
   toastUndo(`${jq(meta.title,'를','을')} 지웠어요`, ()=>{ CHAPTERS.splice(i,0,meta); chBody[id]=body; ui.ch=id; saveChapter(id, true); renderManuscript(); toast(`${jq(meta.title,'를','을')} 되살렸어요`); });
 }
 function chListHtml(){
-  const list=CHAPTERS.map(c=>`<button type="button" class="ch-item" data-ch="${c.id}" ${c.id===ui.ch?'aria-current="true"':''}><b>${esc(c.title||'제목 없음')}</b><span class="caption">${(c.chars||0).toLocaleString()}자 · ${when(c.updatedAt)}${c.readAt?' · AI로 읽음':''}</span></button>`).join('');
-  return `<div class="Box-header"><h3>화 목록</h3><span class="Counter">${CHAPTERS.length}</span><button class="btn btn-sm right" id="ch-new" type="button">+ 새 화</button></div>
+  const list=CHAPTERS.map(c=>`<button type="button" class="ch-item" data-ch="${c.id}" ${c.id===ui.ch?'aria-current="true"':''}><b>${esc(c.title||'제목 없음')}</b><span class="caption">${(c.chars||0).toLocaleString()}자 · ${when(c.updatedAt)}${c.readAt?' · AI로 읽음':''}${c.review?' · 검토 대기':''}</span></button>`).join('');
+  return `<div class="Box-header"><h3>화 목록</h3><span class="Counter">${CHAPTERS.length}</span><button class="btn btn-sm right" id="ch-new" type="button">+ 새 화</button><button class="btn btn-sm" id="ch-bulk" type="button" title="이미 쓴 연재분을 한꺼번에 가져와요">한꺼번에 가져오기</button></div>
       ${CHAPTERS.length?`<div class="ch-items">${list}</div>`:`<div class="Box-body caption">아직 저장한 원고가 없어요. 오른쪽에 바로 쓰거나 붙여넣으면 1화로 저장돼요.</div>`}`;
 }
 function wireChList(){
+  const bk=$('#ch-bulk'); if(bk) bk.onclick=()=>bulkOpen();
   $('#ch-new').onclick=()=>{
     if(Date.now()-(wireChList.t||0)<600) return; wireChList.t=Date.now();   // 연타로 빈 화가 여러 개 생기지 않게
     if(ui.ch===ui.chDraft && !chBody[ui.ch]?.text){ $('#ms-text').focus(); return; }
@@ -1127,6 +1128,7 @@ function renderManuscript(){
   const id=ui.ch, b=chMeta(id)?loadChapter(id):chBody[id], m=chMeta(id), real=!!m;
   const vers=b?.versions||[];
   $('#tab-manuscript').innerHTML = pendingBanner() + `<div class="Subhead"><h2>원고</h2><span class="muted">화마다 원고를 쓰고 저장해요. AI가 읽고 세계관에 반영할 후보를 골라줘요</span></div>
+  <div id="bulk">${bulkHtml()}</div>
   <div class="split ms-split">
     <aside class="Box ch-list">${chListHtml()}</aside>
     <div class="ms-work">
@@ -1179,6 +1181,7 @@ function renderManuscript(){
   tt.oninput=()=>{ if(ui.ch===ui.chDraft && !tt.value.trim()) return; const cb=ensure(); cb.title=tt.value.trim()||nextChTitle(); touched(); saveChapter(ui.ch); refreshList(); };
   cnt();
   wireChList();
+  wireBulk();
   wireMsAside(ta, ensure);
   wireFind(ta, pre=>{ if(pre){ ensure(); snapChapter(ui.ch, true); return; } ta.oninput(); });
   $('#ms-find').onclick=()=>{ ui.find=!ui.find; if(ui.find){ const bar=document.createElement('div'); bar.innerHTML=findBar(); ta.closest('.form-group').before(bar.firstElementChild); wireFind(ta, pre=>{ if(pre){ ensure(); snapChapter(ui.ch, true); return; } ta.oninput(); }); const sel=ta.value.slice(ta.selectionStart, ta.selectionEnd); if(sel && sel.length<60 && !sel.includes('\n')){ $('#find-q').value=sel; ui.findQ=sel; $('#find-q').oninput(); } $('#find-q').focus(); } else $('#find-close')?.click(); $('#ms-find').setAttribute('aria-pressed', !!ui.find); };
@@ -1232,7 +1235,12 @@ function renderManuscript(){
     renderManuscript();
   };
   if(msBusy && msBusy.cid===ui.ch && msBusy.wk===worldKey){ $('#ms-run').disabled=true; $('#ms-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 원고를 읽고 있어요</span></div></div>`; }
-  else if(msResult && msResult.cid===ui.ch) drawMs();
+  else {
+    // 한꺼번에 가져오기에서 남긴 '검토 대기'(사건 후보·확인 필요)를 이 화를 열 때 펼친다
+    const rv=chMeta(ui.ch)?.review;
+    if((!msResult || (msResult.review && msResult.cid!==ui.ch)) && rv) msResult={cid:ui.ch, review:true, characters:[], groups:[], updates:[], relations:[], events:rv.events||[], conflicts:rv.conflicts||[], base:rv.base};
+    if(msResult && msResult.cid===ui.ch) drawMs();
+  }
   wirePending();
 }
 /* 원고 옆 패널: 카드 열기, 복선 메모 추가·체크·지우기 (편집기는 다시 그리지 않는다) */
@@ -1255,11 +1263,13 @@ function wireMsAside(ta, ensure){
 function refreshList(){
   CHAPTERS.forEach(c=>{ const el=document.querySelector(`[data-ch="${c.id}"]`); if(!el) return;
     el.querySelector('b').textContent=c.title||'제목 없음';
-    el.querySelector('.caption').textContent=`${(c.chars||0).toLocaleString()}자 · ${when(c.updatedAt)}${c.readAt?' · AI로 읽음':''}`; });
+    el.querySelector('.caption').textContent=`${(c.chars||0).toLocaleString()}자 · ${when(c.updatedAt)}${c.readAt?' · AI로 읽음':''}${c.review?' · 검토 대기':''}`; });
   const s=$('#ch-saved'); 
 }
 function drawMs(){
   const r=msResult, box=$('#ms-result'); if(!box||!r||r.cid!==ui.ch) return;
+  if(r.review){ const cm=chMeta(r.cid); if(cm){ const left=(r.events?.length||0)+(r.conflicts?.length||0);
+    if(left) cm.review={events:r.events, conflicts:r.conflicts, base:r.base}; else delete cm.review; saveWorld(); refreshList(); } }
   if(r.note){ box.innerHTML=`<div class="flash flash-warn" role="alert">${icon('alert')}<div>${esc(r.note)}</div></div>`; return; }
   const who=x=>ent(state,x)?nm(state,x):x;
   const row=(k,i,x,body)=>`<label class="Box-row" style="cursor:pointer;align-items:flex-start"><input type="checkbox" data-ms="${k}|${i}" ${x.on?'checked':''} style="margin-top:4px"><div style="flex:1;min-width:0">${body}</div></label>`;
@@ -1324,8 +1334,133 @@ function wireConflicts(r){
     toastUndo('이 지적은 다음부터 띄우지 않아요', ()=>{ if(cm){ cm.ignored=(cm.ignored||[]).filter(k=>k!==key); saveWorld(); } r.conflicts.splice(i,0,c); drawMs(); }); });
 }
 function applyMs(){
-  const r=msResult, made={}; let n=0;
+  const r=msResult;
   if(!r || r.note || r.cid!==ui.ch) return;
+  const n=applyCands(r);
+  toast(`${n}개를 반영했어요`); render();
+  // 반영한 기록에 이 화를 잇는다 (이 화 시점의 세계관 = 이 기록)
+  const cm=chMeta(r.cid); if(n && cm){ cm.commit=head().id; saveWorld(); if(cur()==='manuscript') renderManuscript(); }
+}
+/* ---------- 연재분 한꺼번에 가져오기 ----------
+   TXT·Markdown 여러 파일이나, 화 제목(예: '3화', '제3화', 'Chapter 3', '# 3화')·구분선(---)으로 나뉜 긴 글 하나를 화로 나눠 저장한다.
+   원하면 화마다 AI로 차례로 읽고(앞 화를 반영한 세계관으로 다음 화를 읽는다) 후보를 담아 화마다 기록 하나를 쌓는다.
+   이미 있는 이름은 담지 않고, 사건 후보와 '확인 필요'는 그 화의 '검토 대기'로 남겨 작가가 하나씩 본다. */
+const BULK_MAX=50;
+const HEAD_RE=/^\s*(?:#{1,3}\s*)?(?:(?:제\s*)?\d{1,4}\s*[화장편](?![가-힣])|(?:chapter|ch\.|episode|ep\.)\s*\d+|프롤로그|에필로그|외전(?:\s*\d+)?)/i;
+const SEP_RE=/^\s*(?:-{3,}|\*{3,}|={3,}|#{3,})\s*$/;
+function splitChapters(text, fallback){
+  const lines=String(text||'').replace(/\r\n?/g,'\n').split('\n');
+  const heads=lines.map((l,i)=>HEAD_RE.test(l) && l.trim().length<=60 ? i : -1).filter(i=>i>-1);
+  let parts=[];
+  if(heads.length>=2 || (heads.length===1 && heads[0]<=2)){
+    if(heads[0]>0){ const pre=lines.slice(0,heads[0]).join('\n').trim(); if(pre) parts.push({title:'', text:pre}); }
+    heads.forEach((h,k)=>parts.push({title:lines[h].replace(/^\s*#+\s*/,'').trim(), text:lines.slice(h+1, heads[k+1]??lines.length).join('\n').trim()}));
+  } else {
+    let curp=[]; lines.forEach(l=>{ if(SEP_RE.test(l)){ parts.push({title:'', text:curp.join('\n').trim()}); curp=[]; } else curp.push(l); });
+    parts.push({title:'', text:curp.join('\n').trim()});
+  }
+  parts=parts.filter(p=>p.text);
+  if(parts.length===1 && !parts[0].title) parts[0].title=fallback||'';
+  // 한 화 한도를 넘으면 문단에서 나눈다
+  return parts.flatMap(p=>{ if(p.text.length<=CH_MAX) return [p];
+    const out=[]; let rest=p.text; while(rest.length>CH_MAX){ let cutAt=rest.lastIndexOf('\n', CH_MAX); if(cutAt<CH_MAX*0.5) cutAt=CH_MAX; out.push(rest.slice(0,cutAt).trim()); rest=rest.slice(cutAt).trim(); } if(rest) out.push(rest);
+    return out.map((t,i)=>({title:`${p.title||fallback||''} (${i+1}/${out.length})`.trim(), text:t})); });
+}
+async function readFileText(f){
+  const buf=await f.arrayBuffer();
+  try{ return new TextDecoder('utf-8',{fatal:true}).decode(buf); }catch(e){ try{ return new TextDecoder('euc-kr').decode(buf); }catch(e2){ return new TextDecoder().decode(buf); } }
+}
+function bulkOpen(){
+  if(ui.bulk?.running){ toast('가져오는 중이에요. 끝난 뒤 다시 열어 주세요'); return; }
+  const back=document.activeElement; $('#ask')?.remove();
+  document.body.insertAdjacentHTML('beforeend', `<div class="ask-back" id="ask"><div class="ask Box bulk-dlg" role="dialog" aria-modal="true" aria-labelledby="bulk-h">
+    <div class="Box-header"><h3 id="bulk-h">연재분 한꺼번에 가져오기</h3></div><div class="Box-body stack">
+      <p class="caption" style="margin:0">TXT·Markdown 파일을 여러 개 고르거나, 여러 화를 한 번에 붙여 넣으세요. '3화', '제3화', 'Chapter 3' 같은 제목 줄이나 --- 구분선에서 화를 나눠요. 한 번에 ${BULK_MAX}화까지.</p>
+      <div class="row-end" style="justify-content:flex-start;gap:8px"><button class="btn btn-sm" type="button" id="bulk-file-btn">파일 고르기</button><input type="file" id="bulk-file" accept=".txt,.md,.markdown,text/plain,text/markdown" multiple hidden><span class="caption" id="bulk-files"></span></div>
+      <textarea class="form-control" id="bulk-text" rows="7" placeholder="1화&#10;첫 화 내용…&#10;&#10;2화&#10;둘째 화 내용…" aria-label="여러 화 붙여넣기"></textarea>
+      <div id="bulk-prev" class="bulk-prev caption">나눈 결과가 여기에 보여요</div>
+      <label class="check"><input type="checkbox" id="bulk-ai" checked>AI로 차례로 읽고 세계관에 쌓기 <span class="caption" id="bulk-cost"></span></label>
+      <div class="row-end" style="gap:8px"><button class="btn" type="button" id="ask-no">취소</button><button class="btn btn-primary" type="button" id="bulk-go" disabled>가져오기</button></div>
+    </div></div></div>`);
+  const box=$('#ask'); let files=[], parts=[];
+  const done=()=>{ box.remove(); try{ back?.focus(); }catch(e){} };
+  const preview=()=>{
+    const fromFiles=files.flatMap(f=>splitChapters(f.text, f.name.replace(/\.[^.]+$/,'')));
+    const fromText=splitChapters($('#bulk-text').value, '');
+    parts=[...fromFiles, ...fromText].slice(0,BULK_MAX);
+    let n=CHAPTERS.length; parts.forEach(p=>{ if(!p.title) p.title=`${++n}화`; else n++; });
+    const over=[...fromFiles, ...fromText].length-parts.length;
+    $('#bulk-prev').innerHTML=parts.length?`<b>${parts.length}화</b>로 나눴어요${over?` (넘친 ${over}화는 빠져요)`:''}<ol>${parts.map(p=>`<li>${esc(p.title)} <span class="caption">${p.text.length.toLocaleString()}자${p.text.length>MS_MAX?' · AI는 앞 12,000자만 못 읽어 건너뜀':''}</span></li>`).join('')}</ol>`:'나눈 결과가 여기에 보여요';
+    const readable=parts.filter(p=>p.text.length<=MS_MAX).length;
+    $('#bulk-cost').textContent=readable?`(${readable}화 · 토큰 약 ${(readable*6000).toLocaleString()} 예상)`:'';
+    $('#bulk-go').disabled=!parts.length; $('#bulk-go').textContent=parts.length?`${parts.length}화 가져오기`:'가져오기';
+  };
+  $('#bulk-file-btn').onclick=()=>$('#bulk-file').click();
+  $('#bulk-file').onchange=async ev=>{ const fs=[...ev.target.files].sort((a,b)=>a.name.localeCompare(b.name,'ko',{numeric:true}));
+    files=await Promise.all(fs.map(async f=>({name:f.name, text:await readFileText(f)}))); $('#bulk-files').textContent=files.length?`${files.length}개 파일`:''; preview(); };
+  $('#bulk-text').oninput=()=>{ clearTimeout(preview.t); preview.t=setTimeout(preview, 250); };
+  $('#ask-no').onclick=done; box.onclick=ev=>{ if(ev.target===box) done(); };
+  box.onkeydown=ev=>{ if(ev.key==='Escape'){ ev.stopPropagation(); done(); } };
+  $('#bulk-go').onclick=()=>{ if(!parts.length) return; const ai=$('#bulk-ai').checked; done(); bulkRun(parts, ai); };
+  $('#bulk-file-btn').focus();
+}
+async function bulkRun(parts, ai){
+  if(ui.ch===ui.chDraft && !chBody[ui.ch]?.text){ delete chBody[ui.ch]; ui.ch=null; ui.chDraft=null; }
+  const wk=worldKey;
+  const items=parts.map(p=>{ const id=newId('ch'); CHAPTERS.push({id, title:p.title.slice(0,60), chars:p.text.length, updatedAt:Date.now()});
+    chBody[id]={title:p.title.slice(0,60), text:p.text, versions:[], savedAt:0}; saveChapter(id, true); return {id, title:p.title.slice(0,60), status:ai?'wait':'saved', note:''}; });
+  ui.ch=items[0].id; ui.bulk={items, running:ai, stop:false, ai};
+  saveWorld(); renderManuscript();
+  toast(`${items.length}화를 저장했어요${ai?'. 이제 차례로 읽어요':''}`);
+  if(!ai) return;
+  let fails=0;
+  for(const it of items){
+    if(ui.bulk?.stop || wk!==worldKey) break;
+    const text=chBody[it.id]?.text||'';
+    if(text.length>MS_MAX){ it.status='skip'; it.note=`${MS_MAX.toLocaleString()}자가 넘어 건너뜀`; bulkDraw(); continue; }
+    it.status='reading'; bulkDraw();
+    try{
+      const base=head().id;
+      const recent=commits.filter(c=>c.kind==='event').slice(-10).map(c=>({n:lineOf(c.id).length, title:c.event?.title||cname(c.id), story_time:c.event?.story_time||undefined, description:c.event?.description?.slice(0,300)||undefined}));
+      const r=await extractManuscript(text, worldForAi(''), recent);
+      if(wk!==worldKey) break;
+      showUsage(r.usage);
+      const on=a=>a.map(x=>({...x, on:true})), known=a=>a.map(x=>sameName(x.name)?{...x, on:false, dup:true}:{...x, on:true});
+      const cand={cid:it.id, characters:known(r.result.characters), groups:known(r.result.groups), updates:on(r.result.updates), relations:on(r.result.relations)};
+      const n=applyCands(cand); flushPending();
+      const cm=chMeta(it.id); if(cm){ cm.readAt=Date.now(); cm.readCommit=base; if(n) cm.commit=head().id;
+        const ev=r.result.events||[], cf=r.result.conflicts||[]; if(ev.length||cf.length) cm.review={events:ev, conflicts:cf, base}; }
+      fails=0; it.status='done'; it.note=`${n}개 반영${r.result.events?.length?` · 사건 후보 ${r.result.events.length}`:''}${r.result.conflicts?.length?` · 확인 필요 ${r.result.conflicts.length}`:''}`;
+      saveWorld();
+    }catch(err){
+      console.warn('한꺼번에 읽기 실패', err);
+      it.status='error'; it.note=err.status===429?quotaNote(err):friendlyErr(err);
+      // 토큰·로그인 문제거나 두 화 연달아 실패하면 멈춘다 (남은 화는 각 화에서 'AI로 읽기'로 다시 읽을 수 있다)
+      if(err.status===429 || err.status===401 || err.status===403 || ++fails>=2){ ui.bulk.stop=true; }
+    }
+    bulkDraw();
+  }
+  if(ui.bulk){ ui.bulk.running=false; ui.bulk.items.forEach(x=>{ if(x.status==='wait'){ x.status='stopped'; x.note='읽지 않음 · 그 화에서 AI로 읽기를 누르세요'; } }); }
+  if(wk===worldKey){ render(); toast('한꺼번에 가져오기가 끝났어요. 사건 후보는 각 화의 검토 대기에서 확인하세요'); }
+}
+function bulkHtml(){
+  const b=ui.bulk; if(!b) return '';
+  const done=b.items.filter(x=>!['wait','reading'].includes(x.status)).length, tot=b.items.length;
+  const ST={wait:'기다림', reading:'읽는 중', done:'완료', skip:'건너뜀', error:'실패', saved:'저장', stopped:'멈춤'};
+  return `<div class="Box bulk-box"><div class="Box-header"><h3>한꺼번에 가져오기</h3><span class="caption">${b.ai?`${done}/${tot}화 읽음`:`${tot}화 저장함`}</span>
+      ${b.running?`<button class="btn btn-sm right" id="bulk-stop" type="button">멈추기</button>`:`<button class="btn btn-sm right" id="bulk-close" type="button">닫기</button>`}</div>
+    ${b.ai?`<div class="bulk-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${tot}" aria-valuenow="${done}"><i style="width:${tot?done/tot*100:0}%"></i></div>`:''}
+    <ol class="bulk-list">${b.items.map(x=>`<li><button type="button" class="btn-link" data-bulkch="${x.id}">${esc(x.title)}</button> <span class="Label ${x.status==='error'?'Label--danger':x.status==='reading'?'Label--attention':x.status==='done'?'Label--success':''}">${ST[x.status]||''}</span>${x.status==='reading'?' <span class="spinner sm"></span>':''} <span class="caption">${esc(x.note||'')}</span></li>`).join('')}</ol></div>`;
+}
+function bulkDraw(){ const el=$('#bulk'); if(el){ el.innerHTML=bulkHtml(); wireBulk(); } redrawChList(); }
+function wireBulk(){
+  const st=$('#bulk-stop'); if(st) st.onclick=()=>{ if(ui.bulk){ ui.bulk.stop=true; st.disabled=true; st.textContent='이번 화까지 읽고 멈춰요'; } };
+  const cl=$('#bulk-close'); if(cl) cl.onclick=()=>{ ui.bulk=null; const el=$('#bulk'); if(el) el.innerHTML=''; };
+  $$('[data-bulkch]').forEach(b=>b.onclick=()=>{ if(ui.ch) snapChapter(ui.ch); ui.ch=b.dataset.bulkch; renderManuscript(); });
+}
+/* 체크한 원고 후보를 세계관에 담는다 (pending). 담은 개수를 돌려준다. 기록은 부르는 쪽이 flushPending/render로 남긴다 */
+function applyCands(r){
+  const made={}; let n=0;
   // AI는 id 또는 이름으로 가리킨다: 있는 id, 이번에 만든 이름, 이미 있는 이름 순으로 찾는다
   const idOf=x=>!x?null:ent(state,x)?x:made[x]||sameName(x)?.id||null;
   const gs=r.groups.filter(g=>g.on); gs.forEach(g=>{ made[g.name]=newId('grp'); });
@@ -1340,9 +1475,7 @@ function applyMs(){
     const id=newId('rel'), rel={id, from, to, type:x.type, intensity:x.intensity}; if(x.note) rel.note=x.note; addManual(`/relations/${id}`, rel); });
   ['characters','groups','updates','relations'].forEach(k=>{ r[k]=r[k].filter(x=>!x.on); });
   if(n){ const t=chMeta(r.cid)?.title||'원고'; manualFrom=`원고 '${t}'에서 반영`; }
-  toast(`${n}개를 반영했어요`); render();
-  // 반영한 기록에 이 화를 잇는다 (이 화 시점의 세계관 = 이 기록)
-  const cm=chMeta(r.cid); if(n && cm){ cm.commit=head().id; saveWorld(); if(cur()==='manuscript') renderManuscript(); }
+  return n;
 }
 
 /* ---------- 화별 등장 ----------
