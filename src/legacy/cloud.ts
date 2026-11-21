@@ -143,3 +143,16 @@ export type AiRun = { id: string; at: number; kind: string; model: string; provi
 export function fetchAiRuns() {
   return callApi<{ runs: AiRun[] }>("/api/ai-runs");
 }
+
+export type ShareInfo = { id: string; title: string; label: string; project: string; createdAt: number };
+
+/** 공개 설정집: 고른 시점의 세계관(공개할 칸만)을 읽기 전용 링크로 만든다 */
+export function createShare(body: { title: string; label: string; project: string; world: unknown }) {
+  return callApi<{ share: ShareInfo }>("/api/share", { method: "POST", body: JSON.stringify(body) });
+}
+export function listShares() {
+  return callApi<{ shares: ShareInfo[] }>("/api/share");
+}
+export function deleteShare(id: string) {
+  return callApi<{ ok: true }>(`/api/share?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+}

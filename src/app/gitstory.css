@@ -914,3 +914,23 @@ body:has(.detail.g-full){overflow:hidden}
 .bulk-bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
 .spinner.sm{display:inline-block;width:12px;height:12px;vertical-align:-2px}
 #ch-bulk{margin-left:6px}
+
+/* ---------- 공개 설정집 (/s/[id]) ---------- */
+.doc.pub{max-width:960px}
+.pub h2{display:flex;align-items:center;gap:8px}
+.pub h3{font-size:15px;margin:0 0 4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pub-gwrap{overflow-x:auto;margin:16px 0}
+.pub-graph{display:block;width:100%;min-width:640px;height:auto;max-height:70vh;background:var(--bg-subtle);border:1px solid var(--border);border-radius:10px}
+.pub-node{font-size:13px;font-weight:600;text-anchor:middle;fill:var(--fg)}
+.pub-rel{font-size:10px;text-anchor:middle;fill:var(--fg-muted)}
+.pub-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.pub-card{border:1px solid var(--border);border-radius:8px;padding:12px 14px;background:var(--bg)}
+.pub-card p{margin:4px 0;font-size:14px;line-height:1.6}
+.pub-photo{width:28px;height:28px;border-radius:50%;object-fit:cover}
+.pub-rels{margin:6px 0 0;padding-left:18px;font-size:13px;color:var(--fg-muted)}
+.pub-cat{margin-top:16px!important;color:var(--fg-muted)}
+.pub-bg{border-bottom:1px solid var(--border);padding:8px 0}
+.pub-bg summary{cursor:pointer;font-weight:600}
+.pub-bg p{white-space:pre-wrap;line-height:1.7;margin:6px 0 0}
+.share-row{display:flex;gap:8px;align-items:center}
+.share-row input{flex:1;min-width:0}
