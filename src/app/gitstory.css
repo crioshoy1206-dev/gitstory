@@ -896,3 +896,10 @@ body:has(.detail.g-full){overflow:hidden}
 .idea b{font-weight:600;font-size:13px;overflow-wrap:anywhere}
 .idea:hover{border-color:var(--accent);background:var(--accent-subtle)}
 .idea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 사건 고치기 */
+.rev-box{margin-top:10px;border-color:var(--accent)}
+.rev-chg{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:13px}
+.rev-chg > span:first-child{min-width:90px;font-weight:600}
+.rev-flag{padding:8px 10px;border:1px solid var(--attention);background:var(--attention-subtle);border-radius:var(--r);font-size:13px}
+.rev-flag ul{margin:4px 0 0;padding-left:18px;line-height:1.6}
