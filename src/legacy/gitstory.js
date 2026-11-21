@@ -1065,6 +1065,7 @@ function renderManuscript(){
     <div>1. 원고는 화마다 쓰는 대로 저장돼요. 10분마다, 그리고 AI로 읽을 때 이전 버전이 남아요.</div>
     <div>2. AI가 새 인물·단체, 상황이 바뀐 인물, 새 관계, 큰 사건을 후보로 골라요. 체크한 후보만 세계관에 반영돼요.</div>
     <div>3. 사건 후보는 사건 입력 탭으로 보내 영향 분석을 따로 해요.</div>
+    <div>4. 같이 개연성 검사도 해요. 이 화 시점의 세계관·앞 사건과 어긋나 보이는 문장을 '확인 필요'로 짚어요. 원고는 고치지 않고, 일부러 쓴 거라면 '의도한 거예요'로 넘기면 다시 띄우지 않아요.</div>
     <div class="caption">AI는 한 번에 ${MS_MAX.toLocaleString()}자까지 읽어요. 이미 있는 이름이나 다른 이름과 겹치는 인물은 새로 만들지 않아요.</div>
   </div></div>`;
   const ta=$('#ms-text'), tt=$('#ch-title');
@@ -1104,12 +1105,16 @@ function renderManuscript(){
     $('#ms-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">AI가 원고를 읽고 있어요 <span id="ms-wait"></span></span></div></div>`;
     const t0=Date.now(), tick=setInterval(()=>{ const w=$('#ms-wait'), sec=Math.round((Date.now()-t0)/1000); if(w) w.textContent=`· ${sec}초`; },1000);
     try{
-      // 겹치는 인물을 걸러야 하니 세계관 전체를 보낸다
-      const r=await extractManuscript(text, worldForAi(''));
+      // 겹치는 인물을 걸러야 하니 세계관 전체를 보낸다. 개연성 검사를 위해 이 화 시점(chBase)의 세계관과 그때까지의 사건을 보낸다
+      const base=chBase(cid), bs=base.id===head().id?state:stateOf(base.id);
+      const recent=lineOf(base.id).filter(c=>c.kind==='event').slice(-10).map(c=>({n:lineOf(c.id).length, title:c.event?.title||cname(c.id), story_time:c.event?.story_time||undefined, description:c.event?.description?.slice(0,300)||undefined}));
+      const r=await extractManuscript(text, worldForAi('', bs), recent);
       // 이미 있는 이름은 기본으로 체크를 끄고 '이미 있어요'로 표시한다
       const on=a=>a.map(x=>({...x, on:true})), known=a=>a.map(x=>sameName(x.name)?{...x, on:false, dup:true}:{...x, on:true});
       if(wk===worldKey){
-        msResult={cid, characters:known(r.result.characters), groups:known(r.result.groups), updates:on(r.result.updates), relations:on(r.result.relations), events:r.result.events};
+        const ign=new Set(chMeta(cid)?.ignored||[]);
+        msResult={cid, characters:known(r.result.characters), groups:known(r.result.groups), updates:on(r.result.updates), relations:on(r.result.relations), events:r.result.events,
+          base:base.id, conflicts:(r.result.conflicts||[]).filter(c=>!ign.has(conflictKey(c)))};
         const cm=chMeta(cid); if(cm){ cm.readAt=Date.now(); cm.readCommit=head().id; saveWorld(); }
       }
       showUsage(r.usage); toast(`원고 읽기 완료 (${aiName(r)}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
@@ -1161,7 +1166,7 @@ function drawMs(){
   const sec=(k,title,items,fn)=>items.length?`<div class="Box"><div class="Box-header"><h3>${title}</h3><span class="Counter">${items.length}</span></div>${items.map((x,i)=>row(k,i,x,fn(x))).join('')}</div>`:'';
   const total=['characters','groups','updates','relations'].reduce((a,k)=>a+r[k].length,0);
   const picked=['characters','groups','updates','relations'].reduce((a,k)=>a+r[k].filter(x=>x.on).length,0);
-  box.innerHTML = (total||r.events.length ? '' : '<div class="Box"><div class="Box-body caption">반영할 만한 새 내용을 찾지 못했어요.</div></div>')
+  box.innerHTML = conflictsHtml(r) + (total||r.events.length ? '' : '<div class="Box"><div class="Box-body caption">반영할 만한 새 내용을 찾지 못했어요.</div></div>')
     + sec('characters','새 인물',r.characters,c=>`<b>${esc(c.name)}</b>${c.dup?' <span class="Label Label--attention">이미 있어요</span>':''}${c.aliases.length?` <span class="caption">(${esc(c.aliases.join(', '))})</span>`:''}${c.group?` <span class="Label">${esc(who(c.group))}${c.role?' · '+esc(c.role):''}</span>`:''}<div class="caption">${esc(c.summary)}</div>`)
     + sec('groups','새 단체',r.groups,g=>`<b>${esc(g.name)}</b>${g.dup?' <span class="Label Label--attention">이미 있어요</span>':''} <span class="Label">${KIND[g.kind]||'조직'}</span>${g.parent?` <span class="caption">${esc(ent(state,g.parent)?nm(state,g.parent):g.parent)} 소속</span>`:''}<div class="caption">${esc(g.summary)}</div>`)
     + sec('updates','상황 변화',r.updates,u=>{ const e=ent(state,u.id); return `<b>${esc(nm(state,u.id))}</b> <span class="Label Label--attention">${esc(u.status)}</span><div class="ms-cmp"><div class="ms-cmp-a"><span class="caption">지금</span>${e?.situation?.status?` <span class="Label">${esc(e.situation.status)}</span>`:''}<div>${esc(e?.situation?.current||'(없음)')}</div></div><div class="ms-cmp-b"><span class="caption">바뀔 내용</span> <span class="Label Label--attention">${esc(u.status)}</span><div>${esc(u.text)}</div></div></div>`; })
@@ -1175,7 +1180,48 @@ function drawMs(){
     if(analysis && !(await sure('사건 입력 탭에 아직 기록하지 않은 분석 결과가 있어요. 버리고 이 후보를 보낼까요?', '버리고 보내기', true))) return;
     const e=r.events[+b.dataset.msev]; ui.evDraft={title:e.title, description:e.description, story_time:e.story_time}; ui.evFrom=e; ui.evFromCh=r.cid; analysis=null; showTab('event'); });
   const ap=$('#ms-apply'); if(ap) ap.onclick=applyMs;
+  wireConflicts(r);
   const ma=$('#ms-all'); if(ma) ma.onclick=()=>{ const on=picked!==total; ['characters','groups','updates','relations'].forEach(k=>r[k].forEach(x=>{ x.on=on; })); drawMs(); };
+}
+/* ---------- 원고 개연성 검사 ----------
+   AI로 읽을 때 이 화 시점의 세계관과 어긋나는 문장을 함께 짚는다. 원고는 고치지 않고, '의도한 거예요'로 넘기면 같은 지적은 다시 띄우지 않는다. */
+function conflictKey(c){ return [c.kind, [...(c.ids||[])].sort().join(','), String(c.quote||'').replace(/\s+/g,'').slice(0,40)].join('|'); }
+function findQuote(text, q){
+  q=String(q||'').trim(); if(!q) return null;
+  let i=text.indexOf(q); if(i>-1) return [i, i+q.length];
+  // 띄어쓰기·줄바꿈만 다른 경우: 공백을 무시하고 맞춘다
+  const map=[]; let flat=''; for(let k=0;k<text.length;k++){ if(!/\s/.test(text[k])){ map.push(k); flat+=text[k]; } }
+  const fq=q.replace(/\s+/g,'');
+  for(const n of [fq.length, 24, 12]){ if(n>fq.length) continue; const j=flat.indexOf(fq.slice(0,n)); if(j>-1) return [map[j], map[Math.min(j+fq.length, map.length)-1]+1]; }
+  return null;
+}
+function conflictsHtml(r){
+  if(!r.conflicts) return '';
+  const base=r.base && byId(r.base) ? r.base : null, bs=base&&base!==head().id?stateOf(base):state;
+  const basis=base?`<button type="button" class="chip src-chip" data-cfbase="${base}"><small>기준</small>${esc(cnum(base)+cname(base))}</button>`:'';
+  if(!r.conflicts.length) return `<div class="Box cf-box cf-ok"><div class="Box-row caption" style="flex-wrap:wrap;gap:6px">개연성 검사: 이 화 시점 세계관과 어긋나는 곳을 찾지 못했어요 ${basis}</div></div>`;
+  return `<div class="Box cf-box"><div class="Box-header"><h3>${icon('alert')}확인 필요</h3><span class="Counter">${r.conflicts.length}</span><span class="caption right">세계관과 어긋나 보이는 문장이에요. 일부러 쓴 거라면 넘기세요</span></div>
+    ${r.conflicts.map((c,i)=>`<div class="Box-row cf-row"><div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
+      <div><span class="Label Label--attention">${esc(c.kind)}</span></div>
+      <button type="button" class="cf-quote" data-cfq="${i}" title="원고에서 이 문장 찾기">“${esc(c.quote)}”</button>
+      <div class="cf-why">${esc(c.why)}</div>
+      <div class="cf-src chips">${c.ids.map(id=>{ const rel=id.startsWith('rel_'); const rr=rel?(bs.relations.find(x=>x.id===id)||state.relations.find(x=>x.id===id)):null;
+        const label=rel?(rr?`${nm(bs,rr.from)} ↔ ${nm(bs,rr.to)} ${REL[rr.type]?.l||''}`:''):nm(bs,id); if(!label) return '';
+        return `<button type="button" class="chip src-chip" data-cfent="${rel?(rr?.from||''):id}"><small>${rel?'관계':id.startsWith('chr_')?'인물':'단체'}</small>${esc(label)}</button>`; }).join('')}${basis}</div>
+    </div><button type="button" class="btn btn-sm" data-cfok="${i}">의도한 거예요</button></div>`).join('')}</div>`;
+}
+function wireConflicts(r){
+  $$('[data-cfq]').forEach(b=>b.onclick=()=>{ const ta=$('#ms-text'), c=r.conflicts[+b.dataset.cfq]; if(!ta||!c) return;
+    const at=findQuote(ta.value, c.quote); if(!at){ toast('원고에서 이 문장을 찾지 못했어요. 그 사이 원고를 고쳤을 수 있어요'); return; }
+    ta.scrollIntoView({behavior:'smooth', block:'center'}); ta.focus({preventScroll:true}); ta.setSelectionRange(at[0], at[1]); scrollToSel(ta, at[0]); });
+  $$('[data-cfent]').forEach(b=>b.onclick=()=>{ const id=b.dataset.cfent; if(!id) return; const base=r.base&&byId(r.base)&&r.base!==head().id?r.base:null;
+    if(!ent(base?stateOf(base):state, id)){ toast('지금은 없는 항목이에요'); return; }
+    ui.graphVer=base||'work'; ui.sheet='full'; pick(id); });
+  $$('[data-cfbase]').forEach(b=>b.onclick=()=>openSource(b.dataset.cfbase));
+  $$('[data-cfok]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.cfok, c=r.conflicts[i]; if(!c) return; const cm=chMeta(r.cid), key=conflictKey(c);
+    if(cm){ cm.ignored=[...new Set([...(cm.ignored||[]), key])].slice(-100); saveWorld(); }
+    r.conflicts.splice(i,1); drawMs();
+    toastUndo('이 지적은 다음부터 띄우지 않아요', ()=>{ if(cm){ cm.ignored=(cm.ignored||[]).filter(k=>k!==key); saveWorld(); } r.conflicts.splice(i,0,c); drawMs(); }); });
 }
 function applyMs(){
   const r=msResult, made={}; let n=0;

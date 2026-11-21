@@ -122,11 +122,12 @@ export type ExtractResult = {
   updates: { id: string; status: string; text: string }[];
   relations: { from: string; to: string; type: string; intensity: number; note: string }[];
   events: { title: string; description: string; story_time: string }[];
+  conflicts?: { quote: string; kind: string; ids: string[]; why: string }[];
 };
 
 /** 원고 한 화를 AI로 읽어 세계관에 반영할 후보를 받는다. 원고는 서버에 저장되지 않는다. */
-export function extractManuscript(text: string, world: unknown) {
-  return callApi<{ result: ExtractResult; tokens: number; model: string; provider: "claude" | "gemini"; usage: Usage }>("/api/extract", { method: "POST", body: JSON.stringify({ text, world }) });
+export function extractManuscript(text: string, world: unknown, recent?: unknown[]) {
+  return callApi<{ result: ExtractResult; tokens: number; model: string; provider: "claude" | "gemini"; usage: Usage }>("/api/extract", { method: "POST", body: JSON.stringify({ text, world, ...(recent?.length ? { recent } : {}) }) });
 }
 
 export type AskResult = { answer: string; sources: { id: string; why: string; from_notes: boolean }[] };
