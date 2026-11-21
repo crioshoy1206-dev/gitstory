@@ -30,12 +30,16 @@ export class AiRefused extends Error {}
 export class AiTimeout extends Error {}
 export class AiBusy extends Error {}
 
+/** 인물이 아는 사실. since는 알게 된 기록 id */
+export type Knowledge = { id: string; text: string; how?: string; secret?: boolean; since?: string };
+export const HOW = ["당사자", "목격", "전해 들음", "추측"];
+
 export type EventInput = { title: string; description: string; story_time?: string };
 export type WorldInput = {
   title?: string;
   background?: { title: string; content: string }[];
   groups: { id: string; name: string; parent?: string | null; traits?: { key: string; label: string; value: number; target?: string }[]; situation?: { current?: string; status?: string } }[];
-  characters: { id: string; name: string; aliases?: string[]; memberships?: { group: string; role?: string; bond?: number }[]; traits?: { key: string; label: string; value: number; target?: string }[]; situation?: { current?: string; status?: string } }[];
+  characters: { id: string; name: string; aliases?: string[]; memberships?: { group: string; role?: string; bond?: number }[]; traits?: { key: string; label: string; value: number; target?: string }[]; situation?: { current?: string; status?: string }; knowledge?: Knowledge[] }[];
   relations: { id: string; from: string; to: string; type: string; intensity: number; note?: string }[];
   unscored_traits?: string[];
 };
@@ -43,7 +47,7 @@ export type WorldInput = {
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["aftermath", "direct", "relevance", "rewrite", "reactions", "relations"],
+  required: ["aftermath", "direct", "relevance", "rewrite", "reactions", "relations", "knows"],
   properties: {
     aftermath: { type: "string", description: "사건 직후 세계가 어떻게 흘러가는지 2~4문장. 무엇이 무너지거나 생기고, 누가 움직이기 시작하는지." },
     direct: {
@@ -101,6 +105,31 @@ const SCHEMA = {
         },
       },
     },
+    knows: {
+      type: "array",
+      description:
+        "이 사건으로 생기거나 퍼지는 중요한 정보와, 사건 직후 그것을 아는 인물. 일부만 알고 다른 인물은 모르는 사실(비밀, 정체, 진실, 범인, 숨은 계획)만. 모두가 아는 공개 사건은 넣지 않는다. 0~3개",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["fact_id", "fact", "secret", "knowers"],
+        properties: {
+          fact_id: { type: "string", description: "이미 세계관에 있는 사실(인물의 '아는 것' [fact_...])이 더 퍼지는 경우 그 id. 새 사실이면 빈 문자열" },
+          fact: { type: "string", description: "사실 한 문장 (예: 징크스가 의회에 로켓을 쐈다)" },
+          secret: { type: "boolean", description: "숨겨진 비밀이면 true" },
+          knowers: {
+            type: "array",
+            description: "사건 직후 이 사실을 아는 인물 (이미 알던 인물은 빼고 새로 알게 된 인물만)",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["id", "how"],
+              properties: { id: { type: "string", description: "인물 id" }, how: { type: "string", enum: HOW } },
+            },
+          },
+        },
+      },
+    },
     relations: {
       type: "array",
       description: "사건으로 바뀌는 관계. 기존 관계는 change, 새 관계는 add.",
@@ -132,6 +161,7 @@ const SYSTEM = `당신은 스토리 세계관의 개연성을 지키는 편집�
 - direct는 정말 직접 닿는 대상만(보통 1~5개), rewrite는 크게 바뀌는 대상만(최대 6개), relations는 실제로 바뀌는 것만(최대 5개).
 - reactions는 작가가 다음 장면을 쓸 수 있게 구체적으로 씁니다: 누가 무엇을 잃거나 얻었는지(사람, 지위, 자원, 신뢰 등), 그래서 각자 무엇을 하려 하는지. 직접 연루된 대상뿐 아니라 소속·관계·성격 때문에 흔들리는 인물도 포함합니다. 성격 수치와 관계를 근거로 삼습니다.
 - 세계관에서 [행동불가] 표시가 붙은 인물(사망·봉인·혼수 등)은 절대 행동하지 않습니다. reactions에 넣지 않고, 말하거나 움직이거나 결정하는 문장의 주어로 쓰지 않습니다. 남은 사람들이 그 인물을 기억하거나 그 빈자리 때문에 흔들리는 것은 쓸 수 있습니다.
+- knows는 "누가 무엇을 알게 됐나"입니다. 사건 현장에 있었거나(당사자·목격) 누군가에게 들은(전해 들음) 인물만 넣고, 그 자리에 없던 인물은 넣지 않습니다. [행동불가] 인물은 넣지 않습니다. 사소한 사실은 넣지 않습니다.
 - 사건 내용이 [행동불가] 인물을 움직이게 하면(예: 죽은 인물이 등장), 그 인물이 했다는 행동은 다른 누군가가 했거나 착각·위장일 수 있다고 보고, aftermath 마지막 문장에 "작가 확인 필요: ○○는 세계관상 사망 상태인데 사건에 등장합니다" 식으로 적습니다.`;
 
 function clamp(x: number, lo: number, hi: number) {
@@ -315,6 +345,7 @@ export function worldText(world: WorldInput): string {
     const aka = c.aliases?.filter(Boolean).length ? `(${c.aliases.filter(Boolean).map(one).join("/")})` : "";
     const ms = (c.memberships ?? []).map((m) => `${m.group}(${[one(m.role), m.bond ?? ""].filter((x) => x !== "").join(",")})`).join(", ") || "-";
     lines.push(`${c.id} ${one(c.name)}${aka}${inactive(c.situation) ? " [행동불가]" : ""} | ${ms} | ${sit(c.situation)} | ${traits(c.traits)}`);
+    if (c.knowledge?.length) lines.push(`  아는 것: ${c.knowledge.slice(-8).map((k) => `[${k.id}]${k.secret ? "(비밀)" : ""} ${one(k.text).slice(0, 80)}${k.how ? `(${k.how})` : ""}`).join(" / ")}`);
   });
   lines.push("# 관계 (id 출발→도착 종류 강도 메모)");
   world.relations.forEach((r) => lines.push(`${r.id} ${r.from}→${r.to} ${r.type} ${r.intensity}${r.note ? ` ${one(r.note)}` : ""}`));
@@ -331,6 +362,7 @@ export async function analyzeEvent(event: EventInput, world: WorldInput, plan: R
     relations: { op: string; id: string; from: string; to: string; type: string; intensity: number; why: string }[];
     aftermath: string;
     reactions: { id: string; involvement: string; impact: string; action: string }[];
+    knows: { fact_id: string; fact: string; secret: boolean; knowers: { id: string; how: string }[] }[];
   };
   const { data: raw, tokens, model, provider, detail, ms } = await generate<Out>(plan, { system: SYSTEM, schema: SCHEMA, user, maxTokens: 8000 }, "analyze");
 
@@ -371,5 +403,18 @@ export async function analyzeEvent(event: EventInput, world: WorldInput, plan: R
     .slice(0, 12)
     .map((x) => ({ id: x.id, involvement: x.involvement === "연루" ? "연루" : "파급", impact: String(x.impact ?? ""), action: String(x.action ?? "") }));
   const aftermath = String(raw.aftermath ?? "");
-  return { analysis: { title: event.title, description: event.description, story_time: event.story_time ?? "", aftermath, direct, reactions, relevance, rewrite, relations }, tokens, model, provider, detail, ms };
+  // 누가 알게 됐나: 행동할 수 있는 인물만, 이미 아는 인물은 뺀다
+  const chars = new Map(world.characters.map((c) => [c.id, c]));
+  const facts = new Map(world.characters.flatMap((c) => (c.knowledge ?? []).map((k) => [k.id, k] as const)));
+  const knows = (raw.knows ?? []).slice(0, 4).flatMap((k) => {
+    const old = facts.get(k.fact_id);
+    const fact = (old?.text ?? String(k.fact ?? "")).trim().slice(0, 160);
+    const ks = new Set<string>();
+    const knowers = (k.knowers ?? [])
+      .filter((w) => chars.has(w.id) && !gone.has(w.id) && !ks.has(w.id) && ks.add(w.id))
+      .filter((w) => !(chars.get(w.id)?.knowledge ?? []).some((x) => x.id === k.fact_id))
+      .map((w) => ({ id: w.id, how: HOW.includes(w.how) ? w.how : "전해 들음" }));
+    return fact && knowers.length ? [{ fact_id: old ? k.fact_id : "", fact, secret: old?.secret ?? !!k.secret, knowers }] : [];
+  });
+  return { analysis: { title: event.title, description: event.description, story_time: event.story_time ?? "", aftermath, direct, reactions, relevance, rewrite, relations, knows }, tokens, model, provider, detail, ms };
 }

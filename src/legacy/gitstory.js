@@ -214,6 +214,7 @@ function describePath(s,path){
   if(rest==='aliases') return `${n} · 다른 이름`;
   if(rest==='notes') return `${n} · 메모`;
   if(rest==='photo') return `${n} · 사진`;
+  if(rest.startsWith('knowledge')) return `${n} · 아는 것`;
   if(rest==='kind') return `${n} · 단체 종류`;
   if(rest==='parent') return `${n} · 상위 단체`;
   if(rest==='traits') return `${n} · 성격 목록`;
@@ -241,7 +242,7 @@ function traitLabel(s,c,id,key){
 function ent2rel(s,id){ return s.relations.find(r=>r.id===id) || state.relations.find(r=>r.id===id); }
 function showVal(v){ if(v==null || v==='') return '(없음)'; if(typeof v==='string' && v.startsWith('data:image')) return '(사진)'; if(Array.isArray(v)) return v.length?v.map(showVal).join(', '):'(없음)';
   if(typeof v==='object' && !Array.isArray(v) && ('current' in v || 'status' in v) && 'history' in v) return [v.status, v.current].filter(Boolean).join(' · ')||'(없음)';
-  if(typeof v==='object' && v.label && v.value!=null) return `${v.label} ${lvOf(v.value)}`; if(typeof v==='object' && v.group && v.bond!=null) return `소속감 ${lvOf(v.bond)}${v.role?' · '+v.role:''}`; if(typeof v==='object' && v.key && v.value!=null) return lvOf(v.value); if(typeof v==='number') return v>=0&&v<=1?lvOf(v):f2(v); if(typeof v==='boolean') return v?'예':'아니오'; if(typeof v==='object') return v.type&&REL[v.type] ? `${REL[v.type].l} · ${lvOf(v.intensity)}${v.note?' · '+v.note:''}` : (v.summary || v.title || v.name || v.label || '항목'); return v; }
+  if(typeof v==='object' && v.label && v.value!=null) return `${v.label} ${lvOf(v.value)}`; if(typeof v==='object' && v.group && v.bond!=null) return `소속감 ${lvOf(v.bond)}${v.role?' · '+v.role:''}`; if(typeof v==='object' && v.key && v.value!=null) return lvOf(v.value); if(typeof v==='number') return v>=0&&v<=1?lvOf(v):f2(v); if(typeof v==='boolean') return v?'예':'아니오'; if(typeof v==='object') return v.type&&REL[v.type] ? `${REL[v.type].l} · ${lvOf(v.intensity)}${v.note?' · '+v.note:''}` : (v.summary || v.title || v.name || v.label || v.text || '항목'); return v; }
 function fmtV(path, v){
   const k=path.split('/').pop();
   if(v==null || v==='') return '(없음)';
@@ -253,6 +254,7 @@ function fmtV(path, v){
   return showVal(v);
 }
 function patchLines(s,p){
+  if(/\/knowledge$/.test(p.path) && Array.isArray(p.after||p.before) && !(p.after||p.before).length) return [];   // '아는 것' 목록을 처음 만드는 patch는 보이지 않는다
   const label=(p.op!=='replace' && p.path.startsWith('/relations/') && (p.after||p.before)?.from) ? `관계 ${nm(s,(p.after||p.before).from)} ↔ ${nm(s,(p.after||p.before).to)}` : describePath(s,p.path);
   if(p.op==='replace') return [['chg',`~ ${label}: ${fmtV(p.path,p.before)} → ${fmtV(p.path,p.after)}`]];
   if(p.op==='add' && p.path.split('/').length===3 && !p.path.startsWith('/relations/')) return [['add',`+ ${label} 추가`]];
@@ -592,6 +594,38 @@ function wireEntityEdit(e){
     addManual(`/relations/${id}`, r); done(`${jo(nm(state,to),'와','과')}의 관계를 담았어요`);
   };
 }
+/* ---------- 인물별 '아는 것' (정보 비대칭) ----------
+   인물마다 knowledge[] = {id(fact_...), text, how, secret, since(기록 id)}. 같은 사실은 인물끼리 같은 id를 쓴다.
+   사건 분석이 "누가 알게 됐나"를 제안하면 patch로 기록되어 비교·되돌리기·타임랩스가 그대로 동작한다. */
+const HOW=['당사자','목격','전해 들음','추측'];
+function factsOf(s){
+  const m=new Map();
+  s.characters.forEach(c=>(c.knowledge||[]).forEach(k=>{ let f=m.get(k.id); if(!f){ f={id:k.id, text:k.text, secret:!!k.secret, who:[]}; m.set(k.id,f); } if(k.secret) f.secret=true; f.who.push({id:c.id, how:k.how, since:k.since}); }));
+  return m;
+}
+function knowAdd(c, k){ if(!c.knowledge) addManual(`/characters/${c.id}/knowledge`, []); addManual(`/characters/${c.id}/knowledge/-`, k); }
+function knowBox(e, editable=true, s=state){
+  const mine=e.knowledge||[], facts=factsOf(s);
+  const unknown=[...facts.values()].filter(f=>f.secret && !f.who.some(w=>w.id===e.id));
+  const other=f=>f.who.filter(w=>w.id!==e.id);
+  const row=k=>{ const f=facts.get(k.id), with_=f?other(f):[];
+    return `<div class="Box-row know-row"><div style="flex:1;min-width:0">${k.secret?'<span class="Label Label--danger">비밀</span> ':''}${esc(k.text)}
+      <div class="caption">${esc(k.how||'')}${k.since&&byId(k.since)?` · ${esc(cname(k.since))}부터`:''}${with_.length?` · 같이 아는 사람: ${with_.map(w=>esc(nm(s,w.id))).join(', ')}`:' · 혼자만 알아요'}</div></div>
+      ${editable?`<button type="button" class="rm" data-rmk="${k.id}" aria-label="이 사실 지우기" title="지우기">×</button>`:''}</div>`; };
+  return `<div class="Box know-box"><div class="Box-header"><h3>아는 것</h3><span class="Counter">${mine.length}</span><span class="caption right">누가 무엇을 아는지. 원고 개연성 검사와 물어보기가 참고해요</span></div>
+    ${mine.length?mine.map(row).join(''):'<div class="Box-row caption">아직 기록된 게 없어요. 사건을 분석하면 AI가 누가 무엇을 알게 됐는지 제안해요.</div>'}
+    ${unknown.length?`<div class="Box-row" style="flex-direction:column;align-items:stretch;gap:6px"><div class="caption">모르는 비밀</div><div class="chips">${unknown.map(f=>`<span class="chip know-chip unknown" title="${esc(f.who.map(w=>nm(s,w.id)).join(', '))}만 알아요">${esc(f.text.length>40?f.text.slice(0,39)+'…':f.text)}${editable?`<button type="button" class="know-tell" data-tellk="${f.id}" aria-label="${esc(e.name)}도 알게 하기">알게 하기</button>`:''}</span>`).join('')}</div></div>`:''}
+    ${editable?`<form class="Box-row know-add" id="know-form" style="flex-wrap:wrap;gap:8px;background:var(--bg-subtle)"><input class="form-control" id="know-text" maxlength="160" placeholder="이 인물이 아는 사실 (예: 바이의 동생이 징크스다)" style="flex:1 1 200px;width:auto" aria-label="아는 사실">
+      <select class="form-control" id="know-how" style="width:auto" aria-label="어떻게 알았는지">${HOW.map(h=>`<option ${h==='당사자'?'selected':''}>${h}</option>`).join('')}</select>
+      <label class="check"><input type="checkbox" id="know-secret">비밀</label><button class="btn btn-sm" type="submit">+ 추가</button></form>`:''}</div>`;
+}
+function wireKnow(e){
+  const f=$('#know-form'); if(f) f.onsubmit=ev=>{ ev.preventDefault(); const t=clean($('#know-text').value).trim(); if(!t){ toast('사실을 적어 주세요'); return; }
+    knowAdd(e, {id:newId('fact'), text:t.slice(0,160), how:$('#know-how').value, ...($('#know-secret').checked?{secret:true}:{}), since:head().id}); toast('아는 것에 더했어요'); render('world'); };
+  $$('[data-rmk]').forEach(b=>b.onclick=()=>{ const p=removeManual(`/characters/${e.id}/knowledge/${b.dataset.rmk}`); render(); if(p) toastUndo('이 사실을 지웠어요', ()=>{ restore([p]); toast('되살렸어요'); render(); }); });
+  $$('[data-tellk]').forEach(b=>b.onclick=()=>{ const fct=factsOf(state).get(b.dataset.tellk); if(!fct) return;
+    knowAdd(e, {id:fct.id, text:fct.text, how:'전해 들음', ...(fct.secret?{secret:true}:{}), since:head().id}); toast(`${jo(e.name,'가','이')} 이제 이 비밀을 알아요`); render('world'); });
+}
 function entityDetail(e){
   const s=state, isG=e.id.startsWith('grp_'), c=coll(e.id), sit=e.situation||{history:[]};
   const nat=nationOf(s,e);
@@ -644,6 +678,7 @@ function entityDetail(e){
       <div class="stack">
         <div class="Box"><div class="Box-header"><h3>성격</h3><span class="Counter">${(e.traits||[]).length}</span><span class="caption right">성격마다 세기를 골라요</span></div>${traitRows(e)}
           <div class="Box-row" style="flex-wrap:wrap;gap:8px;background:var(--bg-subtle)"><input class="form-control" id="tr-label" maxlength="30" placeholder="새 성격 (예: 복수심)" style="flex:1 1 150px;width:auto" aria-label="새 성격 이름">${levelSelect('tr-val',0.75,'성격 세기')}<button class="btn btn-sm" id="tr-add">+ 성격 추가</button></div></div>
+        ${isG?'':knowBox(e)}
         ${belong}
       </div>
     </div>`;
@@ -697,7 +732,8 @@ function worldForAi(text='', s=state){
     title:DATA.meta.title,
     background:(s.background||[]).map(b=>({title:b.title, content:b.content})),
     groups:gs.map(g=>({id:g.id, name:g.name, parent:g.parent, traits:tr(g), situation:sit(g)})),
-    characters:cs.map(c=>({id:c.id, name:c.name, aliases:c.aliases, memberships:(c.memberships||[]).map(m=>({group:m.group, role:m.role, bond:m.bond})), traits:tr(c), situation:sit(c)})),
+    characters:cs.map(c=>({id:c.id, name:c.name, aliases:c.aliases, memberships:(c.memberships||[]).map(m=>({group:m.group, role:m.role, bond:m.bond})), traits:tr(c), situation:sit(c),
+      ...(c.knowledge?.length?{knowledge:c.knowledge.slice(-8).map(k=>({id:k.id, text:String(k.text||'').slice(0,120), how:k.how, ...(k.secret?{secret:true}:{}), ...(k.since?{since:k.since}:{})}))}:{})})),
     relations:s.relations.filter(r=>ids.has(r.from)&&ids.has(r.to)).map(r=>({id:r.id, from:r.from, to:r.to, type:r.type, intensity:r.intensity, note:r.note})),
     unscored_traits:[...keys]
   };
@@ -737,6 +773,11 @@ function buildPatches(a, cid, s=state){
     if(r.op==='replace') patches.push({op:'replace', path:r.path, before:getv(s,r.path), after:r.after});
     else patches.push({op:'add', path:r.path, after:clone(r.after)});
   });
+  // 누가 알게 됐나: 인물마다 '아는 것'에 더한다 (이미 아는 인물은 건너뛴다)
+  const made=new Set();
+  (a.knows||[]).filter(k=>k.on).forEach(k=>k.knowers.forEach(w=>{ const c=ent(s,w.id); if(!c || (c.knowledge||[]).some(x=>x.id===k.fid)) return;
+    if(!c.knowledge && !made.has(c.id)){ patches.push({op:'add', path:`/characters/${c.id}/knowledge`, after:[]}); made.add(c.id); }
+    patches.push({op:'add', path:`/characters/${c.id}/knowledge/-`, after:{id:k.fid, text:k.fact, how:w.how, ...(k.secret?{secret:true}:{}), since:cid}}); }));
   return patches;
 }
 function evPosition(){
@@ -797,7 +838,7 @@ function renderEvent(){
     let a, note='';
     try{
       const r=await analyzeEvent({title, description:text, story_time:time}, worldForAi(title+' '+text), deep);
-      a=r.analysis; if(r.deep) a.deep=true; a.canDeep=r.usage?.admin||r.usage?.plan==='pro'; Object.entries(a.relevance||{}).forEach(([k,v])=>{ RELEVANCE[k]={...(RELEVANCE[k]||{}), ...v}; });
+      a=r.analysis; if(r.deep) a.deep=true; (a.knows||[]).forEach(k=>{ k.fid=k.fact_id||newId('fact'); k.on=true; }); a.canDeep=r.usage?.admin||r.usage?.plan==='pro'; Object.entries(a.relevance||{}).forEach(([k,v])=>{ RELEVANCE[k]={...(RELEVANCE[k]||{}), ...v}; });
       showUsage(r.usage); toast(`AI 분석 완료 (${aiName(r)}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
       if(!a.direct.length) note='AI가 직접 영향을 받는 대상을 찾지 못했습니다. 사건에 단체나 인물 이름을 넣어 보세요.';
     }catch(err){
@@ -816,6 +857,7 @@ function renderEvent(){
     const has=id=>!!ent(state,id);
     a.direct=(a.direct||[]).filter(d=>has(d.target)); a.relations=(a.relations||[]).filter(r=>{ const m=r.path?.match(/^\/relations\/([^/]+)/); return !m || state.relations.some(x=>x.id===m[1]); });
     if(a.rewrite) Object.keys(a.rewrite).forEach(k=>{ if(!has(k)) delete a.rewrite[k]; });
+    a.knows=(a.knows||[]).map(k=>({...k, knowers:k.knowers.filter(w=>has(w.id))})).filter(k=>k.knowers.length);
     analysis=a; analysis.story_time=time; analysis.from=from; analysis.fromCh=fromCh; analysis.note=note;
     if(cur()!=='event'){ toast('사건 분석이 끝났어요. 사건 입력 탭에서 확인하세요'); return; }
     btn.disabled=false; drawAnalysis();
@@ -857,6 +899,10 @@ function drawAnalysis(){
   </div>
   ${(a.aftermath||a.reactions?.length)?`<div class="Box"><div class="Box-header"><h3>여파와 인물별 반응</h3><span class="ai-badge">${icon('spark')}AI 판단</span>${a.deep?'<span class="Label Label--success">깊게 분석</span>':''}<span class="caption right">누가 무엇을 잃고 어떻게 움직일지</span></div>${reactionsHtml(a.aftermath, a.reactions)}</div>`:''}
   ${a.canDeep&&!a.guess&&!a.deep?`<div class="Box"><div class="Box-row" style="background:var(--bg-subtle);flex-wrap:wrap;gap:8px"><span class="caption" style="flex:1 1 240px">여파와 인물 반응을 더 풍부하게 보고 싶다면 더 깊이 생각하는 AI로 한 번 더 분석해요. 30~60초쯤 걸리고 토큰을 조금 더 써요.</span><button class="btn btn-sm" id="ev-deep">${icon('spark')}깊게 분석</button></div></div>`:''}
+  ${a.knows?.length?`<div class="Box"><div class="Box-header"><h3>누가 알게 됐나</h3><span class="ai-badge">${icon('spark')}AI 판단</span><span class="caption right">인물 카드의 '아는 것'에 남아요</span></div>
+    ${a.knows.map((k,i)=>`<label class="Box-row" style="cursor:pointer;align-items:flex-start"><input type="checkbox" data-know="${i}" ${k.on?'checked':''} style="margin-top:4px">
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px"><div>${k.secret?'<span class="Label Label--danger">비밀</span> ':''}${esc(k.fact)}${k.fact_id?' <span class="caption">(이미 아는 사람이 있는 사실)</span>':''}</div>
+      <div class="chips">${k.knowers.map(w=>`<span class="chip know-chip">${esc(nm(state,w.id))}<small>${esc(w.how)}</small></span>`).join('')}</div></div></label>`).join('')}</div>`:''}
   <div class="Box" id="prop-box"></div>
   ${a.relations.length?`<div class="Box"><div class="Box-header"><span class="step-badge">3</span><h3>관계 변화 제안</h3><span class="ai-badge">${icon('spark')}AI 판단</span></div>
     ${a.relations.map((r,i)=>`<label class="Box-row" style="cursor:pointer;align-items:flex-start"><input type="checkbox" data-rel="${i}" ${r.on?'checked':''} style="margin-top:4px">
@@ -867,6 +913,7 @@ function drawAnalysis(){
   $$('[data-sum]').forEach(inp=>inp.oninput=()=>{ a.direct[inp.dataset.sum].summary=inp.value; });
   $$('[data-del]').forEach(b=>b.onclick=()=>{ a.direct.splice(+b.dataset.del,1); drawAnalysis(); });
   $$('[data-rel]').forEach(c=>c.onchange=()=>{ a.relations[c.dataset.rel].on=c.checked; drawProp(); });
+  $$('[data-know]').forEach(c=>c.onchange=()=>{ a.knows[c.dataset.know].on=c.checked; drawProp(); });
   const dp=$('#ev-deep'); if(dp) dp.onclick=()=>{ const run=$('#ev-run'); if(run && !run.disabled) run.onclick(null, true); };
   const ad=$('#add-direct'); if(ad) ad.onclick=()=>{ const id=$('#add-target').value; if(!id) return; a.direct.push({target:id, M:-0.5, tags:['위협'], summary:'사건의 직접 영향'}); drawAnalysis(); };
   drawProp();
@@ -1414,7 +1461,7 @@ function askPayload(question, quote){
   const ents=[...state.characters,...state.groups,...state.background];
   const notes=ents.filter(e=>e.notes?.trim()).map(e=>({id:e.id, name:e.name||e.title, notes:e.notes.slice(0,600)}));
   const cs=commits.filter(c=>c.kind!=='init').slice(-60).map(c=>({id:c.id, n:commits.indexOf(c)+1, message:c.message, story_time:c.event?.story_time||undefined, description:c.event?.description?.slice(0,300)||undefined}));
-  const chs=CHAPTERS.map(c=>({id:c.id, title:c.title, text:chTextOf(c.id), memos:(loadChapter(c.id).memos||[]).map(m=>(m.done?'(회수됨) ':'')+m.text)}));
+  const chs=CHAPTERS.map(c=>({id:c.id, title:c.title, ...(chCommit(c.id)?{commit:chCommit(c.id)}:{}), text:chTextOf(c.id), memos:(loadChapter(c.id).memos||[]).map(m=>(m.done?'(회수됨) ':'')+m.text)}));
   const total=chs.reduce((a,c)=>a+c.text.length,0);
   if(total>ASK_BUDGET){
     // 질문·고른 문장에 이름이 나온 화와 지금 화를 먼저 길게 보내고, 나머지는 앞부분만
@@ -1557,7 +1604,10 @@ function renderWorld(){
     return [(x1+x2)/2+nx*best, (y1+y2)/2+ny*best];
   };
   const INI=initials(s.characters.filter(c=>!c.photo));
-  const RNG=rangeSet();   // 화 범위를 골랐으면 그 화들에 나온 항목만 또렷하게
+  let RNG=rangeSet();   // 화 범위를 골랐으면 그 화들에 나온 항목만 또렷하게
+  const SECRETS=[...factsOf(s).values()].filter(f=>f.secret);
+  if(ui.fact && !SECRETS.some(f=>f.id===ui.fact)) ui.fact=null;
+  if(ui.fact){ const k=new Set(SECRETS.find(f=>f.id===ui.fact).who.map(w=>w.id)); RNG = RNG ? new Set([...RNG].filter(x=>k.has(x))) : k; }   // 이 비밀을 아는 사람만
   const edge=(r)=>{
     const k=[r.from,r.to].sort().join('|'); const grp=pairs[k]; const i=grp.indexOf(r), n=grp.length;
     let [x1,y1]=pos(r.from), [x2,y2]=pos(r.to);
@@ -1642,6 +1692,7 @@ function renderWorld(){
   const panel = pe ? `<aside class="detail" id="detail" aria-label="${esc(pe.name||pe.title)} 자세히">
       <div class="detail-bar"><span class="caption">${editable?'여기서 바로 고칠 수 있어요':'지난 시점이라 보기만 할 수 있어요'}</span><button class="btn btn-sm" id="detail-close">닫기</button></div>
       ${editable ? (pe.id.startsWith('bg_')?bgDetail(pe):entityDetail(pe)) : pastDetail(s,pe,ov,ovSrc)}</aside>` : overview(s);
+  function secretPick(){ return SECRETS.length?`<select class="form-control g-fact" id="g-fact" aria-label="이 비밀을 아는 사람만 보기"><option value="">비밀: 모두 보기</option>${SECRETS.map(f=>`<option value="${f.id}" ${ui.fact===f.id?'selected':''}>아는 사람만: ${esc(f.text.length>24?f.text.slice(0,23)+'…':f.text)} (${f.who.length}명)</option>`).join('')}</select>`:''; }
   const SHEET = !PH ? null : (ui.sheet==='full' || pe?.id.startsWith('bg_')) ? 'full' : 'peek';
   const graph = first ? (PH?phoneBox():graphBox()) : `<div class="Box"><div class="Box-body caption" style="text-align:center;padding:48px 16px">아직 인물이나 단체가 없어요.<br>왼쪽 도구창의 <b>+ 인물 추가</b>, <b>+ 단체 추가</b>로 시작하면 여기에 관계도가 그려져요.</div></div>`;
   function graphBox(){ return `<div class="Box">
@@ -1650,6 +1701,7 @@ function renderWorld(){
         <label class="check"><input type="checkbox" id="g-mem" ${ui.showMembers?'checked':''}>소속 선</label>
         <label class="check"><input type="checkbox" id="g-ov" ${ui.overlay?'checked':''}>사건 영향 표시</label>
         ${rangePick()}
+        ${secretPick()}
         ${commits.length>1?`<button type="button" class="btn btn-sm" id="tl-open" aria-pressed="${!!ui.tl}">${ICON_PLAY}기록 재생</button>`:''}
         <div class="zoom" role="group" aria-label="확대와 축소"><button type="button" data-zoom="in" aria-label="확대">+</button><button type="button" data-zoom="out" aria-label="축소">−</button><button type="button" data-zoom="fit">전체</button></div>
       </div>
@@ -1683,6 +1735,7 @@ function renderWorld(){
     <div class="g-sheet g-viewsheet" role="dialog" aria-label="보기 설정"><div class="g-sheet-h"><h3>보기 설정</h3><button type="button" class="btn btn-sm" data-close-view>닫기</button></div>
       <label class="g-switch"><span>소속 선<small>인물이 어느 단체에 속하는지 점선으로 보여요</small></span><input type="checkbox" role="switch" id="g-mem" ${ui.showMembers?'checked':''}></label>
       <label class="g-switch"><span>사건 영향 표시<small>이 시점의 사건으로 이득·피해를 본 곳에 표시해요</small></span><input type="checkbox" role="switch" id="g-ov" ${ui.overlay?'checked':''}></label>
+      ${SECRETS.length?`<div class="g-legend-h">비밀</div><div class="caption" style="margin-bottom:6px">고른 비밀을 아는 인물만 또렷하게 보여요</div>${secretPick()}`:''}
       ${CHAPTERS.length?`<div class="g-legend-h">화 범위</div><div class="caption" style="margin-bottom:6px">고른 화에 나온 인물·단체만 또렷하게 보여요</div>${rangePick()}`:''}
       <div class="g-legend-h">범례</div><div class="legend">${legendHTML}</div></div>`; }
   $('#tab-world').innerHTML = pendingBanner() + `<div class="Subhead"><h2>세계관</h2><span class="muted">${esc(verLabel)}</span>${ui.graphVer==='preview'?'<span class="Label Label--done">아직 기록 안 됨</span>':''}
@@ -1701,6 +1754,7 @@ function renderWorld(){
   const gm=$('#g-mem'); if(gm) gm.onchange=ev=>{ ui.showMembers=ev.target.checked; renderWorld(); };
   const go_=$('#g-ov'); if(go_) go_.onchange=ev=>{ ui.overlay=ev.target.checked; renderWorld(); };
   wireRange(renderWorld);
+  const sp=$('#g-fact'); if(sp) sp.onchange=()=>{ ui.fact=sp.value||null; renderWorld(); };
   const svg=$('#g-svg');
   if(svg) wireGraph(svg, body);
   $$('[data-pick],[data-go]').forEach(b=>b.onclick=()=>pick(b.dataset.pick||b.dataset.go));
@@ -1938,6 +1992,7 @@ function pastDetail(s,e,ov,ovSrc){
           ${ov[e.id]!==undefined?`<div style="display:flex;gap:8px;align-items:center"><span class="caption" style="flex:none">이 사건의 영향</span>${wbar(ov[e.id])}<span class="num ${ov[e.id]<0?'neg':'pos'}">${sf2(ov[e.id])}</span></div><div class="caption">${esc(ovSrc||'')}</div>`:''}
           <div>${(e.traits||[]).map(t=>`<div style="display:grid;grid-template-columns:minmax(0,1fr) 80px 56px;gap:8px;align-items:center;font-size:12px;padding:2px 0"><span>${esc(t.label)}</span><div class="meter"><i style="width:${t.value*100}%"></i></div><span style="text-align:right">${lvOf(t.value)}</span></div>`).join('')}</div>
         </div>
+        ${e.id.startsWith('chr_')&&(e.knowledge||[]).length?`<div class="Box-row" style="flex-direction:column;align-items:stretch;gap:4px"><div class="caption">이 시점에 아는 것</div>${e.knowledge.map(k=>`<div>${k.secret?'<span class="Label Label--danger">비밀</span> ':''}${esc(k.text)} <span class="caption">${esc(k.how||'')}</span></div>`).join('')}</div>`:''}
         ${myRels.map(r=>{const o=r.from===e.id?r.to:r.from; const R=REL[r.type]||REL.personal; return `<div class="Box-row"><div style="flex:1;min-width:0"><button class="btn-link" data-pick="${o}">${esc(nm(s,o))}</button>${r.note?`<div class="caption">${esc(r.note)}</div>`:''}</div><span class="Label" style="color:${R.c};border-color:${R.c}">${R.l}${r.directed?(r.from===e.id?' →':' ←'):''}</span>${lvTag(r.intensity)}</div>`}).join('')}
         <div class="Box-row"><button class="btn btn-sm" id="g-now">지금 시점으로 돌아가 고치기</button></div>
       </div>`;
@@ -1958,6 +2013,7 @@ function wireDetail(e){
     setManual(`/background/${e.id}/title`, t); setManual(`/background/${e.id}/category`, $('#bg-cat').value.trim()||'기타');
     setManual(`/background/${e.id}/content`, $('#bg-content').value.trim()); toast(pending.length?'저장했어요':'바뀐 내용이 없어요'); render('world'); };
   if(!e.id.startsWith('bg_')) wireEntityEdit(e);
+  if(e.id.startsWith('chr_')) wireKnow(e);
   const base=`/${coll(e.id)}/${e.id}`;
   const nt=$('#ent-notes'); if(nt) nt.onchange=()=>{ const v=nt.value.trim(); if(v===(e.notes||'')) return; setManual(base+'/notes', v); flushPending(); saveWorld(); toast('메모를 저장했어요'); };
   const pb=$('#ent-photo-btn'); if(pb) pb.onclick=()=>$('#ent-photo').click();

@@ -13,7 +13,7 @@ export type AskInput = {
   quote?: string;
   world: unknown;
   notes?: { id: string; name: string; notes: string }[];
-  chapters?: { id: string; title: string; text: string; memos?: string[] }[];
+  chapters?: { id: string; title: string; text: string; memos?: string[]; commit?: string }[];
   commits?: { id: string; n: number; message: string; story_time?: string; description?: string }[];
   ids: string[];
 };
@@ -46,13 +46,14 @@ const SYSTEM = `당신은 작가의 원고와 세계관 설정집을 모두 읽�
 - 작가 메모에서 온 내용은 원고에 쓰인 사실과 구분해 "메모에 따르면"처럼 밝힙니다.
 - 원고를 대신 쓰거나 고쳐 쓰지 않습니다. 설정이 서로 어긋나 보이면 짚어 줍니다.
 - 근거마다 자료의 id를 sources에 넣습니다.
+- 인물의 knowledge(아는 것)는 since 기록부터 그 인물이 아는 사실입니다. "N화 시점"을 물으면 그 화의 commit(없으면 앞 화의 commit) 기록까지를 기준으로 답하고, 그 기록을 근거로 붙입니다.
 - 존댓말(해요체)로 짧고 분명하게 씁니다.`;
 
 export async function askWorld(input: AskInput, plan: Route = "free") {
   const parts = [`## 세계관\n${JSON.stringify(input.world)}`];
   if (input.notes?.length) parts.push(`## 작가 설정 메모\n${JSON.stringify(input.notes)}`);
   if (input.commits?.length) parts.push(`## 기록(사건 순서)\n${JSON.stringify(input.commits)}`);
-  if (input.chapters?.length) parts.push(`## 원고\n${input.chapters.map((c) => `### [${c.id}] ${c.title}\n${c.text}${c.memos?.length ? `\n(복선 메모: ${c.memos.join(" / ")})` : ""}`).join("\n\n")}`);
+  if (input.chapters?.length) parts.push(`## 원고\n${input.chapters.map((c) => `### [${c.id}] ${c.title}${c.commit ? ` (이 화 시점 기록: ${c.commit})` : ""}\n${c.text}${c.memos?.length ? `\n(복선 메모: ${c.memos.join(" / ")})` : ""}`).join("\n\n")}`);
   parts.push(input.quote ? `## 작가가 고른 문장\n${input.quote}\n\n## 질문\n${input.question}` : `## 질문\n${input.question}`);
   const { data, tokens, model, provider, detail, ms } = await generate<{ answer: string; sources: { id: string; why: string; from_notes: boolean }[] }>(
     plan,
