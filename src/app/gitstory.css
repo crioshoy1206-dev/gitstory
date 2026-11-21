@@ -840,3 +840,28 @@ body:has(.detail.g-full){overflow:hidden}
   .nb-cta{flex-direction:column;align-self:stretch}
 }
 @media (prefers-reduced-motion:reduce){.nb-btn{transition:none}}
+
+/* ---------- 관계도 타임랩스 ---------- */
+.tl-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--attention-subtle)}
+.tl-bar input[type=range]{flex:1 1 160px;min-width:100px;accent-color:var(--attention)}
+.tl-label{flex:2 1 200px;min-width:0;font-size:13px;line-height:1.35}
+.tl-label .tl-name{font-weight:600;overflow-wrap:anywhere}
+.tl-btn{width:34px;padding:0;display:inline-grid;place-items:center}
+.tl-bar svg.oct,#tl-open svg.oct{width:14px;height:14px;fill:currentColor;margin:0}
+#tl-open[aria-pressed="true"]{background:var(--attention-subtle);border-color:var(--attention);color:var(--fg)}
+.tl-hit{opacity:.55;animation:tl-pulse 1.4s ease-out}
+.tl-ghost{animation:tl-fade 1.4s ease-out forwards}
+@keyframes tl-pulse{0%{opacity:0}25%{opacity:.85}100%{opacity:.45}}
+@keyframes tl-fade{0%{opacity:.9}100%{opacity:.25}}
+.g-tl{position:absolute;left:8px;right:8px;top:56px;z-index:2;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px #0000002a}
+.g-tl .tl-bar{flex-wrap:wrap;gap:6px 8px;border:1px solid var(--border);border-radius:12px;padding:6px 10px}
+.g-tl .tl-label{flex:1 1 100%;order:3}
+.g-tl svg{min-width:0!important;max-width:none;touch-action:auto}
+@media (prefers-reduced-motion:reduce){.tl-hit,.tl-ghost{animation:none}}
+
+/* 화 ↔ 기록 연결 */
+.ch-when{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ch-when label{display:inline;margin:0;flex:none}
+.ch-when select.form-control{width:auto;min-width:0;flex:1 1 160px;font-size:13px;padding-block:4px}
+.ch-when .btn svg.oct{width:14px;height:14px}
+.ch-when #ch-when-tip{flex:1 1 100%}
