@@ -3,7 +3,7 @@
 import DATA_ARCANE from "@/data/arcane.json";
 import DATA_HP from "@/data/harry-potter.json";
 import DATA_JG from "@/data/janggu.json";
-import { loadCloud, saveCloud, signOutUser, fetchUsage, analyzeEvent, extractManuscript, listProjects, askWorld, getAiModel, setAiModel, fetchAiRuns } from "@/legacy/cloud";
+import { loadCloud, saveCloud, signOutUser, fetchUsage, analyzeEvent, extractManuscript, listProjects, askWorld, getAiModel, setAiModel, fetchAiRuns, createShare, listShares, deleteShare } from "@/legacy/cloud";
 
 let started = false;
 let USER;
@@ -2381,6 +2381,55 @@ async function pickEvent(id){
   ui.evDraft={title:c.event.title, description:c.event.description, story_time:c.event.story_time||''}; ui.evFrom=null; ui.evFromCh=null;
   showTab('event');
 }
+/* ---------- 스포일러 없는 공개 설정집 ----------
+   고른 기록 시점의 세계관을 누구나 볼 수 있는 읽기 전용 링크로 만든다.
+   이름·소속·상황·관계·배경만 보낸다. 메모·'아는 것'(비밀)·상황 이력·성격 수치는 보내지 않는다 (서버에서도 한 번 더 거른다). */
+function pubWorld(id){
+  const s=stateOf(id), pos={};
+  [...s.groups,...s.characters].forEach(x=>{ const p=LAYOUT[x.id]||POS[x.id]; if(p) pos[x.id]=p; });
+  const sit=e=>({status:e.situation?.status||'', current:e.situation?.current||''});
+  return {
+    groups:s.groups.map(g=>({id:g.id, name:g.name, kind:g.kind, parent:g.parent||null, situation:sit(g)})),
+    characters:s.characters.map(c=>({id:c.id, name:c.name, aliases:c.aliases||[], memberships:(c.memberships||[]).map(m=>({group:m.group, role:m.role||'', active:m.active!==false})), situation:sit(c), ...(c.photo?{photo:c.photo}:{})})),
+    relations:s.relations.map(r=>({from:r.from, to:r.to, type:r.type, intensity:r.intensity, note:r.note||'', directed:!!r.directed})),
+    background:s.background.map(b=>({title:b.title, category:b.category||'', content:b.content||''})), pos};
+}
+const shareUrl=id=>`${location.origin}/s/${id}`;
+async function copyLink(url){ try{ await navigator.clipboard.writeText(url); toast('링크를 복사했어요'); }catch(e){ await ask('링크 복사', [{label:'아래 주소를 복사해 주세요', value:url, max:200}], '닫기'); } }
+function loadShares(force){
+  if(ui.shares && !force) return; ui.shares=ui.shares||{loading:true, list:[]};
+  listShares().then(r=>{ ui.shares={list:r.shares}; }).catch(err=>{ console.warn('공개 설정집 목록 실패', err); ui.shares={list:[], err:friendlyErr(err)}; })
+    .finally(()=>{ if(cur()==='history' && (ui.histView||'tree')==='tree') renderHistory(); });
+}
+function sharesHtml(){
+  loadShares();
+  const mine=(ui.shares?.list||[]).filter(x=>!x.project || x.project===worldKey);
+  return `<div class="Box"><div class="Box-header"><h3>공개 설정집</h3>${mine.length?`<span class="Counter">${mine.length}</span>`:''}</div>
+    ${ui.shares?.loading?'<div class="Box-row caption"><span class="spinner sm"></span> 불러오는 중</div>':''}
+    ${ui.shares?.err?`<div class="Box-row caption">목록을 불러오지 못했어요. ${esc(ui.shares.err)}</div>`:''}
+    ${mine.map(x=>`<div class="Box-row" style="flex-wrap:wrap;gap:6px"><div style="flex:1;min-width:0"><b>${esc(x.title)}</b><div class="caption">${x.label?esc(x.label)+' 시점 · ':''}${fmtDate(x.createdAt)}</div></div>
+      <button class="btn btn-sm" data-shcopy="${esc(x.id)}">링크 복사</button><a class="btn btn-sm" href="/s/${esc(x.id)}" target="_blank" rel="noopener">열기</a><button class="btn btn-sm btn-danger" data-shdel="${esc(x.id)}">지우기</button></div>`).join('')}
+    <div class="Box-row caption">고른 기록 시점까지의 이름·소속·상황·관계·배경만 담긴 읽기 전용 링크예요. 메모와 인물만 아는 비밀, 이후 전개는 빠져요. 독자나 팬에게 스포일러 걱정 없이 보여줄 수 있어요.</div></div>`;
+}
+function wireShares(){
+  $$('[data-shcopy]').forEach(b=>b.onclick=()=>copyLink(shareUrl(b.dataset.shcopy)));
+  $$('[data-shdel]').forEach(b=>b.onclick=async ()=>{ const x=ui.shares.list.find(v=>v.id===b.dataset.shdel); if(!x) return;
+    if(!(await sure(`'${x.title}' 링크를 지울까요? 이 링크로는 더 이상 볼 수 없어요.`, '지우기', true))) return;
+    b.disabled=true;
+    try{ await deleteShare(x.id); ui.shares.list=ui.shares.list.filter(v=>v.id!==x.id); toast('링크를 지웠어요'); }
+    catch(err){ toast(`지우지 못했어요. ${friendlyErr(err)}`); }
+    renderHistory(); });
+}
+async function shareOpen(id){
+  const at=commits.some(c=>c.id===id) ? `${cnum(id)}${cname(id)}` : cname(id);
+  const v=await ask('공개 설정집 만들기', [{label:'제목', value:DATA.meta.title, max:80, required:true}, {label:'어느 시점인지 (독자에게 보이는 말, 예: 3권 끝)', value:at.slice(0,60), max:60}], '링크 만들기'); if(!v) return;
+  const btn=$('#t-share'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spinner sm"></span> 만드는 중'; }
+  try{
+    const {share}=await createShare({title:v[0], label:v[1], project:worldKey, world:pubWorld(id)});
+    (ui.shares=ui.shares&&!ui.shares.loading?ui.shares:{list:[]}).list.unshift(share);
+    renderHistory(); await copyLink(shareUrl(share.id));
+  }catch(err){ console.warn('공개 설정집 실패', err); toast(err?.body?.error || `링크를 만들지 못했어요. ${friendlyErr(err)}`); renderHistory(); }
+}
 /* ---------- 버전 기록 ---------- */
 const realCount=c=>c.patches.filter(p=>!(p.op==='add' && /\/situation\/history\/-$/.test(p.path) && p.after?.source==='manual')).length;
 function coalesce(from, to){
@@ -2480,7 +2529,9 @@ function renderTree(){
           ${!onLine.has(c.id)&&c.kind==='event'&&c.event?`<button class="btn btn-sm btn-primary" id="t-pick">${icon('bolt')}이 사건을 '${esc(curBranch().name)}'로 가져오기</button>`:''}
           <button class="btn btn-sm" id="t-branch">${icon('commit')}여기서 '만약에' 전개 만들기</button>
           <button class="btn btn-sm" id="t-graph">${icon('graph')}이 시점 관계도</button>
+          <button class="btn btn-sm" id="t-share">${icon('book')}이 시점 공개 설정집 만들기</button>
         </div></div>
+      ${sharesHtml()}
       <div class="Box"><div class="Box-header"><h3>전개</h3><span class="Counter">${branches.length}</span></div>
         ${branches.map((b,bi)=>`<div class="Box-row"><span class="dot" style="background:${LANE_C[bi%LANE_C.length]}"></span>
           <div style="flex:1;min-width:0"><b>${esc(b.name)}</b>${b.id===branchId?' <span class="Label Label--accent">지금</span>':''}<div class="caption">기록 ${lineOf(b.head).length}개 · 마지막: ${esc(cname(b.head))}</div></div>
@@ -2496,6 +2547,8 @@ function renderTree(){
     createBranch(sel, name); render(); };
   $('#t-graph').onclick=()=>{ ui.graphVer = sel===head().id?'work':sel; showTab('graph'); };
   const tp=$('#t-pick'); if(tp) tp.onclick=()=>pickEvent(sel);
+  $('#t-share').onclick=()=>shareOpen(sel);
+  wireShares();
   $$('[data-delb]').forEach(b=>b.onclick=async ()=>{ const br=branches.find(x=>x.id===b.dataset.delb);
     if(!(await sure(`'${br.name}' 전개를 지울까요? 이 전개에만 있는 기록도 함께 지워져요.`, '지우기', true))) return;
     if(!branches.some(x=>x.id===br.id) || br.id===branchId) return;
