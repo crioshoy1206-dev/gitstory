@@ -903,3 +903,14 @@ body:has(.detail.g-full){overflow:hidden}
 .rev-chg > span:first-child{min-width:90px;font-weight:600}
 .rev-flag{padding:8px 10px;border:1px solid var(--attention);background:var(--attention-subtle);border-radius:var(--r);font-size:13px}
 .rev-flag ul{margin:4px 0 0;padding-left:18px;line-height:1.6}
+
+/* 연재분 한꺼번에 가져오기 */
+.bulk-dlg{width:min(640px,calc(100vw - 32px))}
+.bulk-prev{max-height:200px;overflow:auto;padding:8px 10px;background:var(--bg-subtle);border-radius:var(--r)}
+.bulk-prev ol,.bulk-list{margin:6px 0 0;padding-left:22px;line-height:1.8}
+.bulk-box{margin-bottom:16px}
+.bulk-list{padding:8px 16px 10px 36px;max-height:240px;overflow:auto;font-size:13px}
+.bulk-bar{height:6px;background:var(--bg-muted);margin:0 16px}
+.bulk-bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
+.spinner.sm{display:inline-block;width:12px;height:12px;vertical-align:-2px}
+#ch-bulk{margin-left:6px}
