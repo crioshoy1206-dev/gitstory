@@ -954,5 +954,5 @@ html,body{max-width:100%;overflow-x:clip}
 .user-menu select{font-size:14px}
 /* 대화창이 화면보다 길면 바깥이 굴러가게 (휴대폰에서 아래 버튼이 밖으로 밀리지 않게) */
 .ask-back{overflow-y:auto;overscroll-behavior:contain;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
-.ask{max-height:none}
+.ask-back{place-items:start center}.ask-back > *{margin-block:auto}
 @media (max-height:760px){.bulk-prev{max-height:30vh}}
