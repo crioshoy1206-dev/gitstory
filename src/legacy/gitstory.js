@@ -2253,8 +2253,7 @@ function memberOf(s,a,b){
 function rawBefore(i){ const st=clone(state); for(let k=commits.length-1;k>=i;k--) commits[k].patches.slice().reverse().forEach(p=>applyPatch(st,p,true)); return st; }
 function reviseBlocked(id){
   if(pending.length) flushPending();
-  const other=branches.find(b=>b.id!==branchId && lineOf(b.head).some(c=>c.id===id));
-  return other ? `'${other.name}' 전개가 이 기록 뒤에서 갈라져 있어 고칠 수 없어요. 그 전개를 지우거나, 여기서 '만약에' 전개를 새로 만들어 다시 분석해 주세요.` : '';
+  return '';
 }
 function reviseOpen(id){
   const c=byId(id); const why=reviseBlocked(id); if(why){ toast(why); return; }
@@ -2286,28 +2285,48 @@ function reviseCompute(){
     .filter(x=>Math.abs(x.a-x.b)>=0.05).sort((x,y)=>Math.abs(y.b-y.a)-Math.abs(x.b-x.a));
   const moved=new Set(changed.filter(x=>level(x.a)[0]!==level(x.b)[0] || Math.sign(x.a)!==Math.sign(x.b)).map(x=>x.t));
   // 이후 기록을 차례로 다시 얹는다
-  const later=[], flags=[];
-  commits.slice(i+1).forEach(k=>{ const ps=[], f=[];
+  const later=[], flags=[], onLine=new Set(commits.map(x=>x.id)), forks=new Set(allCommits.filter(x=>!onLine.has(x.id)).map(x=>x.parent));
+  const snap=forks.has(c.id)?{[c.id]:clone(S)}:{};
+  const rebase=(S,k)=>{ const ps=[], f=[];
+    /* 한 기록 안의 변경은 앞의 것이 뒤의 것의 대상을 만들 수 있다(빈 '아는 것' 목록 만들기 → 거기에 더하기).
+       그래서 하나씩 검사하고 바로 얹는다 */
     k.patches.forEach(p=>{
-      const cur=getv(S,p.path), w=walk(S,p.path);
+      const cur=getv(S,p.path), w=walk(S,p.path); let np;
       if(p.op==='replace'){
         if(!w || (w.obj===undefined && !(w.arr && w.idx>-1))){ f.push(['drop', p]); return; }
         if(JSON.stringify(cur)!==JSON.stringify(p.before)) f.push(['over', p, cur]);
-        ps.push({...p, before:clone(cur)});
+        np={...p, before:clone(cur)};
       } else if(p.op==='add'){
         if(!w){ f.push(['drop', p]); return; }
-        ps.push(p);
+        np=p;
+      } else if(w?.append){
+        /* '…/-' 지우기는 목록의 마지막 것을 뺀다 (되돌리기 기록의 상황 이력 등) */
+        if(!w.arr.length){ f.push(['drop', p]); return; }
+        np={...p, before:clone(w.arr[w.arr.length-1])};
       } else {
         if(cur===undefined){ f.push(['drop', p]); return; }
-        ps.push({...p, before:clone(cur)});
+        np={...p, before:clone(cur)};
       }
+      ps.push(np); applyPatch(S,np);
     });
-    ps.forEach(p=>applyPatch(S,p));
-    const touch=k.kind==='event' ? [...new Set([...(k.event?.involved||[]), ...(k.event?.reactions||[]).map(r=>r.id)])].filter(t=>moved.has(t)) : [];
+    return {ps, f};
+  };
+  const touchOf=k=>k.kind==='event' ? [...new Set([...(k.event?.involved||[]), ...(k.event?.reactions||[]).map(r=>r.id)])].filter(t=>moved.has(t)) : [];
+  commits.slice(i+1).forEach(k=>{
+    const {ps, f}=rebase(S,k), touch=touchOf(k);
     if(f.length || touch.length) flags.push({k, f, touch});
-    later.push({k, ps});
+    later.push({k, ps}); if(forks.has(k.id)) snap[k.id]=clone(S);
   });
-  return {i, c, newP, impacts, changed, later, flags, S, involved:live.map(d=>d.target)};
+  // 이 기록 뒤에서 갈라진 다른 전개도 같은 방법으로 다시 얹는다 (공통 앞부분을 고치면 모든 전개에 반영)
+  const others=[];
+  allCommits.forEach(k=>{
+    if(onLine.has(k.id) || !snap[k.parent]) return;
+    const S2=clone(snap[k.parent]), {ps, f}=rebase(S2,k), touch=touchOf(k);
+    const br=branches.find(b=>lineOf(b.head).some(x=>x.id===k.id));
+    if(f.length || touch.length) flags.push({k, f, touch, branch:br?.name});
+    others.push({k, ps}); snap[k.id]=S2;
+  });
+  return {i, c, newP, impacts, changed, later, others, flags, S, involved:live.map(d=>d.target)};
 }
 function reviseHtml(c){
   const R=ui.revise, a=R.a; let r; try{ r=reviseCompute(); }catch(err){ console.warn(err); return `<div class="flash flash-warn">${icon('alert')}<div>다시 계산하지 못했어요. 이 기록은 고칠 수 없어요.</div></div>`; }
@@ -2326,7 +2345,8 @@ function reviseHtml(c){
       <div><b>이 기록의 영향 변화</b> ${r.changed.length?'':'<span class="caption">바뀌는 영향이 없어요</span>'}</div>
       ${r.changed.slice(0,8).map(x=>`<div class="rev-chg"><span>${esc(nm(s,x.t))}</span><span class="num ${x.a<0?'neg':'pos'}">${sf2(x.a)}</span>→<span class="num ${x.b<0?'neg':'pos'}"><b>${sf2(x.b)}</b></span><span class="caption">${level(x.a)[0]} → ${level(x.b)[0]}</span></div>`).join('')}
       <div><b>이후 기록 ${r.later.length}개</b> ${r.flags.length?`<span class="Label Label--attention">확인 필요 ${r.flags.length}</span>`:`<span class="caption">${r.later.length?'모두 그대로 이어져요':'이 기록이 마지막이에요'}</span>`}</div>
-      ${r.flags.map(({k,f,touch})=>`<div class="rev-flag"><div><b>${esc(cnum(k.id)+cname(k.id))}</b></div><ul>${why(f)}${touch.length?`<li>영향이 크게 바뀐 ${touch.map(t=>esc(nm(s,t))).join(', ')}${touch.length>1?'을(를)':jo(nm(s,touch[0]),'를','을').slice(nm(s,touch[0]).length)} 다룬 사건이에요. 이어지는지 확인해 주세요</li>`:''}</ul></div>`).join('')}
+      ${r.others.length?`<div class="caption">이 기록 뒤에서 갈라진 다른 전개의 기록 ${r.others.length}개도 함께 다시 계산해요</div>`:''}
+      ${r.flags.map(({k,f,touch,branch})=>`<div class="rev-flag"><div><b>${esc(cnum(k.id)+cname(k.id))}</b>${branch?` <span class="Label">${esc(branch)}</span>`:''}</div><ul>${why(f)}${touch.length?`<li>영향이 크게 바뀐 ${touch.map(t=>esc(nm(s,t))).join(', ')}${touch.length>1?'을(를)':jo(nm(s,touch[0]),'를','을').slice(nm(s,touch[0]).length)} 다룬 사건이에요. 이어지는지 확인해 주세요</li>`:''}</ul></div>`).join('')}
     </div>
     <div class="Box-row" style="flex-wrap:wrap;gap:8px"><span class="caption" style="flex:1 1 220px">적용하면 이 기록과 이후 기록이 바뀌어요. 적용 뒤 알림에서 되돌릴 수 있어요.</span><button class="btn btn-sm" data-rvcancel>취소</button><button class="btn btn-sm btn-primary" data-rvapply ${a.direct.length?'':'disabled'}>고치고 다시 계산</button></div></div>`;
 }
@@ -2340,13 +2360,13 @@ function wireRevise(){
   $$('[data-rvcancel]').forEach(b=>b.onclick=()=>{ ui.revise=null; redraw(); });
   $$('[data-rvapply]').forEach(b=>b.onclick=()=>{
     const why=reviseBlocked(R.id); if(why){ toast(why); return; }
-    const r=reviseCompute(), keep={state:clone(state), commits:commits.slice(r.i).map(k=>({k, patches:k.patches, impacts:k.impacts, involved:k.event?.involved, revised:k.revised}))};
+    const r=reviseCompute(), keep={state:clone(state), commits:[...commits.slice(r.i), ...r.others.map(x=>x.k)].map(k=>({k, patches:k.patches, impacts:k.impacts, involved:k.event?.involved, revised:k.revised}))};
     r.c.patches=r.newP; r.c.impacts=r.impacts; if(r.c.event) r.c.event.involved=r.involved;
     r.c.revised=[...(r.c.revised||[]), {at:new Date().toISOString(), flags:r.flags.length}];
-    r.later.forEach(({k,ps})=>{ k.patches=ps; });
+    r.later.forEach(({k,ps})=>{ k.patches=ps; }); r.others.forEach(({k,ps})=>{ k.patches=ps; });
     state=r.S; ui.revise=null; analysis=null; ui.graphVer='work';
     render();
-    toastUndo(`'${cname(r.c.id)}'를 고치고 이후 기록 ${r.later.length}개를 다시 계산했어요`, ()=>{
+    toastUndo(`${jq(cname(r.c.id),'를','을')} 고치고 이후 기록 ${r.later.length+r.others.length}개를 다시 계산했어요`, ()=>{
       keep.commits.forEach(x=>{ x.k.patches=x.patches; x.k.impacts=x.impacts; if(x.k.event) x.k.event.involved=x.involved; x.k.revised=x.revised; if(!x.revised) delete x.k.revised; });
       state=keep.state; render(); toast('고치기 전으로 되돌렸어요'); });
   });
