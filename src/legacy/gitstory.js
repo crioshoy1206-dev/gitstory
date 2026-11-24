@@ -475,7 +475,7 @@ function renderSide(){
   const pins=PINS.map(id=>ent(s,id)).filter(x=>x && hit(x));
   const pinSec=pins.length?`<section class="side-sec side-pins"><div class="side-sec-h"><span>★ 고정</span><span class="Counter">${pins.length}</span></div><ul class="tree">${pins.map(x=>item(x,`<span class="pin-star" aria-hidden="true">★</span>`, x.id.startsWith('chr_')?'인물':x.id.startsWith('grp_')?KIND[x.kind]:'배경')).join('')}</ul></section>`:'';
   $('#side-list').innerHTML = pinSec + (past && ui.graphVer!=='work' ? `<div class="flash side-past">${ui.graphVer==='preview'?'AI 제안 미리보기':`'${esc(cname(ui.graphVer))}'`} 시점 목록이에요</div>` : '') +
-    sec('chr','인물',chars.length, chars.map(c=>item(c, c.photo?`<img class="side-photo" src="${esc(c.photo)}" alt="" style="border-color:${nationColor(nationOf(s,c))}">`:`<span class="dot" style="background:${nationColor(nationOf(s,c))}${c.situation?.status==='사망'?';opacity:.4':''}"></span>`, c.situation?.status)).join('')) +
+    sec('chr','인물',chars.length, chars.map(c=>item(c, c.photo?`<img class="side-photo" src="${esc(c.photo)}" alt="" style="border-color:${nationColor(nationOf(s,c))}">`:`<span class="dot" style="background:${nationColor(nationOf(s,c))}${c.situation?.status==='사망'?';opacity:.4':''}"></span>`, chrMeta(s,c))).join('')) +
     sec('grp','단체',grps.length, grps.map(([g,d])=>item(g,`<span class="sq" style="background:${nationColor(nationOf(s,g))}"></span>`, KIND[g.kind], d)).join('')) +
     sec('bg','배경',bgs.length, bgs.map(b=>item(b,`<span class="sq" style="background:var(--border-strong)"></span>`, b.category)).join(''));
   $$('[data-side]').forEach(b=>b.onclick=()=>pick(b.dataset.side));
@@ -501,6 +501,9 @@ function pick(id){
   if(cur()!=='world') showTab('world'); else render('world');
   focusDetail();
 }
+/* 목록에서 인물 옆에 붙이는 짧은 설명: 소속·역할과 상황. 같은 성씨·비슷한 이름을 구분하게 */
+function chrMeta(s,c){ const m=(c.memberships||[]).find(x=>x.active!==false); const g=m&&ent(s,m.group);
+  return [g?`${g.name}${m.role?' '+m.role:''}`:'', c.situation?.status||''].filter(Boolean).join(' · '); }
 function focusDetail(){ const d=$('#detail'); if(!d) return; d.setAttribute('tabindex','-1'); d.focus({preventScroll:true}); /* 상세가 화면 아래(관계도 밑)에 열렸으면 보이게 굴린다. 폭과 상관없이 보이는지로 판단 (노트북 1280에서도) */
   if(!isPhone()){ const r=d.getBoundingClientRect(); if(r.top>innerHeight*0.7 || r.bottom<80) d.scrollIntoView({behavior:'smooth', block:'start'}); } }
 function sideOpen(open){
@@ -1943,7 +1946,7 @@ function renderWorld(){
         ${W.zones.map(z=>`<span><span class="sq" style="background:var(${z.c})"></span>${esc(nm(state,z.id))}</span>`).join('')}
         <span><span class="dot" style="background:var(--danger);opacity:.6"></span>피해</span><span><span class="dot" style="background:var(--success);opacity:.6"></span>이득</span>
       `;
-  const panel = pe ? `<aside class="detail" id="detail" aria-label="${esc(pe.name||pe.title)} 자세히">
+  const panel = pe ? `<aside class="detail" id="detail" data-for="${pe.id}" aria-label="${esc(pe.name||pe.title)} 자세히">
       <div class="detail-bar"><span class="caption">${editable?'여기서 바로 고칠 수 있어요':'지난 시점이라 보기만 할 수 있어요'}</span><button class="btn btn-sm" id="detail-close">닫기</button></div>
       ${editable ? (pe.id.startsWith('bg_')?bgDetail(pe):entityDetail(pe)) : pastDetail(s,pe,ov,ovSrc)}</aside>` : overview(s);
   function secretPick(){ return SECRETS.length?`<select class="form-control g-fact" id="g-fact" aria-label="이 비밀을 아는 사람만 보기"><option value="">비밀: 모두 보기</option>${SECRETS.map(f=>`<option value="${f.id}" ${ui.fact===f.id?'selected':''}>아는 사람만: ${esc(f.text.length>24?f.text.slice(0,23)+'…':f.text)} (${f.who.length}명)</option>`).join('')}</select>`:''; }
@@ -1993,6 +1996,8 @@ function renderWorld(){
       ${SECRETS.length?`<div class="g-legend-h">비밀</div><div class="caption" style="margin-bottom:6px">고른 비밀을 아는 인물만 또렷하게 보여요</div>${secretPick()}`:''}
       ${CHAPTERS.length?`<div class="g-legend-h">화 범위</div><div class="caption" style="margin-bottom:6px">고른 화에 나온 인물·단체만 또렷하게 보여요</div>${rangePick()}`:''}
       <div class="g-legend-h">범례</div><div class="legend">${legendHTML}</div></div>`; }
+  /* 다시 그려도 같은 항목의 상세(휴대폰 시트 포함)는 보던 자리를 지킨다 (성격·관계를 하나씩 더할 때 맨 위로 튀지 않게) */
+  const od=$('#detail'), keepTop=od && od.dataset.for===(pe?.id||'') ? od.scrollTop : null;
   $('#tab-world').innerHTML = pendingBanner() + `<div class="Subhead"><h2>세계관</h2><span class="muted">${esc(verLabel)}</span>${ui.graphVer==='preview'?'<span class="Label Label--done">아직 기록 안 됨</span>':''}
     <div class="actions">
       <select class="form-control" id="g-ver" style="width:auto;padding:3px 8px;font-size:12px" aria-label="버전">
@@ -2020,6 +2025,7 @@ function renderWorld(){
   const gn=$('#g-now'); if(gn) gn.onclick=()=>{ ui.graphVer='work'; render('world'); };
   if(pe && editable && (!PH || SHEET==='full')) wireDetail(pe);
   if(PH) wirePhone(pe, pos);
+  const nd=$('#detail'); if(nd && keepTop) nd.scrollTop=keepTop;
   wirePending();
 }
 /* 전체 맞춤: 기본 틀(1100x540)과 모든 노드를 함께 담는 범위. 노드가 틀 밖에 있어도 다 보이게 */

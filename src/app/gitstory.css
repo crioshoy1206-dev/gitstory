@@ -964,3 +964,15 @@ html,body{max-width:100%;overflow-x:clip}
 .share-hide-list{display:flex;flex-wrap:wrap;gap:6px 12px;max-height:160px;overflow:auto;padding:8px 0}
 #share-pv{max-height:240px;overflow:auto;padding:8px 10px;margin-top:6px;background:var(--bg);border:1px solid var(--border-muted);border-radius:var(--r)}
 .share-prev{margin:6px 0 0;padding-left:18px;font-size:12px;line-height:1.6}
+/* 알림: 시트·서랍 위에 뜨고, 버튼 말고는 아래를 누를 수 있게 (휴대폰에서 탭 줄을 가리지 않게) */
+.toast{z-index:45;pointer-events:none}
+.toast button,.toast a{pointer-events:auto}
+/* 선택칸이 긴 이름 때문에 상자 밖으로 넓어지지 않게 */
+select.form-control{max-width:100%}
+.Box{min-width:0}
+/* 휴대폰: 전파 표는 대상·경로·최종 영향·판정만 */
+@media (max-width:599.98px){
+  #prop-box .tbl th:nth-child(n+3):nth-child(-n+6),#prop-box .tbl td:nth-child(n+3):nth-child(-n+6),
+  #prop-box .tbl th:nth-child(8),#prop-box .tbl td:nth-child(8){display:none}
+  #prop-box .tbl td:nth-child(2){white-space:nowrap;max-width:9em;overflow:hidden;text-overflow:ellipsis}
+}
