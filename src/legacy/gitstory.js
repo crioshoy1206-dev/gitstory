@@ -795,9 +795,11 @@ function buildPatches(a, cid, s=state){
    센 대립인데 최근 사건에 같이 안 나온 쌍, 회수 안 한 복선 메모, 원고에 오래 안 나온 인물.
    누르면 사건 제목만 채운다 (내용은 작가가 쓴다). */
 const INACTIVE_RE=/사망|전사|처형|소멸|봉인|활동\s*불가|행동\s*불가|혼수|의식\s*불명|석화/;
+/* 죽었지만 움직이는 상태(귀신·원혼 등): 관계도에서는 죽은 인물로 흐리게, 행동은 할 수 있는 인물로 본다 */
+const GHOST_RE=/귀신|원혼|망령|유령|악령|혼령|언데드|좀비|강시/;
 const cut=(t,n)=>{ t=String(t||'').replace(/\s+/g,' ').trim(); return t.length>n?t.slice(0,n-1)+'…':t; };
 function nextIdeas(){
-  const alive=c=>c && !INACTIVE_RE.test(c.situation?.status||'');
+  const alive=c=>c && (!INACTIVE_RE.test(c.situation?.status||'') || GHOST_RE.test(c.situation?.status||''));
   const evs=commits.filter(c=>c.kind==='event' && c.event);
   const inv=c=>new Set([...(c.event.involved||[]), ...(c.event.reactions||[]).filter(r=>r.involvement==='연루').map(r=>r.id)]);
   // 1) 못 다 한 행동: 인물마다 가장 최근 반응의 '앞으로', 그 뒤 사건에 연루되지 않았을 때만
@@ -838,7 +840,10 @@ function wireIdeas(){
   const g=nextIdeas();
   $$('[data-idea]').forEach(b=>b.onclick=async ()=>{ const [k,i]=b.dataset.idea.split('|'), x=g[k]?.[+i]; if(!x) return;
     if(analysis && !(await sure('아직 기록하지 않은 분석 결과가 있어요. 버리고 새 사건을 쓸까요?', '버리고 쓰기', true))) return;
-    analysis=null; ui.evFrom=null; ui.evFromCh=null; ui.evDraft={title:x.title.slice(0,60), description:'', story_time:ui.evDraft?.story_time||''};
+    /* 쓰던 제목·내용이 있으면 지우지 않고 묻는다 */
+    const d=ui.evDraft||{}, wrote=(d.title||'').trim() || (d.description||'').trim();
+    if(!analysis && wrote && !(await sure(`쓰던 사건 '${(d.title||d.description||'').trim().slice(0,30)}'이(가) 있어요. 지우고 이 거리로 새로 쓸까요?`, '지우고 새로 쓰기', true))) return;
+    analysis=null; ui.evFrom=null; ui.evFromCh=null; ui.evDraft={title:x.title.slice(0,60), description:'', story_time:d.story_time||''};
     renderEvent(); const t=$('#ev-text'); if(t){ t.focus(); t.scrollIntoView({behavior:'smooth', block:'center'}); } toast('제목을 채웠어요. 무슨 일이 일어나는지 적어 주세요'); });
 }
 function evPosition(){
@@ -1835,7 +1840,7 @@ function renderWorld(){
   ].map(m=>{ const [x1,y1]=pos(m.a),[x2,y2]=pos(m.b); const dim=sel && !(m.a===sel||m.b===sel); const [cx,cy]=bend(m.a,m.b,x1,y1,x2,y2,0);
     return `<path d="M${x1},${y1} Q${cx},${cy} ${x2},${y2}" style="fill:none;stroke:var(--border-strong);stroke-width:${0.6+m.bond*1.6};stroke-dasharray:2 4" opacity="${m.active?(dim?.35:.9):.2}"><title>${esc(nm(s,m.a))} → ${esc(nm(s,m.b))} 소속 · 소속감 ${lvOf(m.bond)}</title></path>`; }).join('') : '';
   const node=e=>{
-    const [x,y]=pos(e.id); const col=nationColor(nationOf(s,e)); const isSel=e.id===sel; const dead=e.situation?.status==='사망';
+    const [x,y]=pos(e.id); const col=nationColor(nationOf(s,e)); const isSel=e.id===sel; const st_=e.situation?.status||'', ghost=GHOST_RE.test(st_), dead=ghost || INACTIVE_RE.test(st_);
     const dim = sel && !linked.has(e.id) && !(ui.showMembers && memberOf(s,e.id,sel));
     const w=ov[e.id]; let halo='';
     if(w!==undefined && Math.abs(w)>=0.25){ const hc=w<0?'var(--danger)':'var(--success)';
@@ -1865,7 +1870,7 @@ function renderWorld(){
         <circle cx="${x}" cy="${y}" r="${R}" style="fill:var(--bg-subtle)"/>
         <circle cx="${x}" cy="${y}" r="${R}" style="fill:${col};opacity:.16"/>
         ${face}<circle class="nshape" cx="${x}" cy="${y}" r="${R}" style="fill:none;stroke:${col};stroke-width:${isSel?2:1.25};stroke-opacity:${isSel?1:.7}"/>
-        <text x="${x}" y="${y+R+17}" text-anchor="middle" font-size="13.5" font-weight="${isSel?700:500}" letter-spacing="-.2" style="fill:var(--fg);paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round">${esc(e.name)}${dead?' (사망)':''}</text>`;
+        <text x="${x}" y="${y+R+17}" text-anchor="middle" font-size="13.5" font-weight="${isSel?700:500}" letter-spacing="-.2" style="fill:var(--fg);paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round">${esc(e.name)}${ghost?' (귀신)':dead?' (사망)':''}</text>`;
     }
     const out=RNG && !RNG.has(e.id);
     const tlRing=TLC?.has(e.id) ? (e.id.startsWith('grp_') ? (()=>{ const nat=e.kind==='nation', fs=nat?15:13.5, h=nat?36:30, wd=Math.round(e.name.length*fs*1.02+(nat?46:40)); return `<rect class="tl-hit" x="${x-wd/2-7}" y="${y-h/2-7}" width="${wd+14}" height="${h+14}" rx="${h/2+7}" style="fill:none;stroke:var(--attention);stroke-width:3"/>`; })()
