@@ -1944,7 +1944,7 @@ function renderWorld(){
   const svg=$('#g-svg');
   if(svg) wireGraph(svg, body);
   $$('[data-pick],[data-go]').forEach(b=>b.onclick=()=>pick(b.dataset.pick||b.dataset.go));
-  const dc=$('#detail-close'); if(dc) dc.onclick=()=>{ ui.sel=null; ui.editing=null; render('world'); };
+  const dc=$('#detail-close'); if(dc) dc.onclick=()=>{ deselect(); render('world'); };
   const oe=$('#ov-event'); if(oe) oe.onclick=()=>showTab('event');
   const oh=$('#ov-hist'); if(oh) oh.onclick=()=>showTab('history');
   const oi=$('#ov-ideas'); if(oi) oi.onclick=()=>{ showTab('event'); requestAnimationFrame(()=>$('.ideas')?.scrollIntoView({behavior:'smooth', block:'start'})); };
@@ -2006,6 +2006,8 @@ function wireTl(){
 }
 /* ---------- 휴대폰 관계도 ---------- */
 /* 폭이 좁거나, 눕힌 휴대폰처럼 높이가 낮은 터치 화면 */
+/* 고른 항목을 닫는다. 휴대폰에서 자세히 시트로 보고 있었으면 '세계관 한눈에' 큰 시트가 대신 열리지 않게 접는다 */
+function deselect(){ ui.sel=null; ui.editing=null; if(ui.sheet==='full') ui.sheet='peek'; }
 const isPhone=()=>innerWidth<600 || (innerHeight<500 && matchMedia('(pointer:coarse)').matches);
 const isPortrait=()=>{ const t=screen.orientation?.type; return t ? t.startsWith('portrait') : innerHeight>=innerWidth; };
 const ICON_LAYERS='<svg class="oct" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 15 4.6 8 8.2 1 4.6Zm-5.3 6.3L8 10l5.3-2.7L15 8.2 8 11.8 1 8.2Zm0 3.6L8 13.6l5.3-2.7 1.7.9L8 15.4 1 11.8Z"/></svg>';
@@ -2082,7 +2084,7 @@ function wirePhone(pe, pos){
   const open=to=>{ if(to==='peek' && pe?.id.startsWith('bg_')){ ui.sel=null; ui.editing=null; }
     ui.sheet=to; render('world'); if(to==='full') focusDetail(); else $('#g-view')?.focus({preventScroll:true}); };
   $$('[data-sheet]').forEach(b=>b.onclick=()=>open(b.dataset.sheet));
-  const close=()=>{ ui.sel=null; ui.editing=null; render('world'); };
+  const close=()=>{ deselect(); render('world'); };
   /* 새로 나타난 시트만 아래에서 올라오게 (다시 그릴 때마다 움직이지 않게) */
   const full=$('.detail.g-full'), peekEl=$('#g-peek');
   const key=full?`full:${pe?.id||''}`:peekEl?`peek:${selId||''}`:'';
@@ -2145,7 +2147,7 @@ function wireGraph(svg, body){
     else { const k=V.w/svg.clientWidth, x=d.vx-(ev.clientX-d.sx)*k, y=d.vy-(ev.clientY-d.sy)*k, r=d.r;
       V.x=r?soft(x,r.x0,r.x1):x; V.y=r?soft(y,r.y0,r.y1):y; V.touched=true; setVB(); } };
   const lift=ev=>{ pts.delete(ev.pointerId); if(pinch){ if(pts.size<2){ pinch=null; settle(); } return true; } return false; };
-  svg.onpointerup=ev=>{ if(lift(ev)) return; const x=d; d=null; if(!x) return; if(!x.moved){ if(x.id){ ui.sheet='peek'; pick(x.id); } else if(isPhone() && ui.sel){ ui.sel=null; ui.editing=null; render('world'); } return; } if(x.id && !x.ro) saveWorld(); else settle(); };
+  svg.onpointerup=ev=>{ if(lift(ev)) return; const x=d; d=null; if(!x) return; if(!x.moved){ if(x.id){ ui.sheet='peek'; pick(x.id); } else if(isPhone() && ui.sel){ deselect(); render('world'); } return; } if(x.id && !x.ro) saveWorld(); else settle(); };
   svg.onpointercancel=ev=>{ if(lift(ev)) return; const x=d; d=null; if(x && !x.id) settle(); };
   svg.onwheel=ev=>{ if(!ev.ctrlKey && !ev.metaKey) return; ev.preventDefault(); zoom(ev.deltaY<0?0.88:1/0.88, pt(ev)); clearTimeout(svg.st); svg.st=setTimeout(settle,250); };
   $$('[data-zoom]').forEach(b=>b.onclick=()=>{ const z=b.dataset.zoom; if(z==='fit'){ if(isPhone()) fitPhone(V); else { Object.assign(V, fitView()); setVB(); } } else { zoom(z==='in'?0.8:1.25); settle(); } });
@@ -2159,7 +2161,7 @@ function overview(s){
     <div class="Box"><div class="Box-header"><h3>세계관 한눈에</h3></div>
       <div class="Box-body stack" style="gap:12px">
         <div class="ov-stats">${[['인물',s.characters.length],['단체',s.groups.length],['배경',s.background.length],['관계',s.relations.length]].map(([l,n])=>`<div><b>${n}</b><span>${l}</span></div>`).join('')}</div>
-        <div class="caption">관계도나 왼쪽 목록에서 인물, 단체를 누르면 여기서 상황과 관계를 보고 바로 고칠 수 있어요.</div>
+        <div class="caption">관계도나 ${isPhone()?"☰ 목록":"왼쪽 목록"}에서 인물, 단체를 누르면 여기서 상황과 관계를 보고 바로 고칠 수 있어요.</div>
       </div></div>
     <div class="Box"><div class="Box-header"><h3>${line===commits?'최근 사건':'이 시점까지의 사건'}</h3><span class="Counter">${line.length}</span></div>
       ${recent.map(c=>`<div class="Box-row" style="align-items:flex-start"><span class="ov-n">${cnum(c.id).replace('. ','')}</span><div style="min-width:0"><div>${esc(cname(c.id))}</div>${c.event?.story_time?`<div class="caption">${esc(c.event.story_time)}</div>`:''}</div></div>`).join('')}
@@ -2219,7 +2221,7 @@ function wireDetail(e){
     const subs=e.id.startsWith('grp_')?state.groups.filter(g=>g.parent===e.id).length:0;
     if(!(await sure(`${jq(name,'를','을')} 지울까요?${more?` ${more}도 함께 지워져요.`:''}${subs?` 하위 단체 ${subs}개는 최상위 단체가 돼요.`:''} 지운 뒤에도 알림의 되돌리기로 되살릴 수 있어요.`, '지우기', true))) return;
     if(!ent(state,e.id)) return;
-    ui.sel=null; ui.editing=null; undoable(`${jq(name,'를','을')} 지웠어요`, removeEntity(e.id)); };
+    deselect(); undoable(`${jq(name,'를','을')} 지웠어요`, removeEntity(e.id)); };
   $$('[data-rmt]').forEach(b=>b.onclick=()=>{ const t=e.traits.find(x=>x.key===b.dataset.rmt); const p=removeManual(`${base}/traits/${b.dataset.rmt}`); undoable(`성격 ${jq(t?.label,'를','을')} 지웠어요`, p?[p]:[]); });
   $$('[data-rmm]').forEach(b=>b.onclick=()=>{ const g=b.dataset.rmm; const p=removeManual(`${base}/memberships/${g}`); undoable(`'${nm(state,g)}' 소속을 지웠어요`, p?[p]:[]); });
   $$('[data-rmr]').forEach(b=>b.onclick=()=>{ const r=state.relations.find(x=>x.id===b.dataset.rmr); const o=r&&(r.from===e.id?r.to:r.from); const p=removeManual(`/relations/${b.dataset.rmr}`); undoable(`${jo(nm(state,o),'와','과')}의 관계를 지웠어요`, p?[p]:[]); });
@@ -2929,7 +2931,8 @@ av.setAttribute('role','button'); av.tabIndex=0; av.setAttribute('aria-haspopup'
 function userMenu(open){
   const old=$('#user-menu'); if(old) old.outerHTML=''; av.setAttribute('aria-expanded', !!open); if(!open) return;
   $('.app-header').insertAdjacentHTML('beforeend', `<div class="user-menu" id="user-menu" role="menu" aria-label="${esc(USER.name)} 메뉴"><div class="caption">${esc(USER.name)}</div>
-    <button type="button" role="menuitem" data-um="theme-btn">테마</button><button type="button" role="menuitem" data-um="help-btn">도움말</button><button type="button" role="menuitem" data-um="sign-out">로그아웃</button></div>`);
+    <button type="button" role="menuitem" data-um="theme-btn">테마</button><button type="button" role="menuitem" data-um="help-btn">도움말</button>${isPhone()&&$('#ai-runs')?'<button type="button" role="menuitem" data-um="ai-runs">AI 기록 복사</button>':''}${isPhone()&&$('#ai-model')?`<label>AI 모델 (관리자)<select class="form-control" id="um-model">${$('#ai-model').innerHTML}</select></label>`:''}<button type="button" role="menuitem" data-um="sign-out">로그아웃</button></div>`);
+  const um=$('#um-model'); if(um){ um.value=$('#ai-model').value; um.onclick=ev=>ev.stopPropagation(); um.onchange=()=>{ const m=$('#ai-model'); m.value=um.value; m.dispatchEvent(new Event('change')); }; }
   $$('[data-um]').forEach(b=>b.onclick=ev=>{ ev.stopPropagation(); userMenu(false); $('#'+b.dataset.um).click(); });
   $('#user-menu').onkeydown=ev=>{ if(ev.key==='Escape'){ userMenu(false); av.focus(); } };
   $('#user-menu button').focus();
@@ -2982,7 +2985,7 @@ $('#ask-btn').onclick=()=>askOpen(!$('#ask-panel'));
     else if($('#side').classList.contains('open')) sideOpen(false);
     else if(cur()==='world' && ui.viewSheet){ ui.viewSheet=false; renderWorld(); }
     else if(cur()==='world' && isPhone() && ui.sheet==='full' && !ui.sel?.startsWith('bg_')){ ui.sheet='peek'; render('world'); }
-    else if(cur()==='world' && ui.sel){ ui.sel=null; ui.editing=null; render('world'); }
+    else if(cur()==='world' && ui.sel){ deselect(); render('world'); }
     else if(cur()!=='world') showTab('world');
     else { backAt=Date.now(); toast('뒤로가기를 한 번 더 누르면 나가요'); }
     guard();

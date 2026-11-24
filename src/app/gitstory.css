@@ -934,3 +934,21 @@ body:has(.detail.g-full){overflow:hidden}
 .pub-bg p{white-space:pre-wrap;line-height:1.7;margin:6px 0 0}
 .share-row{display:flex;gap:8px;align-items:center}
 .share-row input{flex:1;min-width:0}
+
+/* ---------- 휴대폰: 가로 넘침 막기 ----------
+   한 요소라도 화면보다 넓으면 휴대폰 브라우저가 고정 요소(아래 시트, 안내 카드)를 넓어진 폭으로 그려
+   오른쪽이 잘린다. 머리줄의 관리자 도구가 그 원인이었고, 다른 요소가 넘쳐도 화면이 옆으로 밀리지 않게 막는다. */
+html,body{max-width:100%;overflow-x:clip}
+.app-header{min-width:0}
+.header-right{min-width:0}
+@media (max-width:599.98px){
+  #ai-runs,#ai-model{display:none}
+  .main-tabs{gap:2px}
+  .main-tabs > button,:root:not([data-skin]) .main-tabs > button{flex:1 1 auto;justify-content:center;min-width:0;padding:7px 6px;gap:4px;font-size:13px}
+  .main-tabs .side-toggle{flex:1 1 auto;justify-content:center;padding-inline:6px}
+}
+@media (max-width:379.98px){
+  .main-tabs > button[role="tab"] .oct{display:none}
+}
+.user-menu label{display:flex;flex-direction:column;gap:4px;padding:8px 10px;font-size:12px;color:var(--fg-muted)}
+.user-menu select{font-size:14px}
