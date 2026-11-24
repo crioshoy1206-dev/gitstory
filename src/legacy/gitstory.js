@@ -501,7 +501,8 @@ function pick(id){
   if(cur()!=='world') showTab('world'); else render('world');
   focusDetail();
 }
-function focusDetail(){ const d=$('#detail'); if(!d) return; d.setAttribute('tabindex','-1'); d.focus({preventScroll:true}); if(window.innerWidth<1200 && !isPhone()) d.scrollIntoView({behavior:'smooth', block:'start'}); }
+function focusDetail(){ const d=$('#detail'); if(!d) return; d.setAttribute('tabindex','-1'); d.focus({preventScroll:true}); /* 상세가 화면 아래(관계도 밑)에 열렸으면 보이게 굴린다. 폭과 상관없이 보이는지로 판단 (노트북 1280에서도) */
+  if(!isPhone()){ const r=d.getBoundingClientRect(); if(r.top>innerHeight*0.7 || r.bottom<80) d.scrollIntoView({behavior:'smooth', block:'start'}); } }
 function sideOpen(open){
   const side=$('#side'), was=side.classList.contains('open'), inside=side.contains(document.activeElement);
   side.classList.toggle('open', open); $('#side-backdrop').hidden=!open; document.body.classList.toggle('side-lock', open);
@@ -1839,6 +1840,7 @@ function renderWorld(){
   const PH=isPhone(), VERT=PH && isPortrait(); ui.vert=VERT;
   const raw=id=>LAYOUT[id]||POS[id]||auto[id]||[430,300];
   const pos=id=>{ const p=raw(id); return VERT?[p[1],p[0]]:p; };
+  ui.fitPts=[...s.groups,...s.characters].map(x=>pos(x.id));
   const V=ui.view||(ui.view=PH?{x:0,y:0,w:VERT?540:1100,h:VERT?1100:540,fresh:true}:fitView());
   const linked=new Set(sel?[sel]:[]); s.relations.forEach(r=>{ if(r.from===sel) linked.add(r.to); if(r.to===sel) linked.add(r.from); });
   const isNode=id=>id.startsWith('grp_')||id.startsWith('chr_');
@@ -2020,7 +2022,14 @@ function renderWorld(){
   if(PH) wirePhone(pe, pos);
   wirePending();
 }
-const fitView=()=>({x:0,y:0,w:1100,h:540});
+/* 전체 맞춤: 기본 틀(1100x540)과 모든 노드를 함께 담는 범위. 노드가 틀 밖에 있어도 다 보이게 */
+function fitView(){
+  const pts=ui.fitPts||[]; let x0=0, y0=0, x1=1100, y1=540;
+  pts.forEach(([x,y])=>{ x0=Math.min(x0,x-90); y0=Math.min(y0,y-50); x1=Math.max(x1,x+90); y1=Math.max(y1,y+60); });
+  let w=x1-x0, h=y1-y0; const k=1100/540;
+  if(w/h<k){ const d=h*k-w; x0-=d/2; w=h*k; } else { const d=w/k-h; y0-=d/2; h=w/k; }
+  return {x:x0, y:y0, w, h, fitW:w};
+}
 /* ---------- 관계도 타임랩스: 본편 줄기의 기록을 차례로 넘기며 관계도가 어떻게 바뀌는지 보여 준다 ----------
    위치는 layout 그대로라 노드가 흔들리지 않는다. 그 기록에서 바뀐 노드·관계는 노랗게, 끊긴 관계는 빨간 점선으로 잠깐 보인다. */
 const ICON_PLAY='<svg class="oct" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>';
@@ -2104,7 +2113,7 @@ function fitPhone(V){
   svg.setAttribute('viewBox', `${V.x} ${V.y} ${V.w} ${V.h}`);
 }
 /* 확대·축소 한계: 휴대폰에서는 '전체 맞춤'보다 조금 더 작게까지만 줄어든다 */
-function zoomRange(V){ return isPhone() ? [150, Math.max(400, (V.fitW||2200)*1.15)] : [280, 2200]; }
+function zoomRange(V){ return isPhone() ? [150, Math.max(400, (V.fitW||2200)*1.15)] : [280, Math.max(2200, (V.fitW||0)*1.15)]; }
 /* 영역 크기가 바뀌었는데(주소창이 사라지는 등) 아직 손대지 않았으면 다시 맞춘다 */
 function refitPhone(){ const V=ui.view, svg=$('#g-svg'); if(!V||!svg) return;
   if(V.fresh || (!V.touched && V.fitSize!==`${svg.clientWidth}x${svg.clientHeight}`)) fitPhone(V); }
