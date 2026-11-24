@@ -883,7 +883,7 @@ function renderEvent(){
     // 이전 결과는 버린다: 기다리는 동안 예전 결과가 기록되지 않게
     const prev=deep&&analysis&&!analysis.guess&&!analysis.done?analysis:null;
     analysis=null; evBusy=true; ui.evDraft={title:$('#ev-title').value, description:text, story_time:time};
-    const req=++evSeq, wk=worldKey, from=ui.evFrom, fromCh=ui.evFromCh;
+    const req=++evSeq, wk=worldKey, bk=branchId, from=ui.evFrom, fromCh=ui.evFromCh;
     if(innerWidth<900) requestAnimationFrame(()=>$('#ev-result')?.scrollIntoView({behavior:'smooth', block:'nearest'}));
     $('#ev-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">${deep?'AI가 사건을 깊게 다시 분석하고 있어요. 30~60초쯤 걸려요':'AI가 사건이 단체·인물에 주는 직접 영향을 판단하고 있습니다'} <span id="ev-wait"></span></span></div></div>`;
     const t0=Date.now(), tick=setInterval(()=>{ const w=$('#ev-wait'), s=Math.round((Date.now()-t0)/1000); if(w) w.textContent=`· ${s}초`+(s>=(deep?70:25)?' (AI 서버가 붐벼 다시 시도하는 중이에요)':''); },1000);
@@ -905,9 +905,13 @@ function renderEvent(){
     if(req!==evSeq) return;              // 더 새 분석이 시작됨
     evBusy=false;
     if(wk!==worldKey){ toast('다른 세계관으로 옮겨서 분석 결과를 버렸어요'); return; }
-    // 기다리는 동안 지워진 대상은 뺀다
+    /* 다른 전개는 인물 상태가 달라(이미 죽은 인물 등) 그 결과를 그대로 기록하면 안 된다 */
+    if(bk!==branchId){ const bn=branches.find(b=>b.id===bk)?.name||'다른'; toast(`'${bn}' 전개에서 시작한 분석이라 버렸어요. 그 전개로 돌아가 다시 분석해 주세요`); return; }
+    // 기다리는 동안 지워진 대상은 뺀다. 새로 생길 관계는 양쪽 인물·단체가 남아 있으면 둔다
     const has=id=>!!ent(state,id);
-    a.direct=(a.direct||[]).filter(d=>has(d.target)); a.relations=(a.relations||[]).filter(r=>{ const m=r.path?.match(/^\/relations\/([^/]+)/); return !m || state.relations.some(x=>x.id===m[1]); });
+    a.direct=(a.direct||[]).filter(d=>has(d.target)); a.relations=(a.relations||[]).filter(r=>{ const m=r.path?.match(/^\/relations\/([^/]+)/); if(!m) return true;
+      if(r.op==='add' && r.path===m[0]) return !state.relations.some(x=>x.id===m[1]) && has(r.after?.from) && has(r.after?.to);
+      return state.relations.some(x=>x.id===m[1]); });
     if(a.rewrite) Object.keys(a.rewrite).forEach(k=>{ if(!has(k)) delete a.rewrite[k]; });
     a.knows=(a.knows||[]).map(k=>({...k, knowers:k.knowers.filter(w=>has(w.id))})).filter(k=>k.knowers.length);
     analysis=a; analysis.story_time=time; analysis.from=from; analysis.fromCh=fromCh; analysis.note=note;
@@ -967,7 +971,9 @@ function drawAnalysis(){
   $$('[data-del]').forEach(b=>b.onclick=()=>{ a.direct.splice(+b.dataset.del,1); drawAnalysis(); });
   $$('[data-rel]').forEach(c=>c.onchange=()=>{ a.relations[c.dataset.rel].on=c.checked; drawProp(); });
   $$('[data-know]').forEach(c=>c.onchange=()=>{ a.knows[c.dataset.know].on=c.checked; drawProp(); });
-  const dp=$('#ev-deep'); if(dp) dp.onclick=()=>{ const run=$('#ev-run'); if(run && !run.disabled) run.onclick(null, true); };
+  const dp=$('#ev-deep'); if(dp) dp.onclick=async ()=>{ const run=$('#ev-run'); if(!run || run.disabled) return;
+    if(!(await sure('깊게 분석하면 지금 결과가 새 결과로 바뀌어요. 직접 고친 영향 크기·요약도 새 값으로 덮여요. 계속할까요?', '깊게 분석하기'))) return;
+    run.onclick(null, true); };
   const ad=$('#add-direct'); if(ad) ad.onclick=()=>{ const id=$('#add-target').value; if(!id) return; a.direct.push({target:id, M:-0.5, tags:['위협'], summary:'사건의 직접 영향'}); drawAnalysis(); };
   drawProp();
 }
