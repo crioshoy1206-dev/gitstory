@@ -976,3 +976,10 @@ select.form-control{max-width:100%}
   #prop-box .tbl th:nth-child(8),#prop-box .tbl td:nth-child(8){display:none}
   #prop-box .tbl td:nth-child(2){white-space:nowrap;max-width:9em;overflow:hidden;text-overflow:ellipsis}
 }
+/* 페이지 확대·축소 막기: 손가락으로는 위아래·옆으로 굴리기만 (두 손가락 확대·두 번 눌러 확대 없음).
+   관계도(#g-svg)는 touch-action:none으로 자체 확대·이동을 그대로 쓴다 */
+html,body{touch-action:pan-x pan-y;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+/* iOS는 16px보다 작은 입력칸을 누르면 화면을 확대한다 */
+@media (max-width:599.98px),(pointer:coarse){
+  input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea,.form-control{font-size:16px!important}
+}
