@@ -98,6 +98,12 @@ function newId(p){ return `${p}_${Date.now().toString(36).slice(-5)}${Math.rando
 function newSha(){ return Array.from({length:7},()=>'0123456789abcdef'[Math.random()*16|0]).join(''); }
 function toast(t){ const el=$('#toast'); el.textContent=t; const lv=$('#live'); if(lv){ lv.textContent=''; setTimeout(()=>{ lv.textContent=t; }, 30); } el.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,2600); }
 /* 알림에 되돌리기 버튼을 붙인다 (지우기 직후 실수를 바로 무를 수 있게) */
+/* 알림에 버튼 하나(예: '원고에서도 바꾸기')를 붙인다 */
+function toastAct(t, label, fn, ms=10000){
+  const el=$('#toast'); el.innerHTML=`${esc(t)} <button type="button" class="toast-undo" id="toast-act">${esc(label)}</button>`; el.hidden=false;
+  clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true, ms);
+  $('#toast-act').onclick=()=>{ el.hidden=true; fn(); };
+}
 function toastUndo(t, undo){
   const el=$('#toast'); el.innerHTML=`${esc(t)} <button type="button" class="toast-undo" id="toast-undo">되돌리기</button>`; el.hidden=false;
   clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,7000);
@@ -573,6 +579,13 @@ function wireEntityEdit(e){
     const kd=$('#ed-kind'); if(kd) setManual(base+'/kind', kd.value);
     const pr=$('#ed-parent'); if(pr) setManual(base+'/parent', pr.value||null);
     ui.editing=null; done(pending.length!==before||pending.length?'저장했어요':'바뀐 내용이 없어요');
+    /* 이름을 바꿨고 원고에 옛 이름이 남아 있으면 모든 화에서 함께 바꿀지 알림으로 묻는다 */
+    const old=e.name; if(name!==old && old.length>=2){
+      const hits=CHAPTERS.map(c=>({c, n:chTextOf(c.id).split(old).length-1})).filter(x=>x.n), tot=hits.reduce((a,x)=>a+x.n,0);
+      if(tot) toastAct(`원고 ${hits.length}개 화에 옛 이름 '${old}'${jo(old,'가','이').slice(old.length)} ${tot}번 나와요`, '원고에서도 바꾸기', ()=>{
+        hits.forEach(({c})=>{ const b=loadChapter(c.id); snapChapter(c.id, true); b.text=b.text.split(old).join(name); saveChapter(c.id); });
+        APPEAR.sig=''; if(cur()==='manuscript') renderManuscript(); toast(`${hits.length}개 화에서 '${old}' → '${name}'${jo(name,'로','으로').slice(name.length)} 바꿨어요. 화마다 바꾸기 전 원고가 이전 버전에 남아요`); });
+    }
   };
   const ta=$('#tr-add'); if(ta) ta.onclick=()=>{
     const label=$('#tr-label').value.trim(); if(!label){ toast('성격 이름을 입력하세요'); return; }
@@ -1359,10 +1372,15 @@ function wireConflicts(r){
 function applyMs(){
   const r=msResult;
   if(!r || r.note || r.cid!==ui.ch) return;
+  const h0=head().id, had=chCommit(r.cid);
   const n=applyCands(r);
-  toast(`${n}개를 반영했어요`); render();
-  // 반영한 기록에 이 화를 잇는다 (이 화 시점의 세계관 = 이 기록)
-  const cm=chMeta(r.cid); if(n && cm){ cm.commit=head().id; saveWorld(); if(cur()==='manuscript') renderManuscript(); }
+  render();
+  /* 반영한 기록에 이 화를 잇는다 (이 화 시점의 세계관 = 이 기록). 다만 작가가 이 화를 더 앞 시점에 이어 두었으면
+     그 시점을 그대로 둔다. 1화를 반영할 때마다 맨 끝 시점으로 끌려가 '죽은 인물이 말한다' 같은 틀린 지적이 생기지 않게 */
+  const cm=chMeta(r.cid);
+  if(n && cm && (!had || had===h0)){ cm.commit=head().id; toast(`${n}개를 반영했어요`); }
+  else toast(n && had ? `${n}개를 반영했어요. 이 화 시점은 '${cname(had)}' 그대로 두었어요` : `${n}개를 반영했어요`);
+  if(n && cm){ saveWorld(); if(cur()==='manuscript') renderManuscript(); }
 }
 /* ---------- 연재분 한꺼번에 가져오기 ----------
    TXT·Markdown 여러 파일이나, 화 제목(예: '3화', '제3화', 'Chapter 3', '# 3화')·구분선(---)으로 나뉜 긴 글 하나를 화로 나눠 저장한다.
@@ -1494,7 +1512,9 @@ function applyCands(r){
     addManual(`/characters/${id}`, {id, name:c.name, aliases:c.aliases, memberships:m, traits:[], situation:{current:c.summary||'', status:'', history:[]}}); });
   r.updates.filter(u=>u.on).forEach(u=>{ const e=ent(state,u.id); if(!e?.situation) return; n++;
     const base=`/${coll(u.id)}/${u.id}/situation`; setManual(base+'/status', u.status); setManual(base+'/current', u.text); });
-  r.relations.filter(x=>x.on).forEach(x=>{ const from=idOf(x.from), to=idOf(x.to); if(!from||!to) return; n++;
+  r.relations.filter(x=>x.on).forEach(x=>{ const from=idOf(x.from), to=idOf(x.to); if(!from||!to||from===to) return;
+    /* 같은 두 사람 사이에 같은 종류 관계가 이미 있으면 새로 만들지 않는다 (여러 화를 차례로 읽을 때 겹쳐 쌓이지 않게) */
+    if(state.relations.some(o=>o.type===x.type && ((o.from===from&&o.to===to)||(o.from===to&&o.to===from)))) return; n++;
     const id=newId('rel'), rel={id, from, to, type:x.type, intensity:x.intensity}; if(x.note) rel.note=x.note; addManual(`/relations/${id}`, rel); });
   ['characters','groups','updates','relations'].forEach(k=>{ r[k]=r[k].filter(x=>!x.on); });
   if(n){ const t=chMeta(r.cid)?.title||'원고'; manualFrom=`원고 '${t}'에서 반영`; }
@@ -1506,7 +1526,22 @@ function applyCands(r){
    두 글자 이상인 이름만 센다 (한 글자 이름은 다른 낱말에 섞여 잘못 잡히기 쉬워서). */
 const GAP_MIN=3;   // 이만큼 이어서 안 나오면 '오래 안 나옴'
 function nameKeys(e){ return [...new Set([e.name, ...(e.aliases||[])].map(x=>String(x||'').trim()).filter(x=>x.length>=2))]; }
-function countIn(text, keys){ let n=0; keys.forEach(k=>{ let i=0; while((i=text.indexOf(k,i))>-1){ n++; i+=k.length; } }); return n; }
+/* 성을 뺀 이름('김유찬' → '유찬'). 다른 인물과 겹치지 않을 때만. 대사(유찬: …)나 조사가 붙은 경우만 센다 */
+function givenName(e){
+  if(!e?.id?.startsWith('chr_')) return null;
+  const c=String(e.name||'').trim(); if(!/^[가-힣]{3,4}$/.test(c)) return null;
+  const g=c.slice(1), taken=state.characters.some(x=>x.id!==e.id && [x.name, ...(x.aliases||[])].some(n=>String(n||'').includes(g)));
+  return taken || (e.aliases||[]).includes(g) ? null : g;
+}
+const GIVEN_NEXT=/^[:：이가은는을를의와과도아야께에랑한하,.!?…"'」』)\]]/;
+/* 이름이 몇 번 나오는지. 긴 이름부터 세고 센 자리는 지워서 '김유찬'을 '유찬'으로 한 번 더 세지 않는다 */
+function countIn(text, keys, given){
+  let t=text, n=0;
+  [...keys].sort((a,b)=>b.length-a.length).forEach(k=>{ let i=0; while((i=t.indexOf(k,i))>-1){ n++; t=t.slice(0,i)+' '.repeat(k.length)+t.slice(i+k.length); i+=k.length; } });
+  if(given){ let i=0; while((i=t.indexOf(given,i))>-1){ const prev=t[i-1]||' ', next=t.slice(i+given.length);
+    if(!/[가-힣A-Za-z0-9]/.test(prev) && GIVEN_NEXT.test(next)) n++; i+=given.length; } }
+  return n;
+}
 function chTextOf(id){ return chMeta(id)||chBody[id] ? (loadChapter(id).text||'') : ''; }
 let APPEAR={sig:'', map:null};
 function appearMap(){
@@ -1514,12 +1549,12 @@ function appearMap(){
   const sig=worldKey+'|'+CHAPTERS.map(c=>c.id+':'+(c.updatedAt||0)).join(',')+'|'+ents.map(e=>e.id+'='+nameKeys(e).join('/')).join(',');
   if(APPEAR.sig===sig && APPEAR.map) return APPEAR.map;
   const texts=CHAPTERS.map(c=>chTextOf(c.id));
-  const map={}; ents.forEach(e=>{ const k=nameKeys(e); map[e.id]=texts.map(t=>k.length?countIn(t,k):0); });
+  const map={}; ents.forEach(e=>{ const k=nameKeys(e); const g=givenName(e); map[e.id]=texts.map(t=>k.length?countIn(t,k,g):0); });
   APPEAR={sig, map}; return map;
 }
 /* 한 화에 나온 항목: [{e, n}] 많이 나온 순 */
 function appearIn(text){
-  return [...state.characters, ...state.groups].map(e=>({e, n:countIn(text, nameKeys(e))})).filter(x=>x.n>0).sort((a,b)=>b.n-a.n);
+  return [...state.characters, ...state.groups].map(e=>({e, n:countIn(text, nameKeys(e), givenName(e))})).filter(x=>x.n>0).sort((a,b)=>b.n-a.n);
 }
 /* 관계도 화 범위: 고른 화들에 한 번이라도 나온 항목 id. 범위를 안 골랐으면 null */
 function rangeSet(){
@@ -1614,7 +1649,7 @@ function msAside(id, b){
 /* ---------- 찾아 바꾸기 ---------- */
 function findBar(){
   return `<div class="find-bar" id="find-bar" role="search" aria-label="찾아 바꾸기"><input class="form-control" id="find-q" placeholder="찾을 말" aria-label="찾을 말" value="${esc(ui.findQ||'')}"><input class="form-control" id="find-r" placeholder="바꿀 말" aria-label="바꿀 말" value="${esc(ui.findR||'')}">
-    <span class="caption" id="find-n" aria-live="polite"></span><button class="btn btn-sm" type="button" id="find-next">다음</button><button class="btn btn-sm" type="button" id="find-one">바꾸기</button><button class="btn btn-sm" type="button" id="find-all">모두 바꾸기</button><button class="btn btn-sm" type="button" id="find-close" aria-label="찾아 바꾸기 닫기">닫기</button></div>`;
+    <span class="caption" id="find-n" aria-live="polite"></span><button class="btn btn-sm" type="button" id="find-next">다음</button><button class="btn btn-sm" type="button" id="find-one">바꾸기</button><button class="btn btn-sm" type="button" id="find-all">모두 바꾸기</button>${CHAPTERS.length>1?'<button class="btn btn-sm" type="button" id="find-every" title="모든 화에서 바꾸기">모든 화에서</button>':''}<button class="btn btn-sm" type="button" id="find-close" aria-label="찾아 바꾸기 닫기">닫기</button></div>`;
 }
 /* 고른 위치가 보이게 편집기를 굴린다 */
 function scrollToSel(ta, i){
@@ -1633,6 +1668,14 @@ function wireFind(ta, onChange){
     const a=ta.selectionStart; ta.setRangeText(r.value, a, a+k.length, 'end'); onChange(); count(); next(); };
   $('#find-all').onclick=()=>{ const k=q.value; if(!k) return; const c=ta.value.split(k).length-1; if(!c){ toast('바꿀 곳이 없어요'); return; }
     onChange(true); ta.value=ta.value.split(k).join(r.value); onChange(); count(); toast(`${c}곳을 바꿨어요. 이전 버전에 바꾸기 전 원고가 남아 있어요`); };
+  const ev_=$('#find-every'); if(ev_) ev_.onclick=async ()=>{ const k=q.value; if(!k) return;
+    const hits=CHAPTERS.map(c=>({c, n:(c.id===ui.ch?ta.value:chTextOf(c.id)).split(k).length-1})).filter(x=>x.n);
+    if(!hits.length){ toast('바꿀 곳이 없어요'); return; }
+    const tot=hits.reduce((a,x)=>a+x.n,0);
+    if(!(await sure(`${hits.length}개 화에서 '${k}' ${tot}곳을 '${r.value}'${jo(r.value||'빈칸','로','으로').slice((r.value||'빈칸').length)} 바꿀까요? 화마다 바꾸기 전 원고가 이전 버전에 남아요.`, '모든 화에서 바꾸기'))) return;
+    hits.forEach(({c})=>{ if(c.id===ui.ch) return; const b=loadChapter(c.id); snapChapter(c.id, true); b.text=b.text.split(k).join(r.value); saveChapter(c.id); });
+    if(hits.some(x=>x.c.id===ui.ch)){ onChange(true); ta.value=ta.value.split(k).join(r.value); onChange(); }
+    count(); APPEAR.sig=''; toast(`${hits.length}개 화에서 ${tot}곳을 바꿨어요`); };
   $('#find-close').onclick=()=>{ ui.find=false; $('#find-bar')?.remove(); $('#ms-find')?.setAttribute('aria-pressed','false'); ta.focus(); };
   count();
 }
