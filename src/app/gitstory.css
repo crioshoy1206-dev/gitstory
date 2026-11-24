@@ -956,3 +956,11 @@ html,body{max-width:100%;overflow-x:clip}
 .ask-back{overflow-y:auto;overscroll-behavior:contain;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
 .ask-back{place-items:start center}.ask-back > *{margin-block:auto}
 @media (max-height:760px){.bulk-prev{max-height:30vh}}
+/* 공개 설정집 만들기: 공개할 칸 · 숨길 항목 · 미리 보기 */
+.share-dlg{width:min(560px,100%)}
+.share-opts{border:0;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px 14px}
+.share-opts legend{padding:0;margin-bottom:4px}
+.share-hide summary,.share-pv summary{cursor:pointer;font-size:13px;font-weight:600}
+.share-hide-list{display:flex;flex-wrap:wrap;gap:6px 12px;max-height:160px;overflow:auto;padding:8px 0}
+#share-pv{max-height:240px;overflow:auto;padding:8px 10px;margin-top:6px;background:var(--bg);border:1px solid var(--border-muted);border-radius:var(--r)}
+.share-prev{margin:6px 0 0;padding-left:18px;font-size:12px;line-height:1.6}

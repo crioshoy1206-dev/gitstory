@@ -2479,15 +2479,61 @@ async function pickEvent(id){
 /* ---------- 스포일러 없는 공개 설정집 ----------
    고른 기록 시점의 세계관을 누구나 볼 수 있는 읽기 전용 링크로 만든다.
    이름·소속·상황·관계·배경만 보낸다. 메모·'아는 것'(비밀)·상황 이력·성격 수치는 보내지 않는다 (서버에서도 한 번 더 거른다). */
-function pubWorld(id){
-  const s=stateOf(id), pos={};
-  [...s.groups,...s.characters].forEach(x=>{ const p=LAYOUT[x.id]||POS[x.id]; if(p) pos[x.id]=p; });
-  const sit=e=>({status:e.situation?.status||'', current:e.situation?.current||''});
+/* 작가가 비밀이라고 표시한 글: [비밀] (비밀) [GM] [스포] 또는 '비밀:'로 시작. 이런 칸은 공개하지 않는다 */
+const SECRET_MARK=/[[(（【]\s*(비밀|GM|스포|스포일러|숨김)\s*[\])）】]|^\s*(비밀|GM|스포)\s*[:：]/i;
+const pubText=t=>SECRET_MARK.test(String(t||''))?'':String(t||'');
+const SHARE_OPTS={relNote:false, aliases:true, current:true, background:true};
+function pubWorld(id, o={...SHARE_OPTS, hide:[]}){
+  const s=stateOf(id), pos={}, hide=new Set(o.hide||[]);
+  const gs=s.groups.filter(g=>!hide.has(g.id)), cs=s.characters.filter(c=>!hide.has(c.id)), keep=new Set([...gs,...cs].map(x=>x.id));
+  [...gs,...cs].forEach(x=>{ const p=LAYOUT[x.id]||POS[x.id]; if(p) pos[x.id]=p; });
+  const sit=e=>({status:pubText(e.situation?.status), current:o.current?pubText(e.situation?.current):''});
   return {
-    groups:s.groups.map(g=>({id:g.id, name:g.name, kind:g.kind, parent:g.parent||null, situation:sit(g)})),
-    characters:s.characters.map(c=>({id:c.id, name:c.name, aliases:c.aliases||[], memberships:(c.memberships||[]).map(m=>({group:m.group, role:m.role||'', active:m.active!==false})), situation:sit(c), ...(c.photo?{photo:c.photo}:{})})),
-    relations:s.relations.map(r=>({from:r.from, to:r.to, type:r.type, intensity:r.intensity, note:r.note||'', directed:!!r.directed})),
-    background:s.background.map(b=>({title:b.title, category:b.category||'', content:b.content||''})), pos};
+    groups:gs.map(g=>({id:g.id, name:g.name, kind:g.kind, parent:keep.has(g.parent)?g.parent:null, situation:sit(g)})),
+    characters:cs.map(c=>({id:c.id, name:c.name, aliases:o.aliases?(c.aliases||[]).map(pubText).filter(Boolean):[],
+      memberships:(c.memberships||[]).filter(m=>keep.has(m.group) && m.active!==false && !SECRET_MARK.test(m.role||'')).map(m=>({group:m.group, role:m.role||'', active:true})), situation:sit(c), ...(c.photo?{photo:c.photo}:{})})),
+    relations:s.relations.filter(r=>keep.has(r.from)&&keep.has(r.to)&&!SECRET_MARK.test(r.note||'')).map(r=>({from:r.from, to:r.to, type:r.type, intensity:r.intensity, note:o.relNote?r.note||'':'', directed:!!r.directed})),
+    background:o.background?s.background.filter(b=>!hide.has(b.id) && !SECRET_MARK.test(b.title||'') && !SECRET_MARK.test(b.content||'') && !SECRET_MARK.test(b.category||'')).map(b=>({title:b.title, category:b.category||'', content:b.content||''})):[], pos};
+}
+/* 공개될 내용을 그대로 보여 준다 */
+function sharePreview(w){
+  const nm_=id=>[...w.groups,...w.characters].find(x=>x.id===id)?.name||id;
+  const line=(h,t)=>`<li><b>${esc(h)}</b>${t?` · ${esc(t)}`:''}</li>`;
+  return `<div class="caption">인물 ${w.characters.length} · 단체 ${w.groups.length} · 관계 ${w.relations.length} · 배경 ${w.background.length}</div>
+    <ul class="share-prev">${w.characters.map(c=>line(c.name+(c.aliases.length?` (${c.aliases.join(', ')})`:''), [c.memberships.map(m=>nm_(m.group)+(m.role?' '+m.role:'')).join(', '), c.situation.status, c.situation.current].filter(Boolean).join(' · '))).join('')}
+    ${w.groups.map(g=>line(g.name, [g.situation.status, g.situation.current].filter(Boolean).join(' · '))).join('')}
+    ${w.relations.map(r=>line(`${nm_(r.from)} ↔ ${nm_(r.to)}`, [REL[r.type]?.l||r.type, r.note].filter(Boolean).join(' · '))).join('')}
+    ${w.background.map(b=>line(b.title, b.content.slice(0,80)+(b.content.length>80?'…':''))).join('')}</ul>`;
+}
+/* 만들기 전에 공개할 칸·숨길 항목을 고르고 공개될 내용을 미리 본다 */
+function shareDialog(id, label){
+  return new Promise(res=>{
+    const s=stateOf(id), o={...SHARE_OPTS, hide:[]}, back=document.activeElement; $('#ask')?.remove();
+    const ents=[...s.characters,...s.groups,...s.background];
+    const marked=ents.filter(e=>[e.situation?.current, e.situation?.status, e.content, e.title, ...(e.aliases||[]), ...(e.memberships||[]).map(m=>m.role)].some(t=>SECRET_MARK.test(t||''))).length + s.relations.filter(r=>SECRET_MARK.test(r.note||'')).length;
+    document.body.insertAdjacentHTML('beforeend', `<div class="ask-back" id="ask"><form class="ask Box share-dlg" role="dialog" aria-modal="true" aria-labelledby="ask-h">
+      <div class="Box-header"><h3 id="ask-h">공개 설정집 만들기</h3></div><div class="Box-body stack">
+      <div class="form-group"><label for="ask-0">제목</label><input class="form-control" id="ask-0" maxlength="80" value="${esc(DATA.meta.title)}" autocomplete="off"></div>
+      <div class="form-group"><label for="ask-1">어느 시점인지 (독자에게 보이는 말, 예: 3권 끝)</label><input class="form-control" id="ask-1" maxlength="60" value="${esc(label)}" autocomplete="off"></div>
+      <fieldset class="share-opts"><legend class="caption">공개할 칸</legend>
+        <label class="check"><input type="checkbox" data-so="current" checked>상황 문장</label>
+        <label class="check"><input type="checkbox" data-so="aliases" checked>다른 이름</label>
+        <label class="check"><input type="checkbox" data-so="relNote">관계 메모</label>
+        <label class="check"><input type="checkbox" data-so="background" checked>배경 설정</label></fieldset>
+      <div class="caption">메모, 인물별 '아는 것', 성격 수치, 상황 이력, 끝난 소속은 늘 빠져요. [비밀] (비밀) [GM] [스포] 표시가 붙은 글도 빠져요${marked?` (지금 ${marked}곳)`:''}.</div>
+      <details class="share-hide"><summary>숨길 인물·단체·배경 고르기</summary><div class="share-hide-list">${ents.map(e=>`<label class="check"><input type="checkbox" data-sh="${e.id}">${esc(e.name||e.title)}</label>`).join('')}</div></details>
+      <details class="share-pv" open><summary>공개될 내용 미리 보기</summary><div id="share-pv"></div></details>
+      <div class="row-end" style="gap:8px"><button class="btn" type="button" id="ask-no">취소</button><button class="btn btn-primary" type="submit">링크 만들기</button></div></div></form></div>`);
+    const box=$('#ask'), done=v=>{ box.remove(); try{ back?.focus(); }catch(e){} res(v); };
+    const pv=()=>{ $('#share-pv').innerHTML=sharePreview(pubWorld(id,o)); };
+    $$('[data-so]').forEach(x=>x.onchange=()=>{ o[x.dataset.so]=x.checked; pv(); });
+    $$('[data-sh]').forEach(x=>x.onchange=()=>{ o.hide=$$('[data-sh]').filter(y=>y.checked).map(y=>y.dataset.sh); pv(); });
+    pv(); $('#ask-0').focus(); $('#ask-0').select();
+    $('#ask-no').onclick=()=>done(null);
+    box.onclick=ev=>{ if(ev.target===box) done(null); };
+    box.onkeydown=ev=>{ if(ev.key==='Escape'){ ev.stopPropagation(); done(null); } };
+    box.querySelector('form').onsubmit=ev=>{ ev.preventDefault(); const t=$('#ask-0').value.trim(); if(!t){ toast('제목을 입력하세요'); return; } done({title:t, label:$('#ask-1').value.trim(), world:pubWorld(id,o)}); };
+  });
 }
 const shareUrl=id=>`${location.origin}/s/${id}`;
 async function copyLink(url){ try{ await navigator.clipboard.writeText(url); toast('링크를 복사했어요'); }catch(e){ await ask('링크 복사', [{label:'아래 주소를 복사해 주세요', value:url, max:200}], '닫기'); } }
@@ -2504,7 +2550,7 @@ function sharesHtml(){
     ${ui.shares?.err?`<div class="Box-row caption">목록을 불러오지 못했어요. ${esc(ui.shares.err)}</div>`:''}
     ${mine.map(x=>`<div class="Box-row" style="flex-wrap:wrap;gap:6px"><div style="flex:1;min-width:0"><b>${esc(x.title)}</b><div class="caption">${x.label?esc(x.label)+' 시점 · ':''}${fmtDate(x.createdAt)}</div></div>
       <button class="btn btn-sm" data-shcopy="${esc(x.id)}">링크 복사</button><a class="btn btn-sm" href="/s/${esc(x.id)}" target="_blank" rel="noopener">열기</a><button class="btn btn-sm btn-danger" data-shdel="${esc(x.id)}">지우기</button></div>`).join('')}
-    <div class="Box-row caption">고른 기록 시점까지의 이름·소속·상황·관계·배경만 담긴 읽기 전용 링크예요. 메모와 인물만 아는 비밀, 이후 전개는 빠져요. 독자나 팬에게 스포일러 걱정 없이 보여줄 수 있어요.</div></div>`;
+    <div class="Box-row caption">고른 기록 시점까지의 이름·소속·상황·관계·배경만 담긴 읽기 전용 링크예요. 메모와 인물만 아는 비밀, 이후 전개는 빠지고, 만들기 전에 공개될 내용을 미리 보고 칸이나 항목을 뺄 수 있어요.</div></div>`;
 }
 function wireShares(){
   $$('[data-shcopy]').forEach(b=>b.onclick=()=>copyLink(shareUrl(b.dataset.shcopy)));
@@ -2516,11 +2562,13 @@ function wireShares(){
     renderHistory(); });
 }
 async function shareOpen(id){
-  const at=commits.some(c=>c.id===id) ? `${cnum(id)}${cname(id)}` : cname(id);
-  const v=await ask('공개 설정집 만들기', [{label:'제목', value:DATA.meta.title, max:80, required:true}, {label:'어느 시점인지 (독자에게 보이는 말, 예: 3권 끝)', value:at.slice(0,60), max:60}], '링크 만들기'); if(!v) return;
+  /* 기본 '어느 시점'은 내부 기록 이름 대신 작중 시점 → 이어 둔 화 → 사건 제목 순으로 */
+  const c=byId(id), ch=chOf(id).at(-1);
+  const at=c?.event?.story_time || ch?.title || c?.event?.title || cname(id);
+  const v=await shareDialog(id, String(at).slice(0,60)); if(!v) return;
   const btn=$('#t-share'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spinner sm"></span> 만드는 중'; }
   try{
-    const {share}=await createShare({title:v[0], label:v[1], project:worldKey, world:pubWorld(id)});
+    const {share}=await createShare({title:v.title, label:v.label, project:worldKey, world:v.world});
     (ui.shares=ui.shares&&!ui.shares.loading?ui.shares:{list:[]}).list.unshift(share);
     renderHistory(); await copyLink(shareUrl(share.id));
   }catch(err){ console.warn('공개 설정집 실패', err); toast(err?.body?.error || `링크를 만들지 못했어요. ${friendlyErr(err)}`); renderHistory(); }
