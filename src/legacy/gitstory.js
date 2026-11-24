@@ -280,11 +280,17 @@ function setManual(path, value){
 }
 
 /* 직접 고친 내용은 바로 기록한다. 방금(3분 안) 만든 '세계관 직접 수정' 기록이 맨 끝이고 그 뒤로 갈라진 전개가 없으면 거기에 이어 붙인다. */
+const MERGE_MAX=5;
 let manualFrom=null;   // 이번 직접 수정이 어디서 왔는지 (예: 원고 '3화'에서 반영). 있으면 따로 기록한다
 function flushPending(){
   if(!pending.length){ manualFrom=null; return; }
   const h=head(), now=new Date().toISOString(), from=manualFrom; manualFrom=null;
+  /* 한 기록에는 고친 대상이 MERGE_MAX개까지만 모인다. 같은 대상을 계속 고치면 이어 붙고, 새 대상이 넘치면 새 기록을 연다
+     (처음 세계관을 입력할 때 '직접 수정: A, B 외 179'처럼 하나로 뭉쳐 중간으로 되돌릴 수 없게 되지 않게) */
+  const who=ps=>new Set(ps.map(p=>{ const k=p.path.match(/^\/(?:groups|characters|background|relations)\/([^/]+)/)?.[1]; return k==='-'?p.after?.id:k; }).filter(Boolean));
+  const had=h.kind==='manual'?who(h.patches):new Set(), adds=[...who(pending)].filter(x=>!had.has(x));
   const merge = !from && !h.from && h.kind==='manual' && h.auto && Date.now()-new Date(h.updated_at||h.created_at) < 3*60e3
+    && (!adds.length || had.size+adds.length<=MERGE_MAX)
     && !allCommits.some(c=>c.parent===h.id) && !branches.some(b=>b.id!==branchId && b.head===h.id);
   const id = merge ? h.id : newSha();
   pending.forEach(p=>{ const m=p.path.match(/^\/(groups|characters)\/([^/]+)\//); if(!m) return;
