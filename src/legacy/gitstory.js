@@ -1880,7 +1880,8 @@ function renderWorld(){
       ${editable ? (pe.id.startsWith('bg_')?bgDetail(pe):entityDetail(pe)) : pastDetail(s,pe,ov,ovSrc)}</aside>` : overview(s);
   function secretPick(){ return SECRETS.length?`<select class="form-control g-fact" id="g-fact" aria-label="이 비밀을 아는 사람만 보기"><option value="">비밀: 모두 보기</option>${SECRETS.map(f=>`<option value="${f.id}" ${ui.fact===f.id?'selected':''}>아는 사람만: ${esc(f.text.length>24?f.text.slice(0,23)+'…':f.text)} (${f.who.length}명)</option>`).join('')}</select>`:''; }
   const SHEET = !PH ? null : (ui.sheet==='full' || pe?.id.startsWith('bg_')) ? 'full' : 'peek';
-  const graph = first ? (PH?phoneBox():graphBox()) : `<div class="Box"><div class="Box-body caption" style="text-align:center;padding:48px 16px">아직 인물이나 단체가 없어요.<br>왼쪽 도구창의 <b>+ 인물 추가</b>, <b>+ 단체 추가</b>로 시작하면 여기에 관계도가 그려져요.</div></div>`;
+  const graph = first ? (PH?phoneBox():graphBox()) : ui.tl ? `<div class="Box"><div class="Box-body caption" style="text-align:center;padding:48px 16px">이 기록 시점에는 아직 인물이나 단체가 없어요.</div>${tlBar()}</div>`
+    : `<div class="Box"><div class="Box-body caption" style="text-align:center;padding:48px 16px">아직 인물이나 단체가 없어요.<br>${PH?'<b>☰ 목록</b>':'왼쪽 도구창'}의 <b>+ 인물 추가</b>, <b>+ 단체 추가</b>로 시작하면 여기에 관계도가 그려져요.</div></div>`;
   function graphBox(){ return `<div class="Box">
       <div class="Box-header" style="gap:12px">
         <div class="seg" role="group" aria-label="관계 필터">${FILTERS.map(([k,l])=>`<button aria-pressed="${ui.relFilter===k}" data-f="${k}">${l}</button>`).join('')}</div>
@@ -1973,8 +1974,13 @@ function tlGo(i){
   renderWorld();
 }
 function tlStart(){
+  /* 지금 보는 시점이 지난 기록이면 거기서, 아니면 처음부터. 새 프로젝트의 빈 '프로젝트 시작' 같은 빈 기록은 건너뛴다 */
   const at=commits.findIndex(c=>c.id===ui.graphVer);
-  ui.tl={i: at>-1 ? at : 0, play:null}; tlGo(ui.tl.i); tlPlay(true);
+  ui.tl={i: at>-1 ? at : tlFirst(), play:null}; tlGo(ui.tl.i); tlPlay(true);
+}
+function tlFirst(){
+  for(let i=0;i<commits.length;i++){ const s=stateAt(i); if(s.groups.length || s.characters.length) return i; }
+  return 0;
 }
 function tlStop(close){
   if(!ui.tl) return; clearInterval(ui.tl.play); ui.tl.play=null;
@@ -1983,7 +1989,7 @@ function tlStop(close){
 function tlPlay(on){
   if(!ui.tl) return; clearInterval(ui.tl.play); ui.tl.play=null;
   if(!on){ renderWorld(); return; }
-  if(ui.tl.i>=commits.length-1) tlGo(0);
+  if(ui.tl.i>=commits.length-1) tlGo(tlFirst());
   ui.tl.play=setInterval(()=>{ if(!ui.tl || cur()!=='world'){ tlStop(); return; }
     if(ui.tl.i>=commits.length-1){ tlPlay(false); return; } tlGo(ui.tl.i+1); }, TL_MS);
   renderWorld();
@@ -2000,9 +2006,10 @@ function tlBar(){
 function wireTl(){
   const o=$('#tl-open'); if(o) o.onclick=()=>{ if(ui.tl){ tlStop(true); ui.graphVer='work'; renderWorld(); } else tlStart(); };
   if(!ui.tl) return;
-  $('#tl-play').onclick=()=>tlPlay(!ui.tl.play);
-  $('#tl-range').oninput=ev=>{ tlStop(); tlGo(+ev.target.value); };
-  $('#tl-close').onclick=()=>{ tlStop(true); ui.graphVer='work'; renderWorld(); };
+  const pl=$('#tl-play'), rg=$('#tl-range'), cl=$('#tl-close');
+  if(pl) pl.onclick=()=>tlPlay(!ui.tl.play);
+  if(rg) rg.oninput=ev=>{ tlStop(); tlGo(+ev.target.value); };
+  if(cl) cl.onclick=()=>{ tlStop(true); ui.graphVer='work'; renderWorld(); };
 }
 /* ---------- 휴대폰 관계도 ---------- */
 /* 폭이 좁거나, 눕힌 휴대폰처럼 높이가 낮은 터치 화면 */
