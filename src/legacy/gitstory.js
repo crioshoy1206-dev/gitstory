@@ -711,12 +711,19 @@ const SAMPLE_ARCANE = {
 /* AI에 보낼 세계관 요약 (이력은 빼고 현재 상태만) */
 /* AI에 보낼 세계관 요약. 사건에 이름이 나온 단체·인물과 그 주변(소속·구성원·상하위 단체)만 보낸다.
    이름이 하나도 안 나오면 전체를 보낸다. 이력은 빼고 현재 상태만. 전파 계산은 브라우저가 전체 상태로 한다. */
-function worldForAi(text='', s=state){
+/* AI에 보낼 세계관. 글(text)이 있으면 거기 나온 인물·단체 둘레만 보낸다. 다만 세계관이 작으면 다 보내고,
+   이름에 꾸밈(이모지 등)이 붙었거나 이름만 쓴 경우('김유찬' → '유찬')도 찾으며, 나온 인물과 관계로 이어진 인물도 넣는다.
+   얼마나 보냈는지는 결과의 scope(보이지 않는 속성)로 알려 화면에 보여 준다. know: 인물마다 보낼 최근 '아는 것' 수(0이면 모두) */
+const AI_ALL=40;
+const nameCore=n=>String(n||'').replace(/[^\p{L}\p{N}]/gu,'');
+function worldForAi(text='', s=state, know=40){
   const tr=e=>(e.traits||[]).map(t=>({key:t.key,label:t.label,value:t.value,target:t.target}));
   const sit=e=>({current:e.situation?.current, status:e.situation?.status});
-  const hit=e=>text.includes(e.name) || (e.aliases||[]).some(a=>a && text.includes(a));
+  const T=nameCore(text);
+  const names=e=>{ const out=[e.name, ...(e.aliases||[])].filter(Boolean).flatMap(n=>{ const c=nameCore(n); return /^[가-힣]{3,4}$/.test(c) && e.id.startsWith('chr_') ? [c, c.slice(1)] : [c]; }); return out.filter(n=>n.length>=2); };
+  const hit=e=>text.includes(e.name) || names(e).some(n=>T.includes(n));
   let gs=s.groups, cs=s.characters;
-  const seeds=[...s.groups,...s.characters].filter(hit).map(e=>e.id);
+  const seeds=s.groups.length+s.characters.length<=AI_ALL ? [] : [...s.groups,...s.characters].filter(hit).map(e=>e.id);
   if(seeds.length){
     const ids=new Set(seeds);
     s.characters.filter(c=>ids.has(c.id)).forEach(c=>(c.memberships||[]).forEach(m=>ids.add(m.group)));
@@ -724,19 +731,22 @@ function worldForAi(text='', s=state){
     const grp=new Set([...ids].filter(id=>id.startsWith('grp_')));
     s.groups.forEach(g=>{ if(g.parent && grp.has(g.parent)) ids.add(g.id); });
     s.characters.forEach(c=>{ if((c.memberships||[]).some(m=>grp.has(m.group))) ids.add(c.id); });
+    const seed=new Set(seeds); s.relations.forEach(r=>{ if(seed.has(r.from)) ids.add(r.to); if(seed.has(r.to)) ids.add(r.from); });
     gs=s.groups.filter(g=>ids.has(g.id)); cs=s.characters.filter(c=>ids.has(c.id));
   }
   const ids=new Set([...gs,...cs].map(e=>e.id));
   const keys=new Set(); [...gs,...cs].forEach(e=>(e.traits||[]).forEach(t=>{ if(!RELEVANCE[t.key]) keys.add(t.key); }));
-  return {
+  const out={
     title:DATA.meta.title,
     background:(s.background||[]).map(b=>({title:b.title, content:b.content})),
     groups:gs.map(g=>({id:g.id, name:g.name, parent:g.parent, traits:tr(g), situation:sit(g)})),
     characters:cs.map(c=>({id:c.id, name:c.name, aliases:c.aliases, memberships:(c.memberships||[]).map(m=>({group:m.group, role:m.role, bond:m.bond})), traits:tr(c), situation:sit(c),
-      ...(c.knowledge?.length?{knowledge:c.knowledge.slice(-8).map(k=>({id:k.id, text:String(k.text||'').slice(0,120), how:k.how, ...(k.secret?{secret:true}:{}), ...(k.since?{since:k.since}:{})}))}:{})})),
+      ...(c.knowledge?.length?{knowledge:(know?c.knowledge.slice(-know):c.knowledge).map(k=>({id:k.id, text:String(k.text||'').slice(0,120), how:k.how, ...(k.secret?{secret:true}:{}), ...(k.since?{since:k.since}:{})}))}:{})})),
     relations:s.relations.filter(r=>ids.has(r.from)&&ids.has(r.to)).map(r=>({id:r.id, from:r.from, to:r.to, type:r.type, intensity:r.intensity, note:r.note})),
     unscored_traits:[...keys]
   };
+  Object.defineProperty(out, 'scope', {value:{c:cs.length, C:s.characters.length, g:gs.length, G:s.groups.length}});
+  return out;
 }
 function guessAnalysis(title, text){
   const s=state; const found=[...s.groups, ...s.characters].filter(e=>text.includes(e.name) || (e.aliases||[]).some(a=>text.includes(a)));
@@ -887,9 +897,10 @@ function renderEvent(){
     if(innerWidth<900) requestAnimationFrame(()=>$('#ev-result')?.scrollIntoView({behavior:'smooth', block:'nearest'}));
     $('#ev-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">${deep?'AI가 사건을 깊게 다시 분석하고 있어요. 30~60초쯤 걸려요':'AI가 사건이 단체·인물에 주는 직접 영향을 판단하고 있습니다'} <span id="ev-wait"></span></span></div></div>`;
     const t0=Date.now(), tick=setInterval(()=>{ const w=$('#ev-wait'), s=Math.round((Date.now()-t0)/1000); if(w) w.textContent=`· ${s}초`+(s>=(deep?70:25)?' (AI 서버가 붐벼 다시 시도하는 중이에요)':''); },1000);
-    let a, note='';
+    let a, note='', scope=null;
     try{
-      const r=await analyzeEvent({title, description:text, story_time:time}, worldForAi(title+' '+text), deep);
+      const W=worldForAi(title+' '+text); scope=W.scope;
+      const r=await analyzeEvent({title, description:text, story_time:time}, W, deep);
       a=r.analysis; if(r.deep) a.deep=true; (a.knows||[]).forEach(k=>{ k.fid=k.fact_id||newId('fact'); k.on=true; }); a.canDeep=r.usage?.admin||r.usage?.plan==='pro'; Object.entries(a.relevance||{}).forEach(([k,v])=>{ RELEVANCE[k]={...(RELEVANCE[k]||{}), ...v}; });
       showUsage(r.usage); toast(`AI 분석 완료 (${aiName(r)}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
       if(!a.direct.length) note='AI가 직접 영향을 받는 대상을 찾지 못했습니다. 사건에 단체나 인물 이름을 넣어 보세요.';
@@ -914,7 +925,7 @@ function renderEvent(){
       return state.relations.some(x=>x.id===m[1]); });
     if(a.rewrite) Object.keys(a.rewrite).forEach(k=>{ if(!has(k)) delete a.rewrite[k]; });
     a.knows=(a.knows||[]).map(k=>({...k, knowers:k.knowers.filter(w=>has(w.id))})).filter(k=>k.knowers.length);
-    analysis=a; analysis.story_time=time; analysis.from=from; analysis.fromCh=fromCh; analysis.note=note;
+    analysis=a; if(scope && !a.guess) analysis.scope=scope; analysis.story_time=time; analysis.from=from; analysis.fromCh=fromCh; analysis.note=note;
     if(cur()!=='event'){ toast('사건 분석이 끝났어요. 사건 입력 탭에서 확인하세요'); return; }
     btn.disabled=false; drawAnalysis();
     if(innerWidth<900) $('#ev-result')?.scrollIntoView({behavior:'smooth', block:'start'});
@@ -943,6 +954,7 @@ function drawAnalysis(){
   <div class="Box">
     ${a.note?`<div class="flash flash-warn" role="alert" style="margin:12px">${icon('alert')}<div>${esc(a.note)}</div></div>`:''}
     <div class="Box-header"><span class="step-badge">1</span><h3>직접 영향</h3>${a.guess?'<span class="Label Label--attention">간단 추정 (AI 아님)</span>':`<span class="ai-badge">${icon('spark')}AI 판단</span>`}<span class="caption right">영향 크기와 태그는 고칠 수 있어요</span></div>
+    ${a.scope && (a.scope.c<a.scope.C || a.scope.g<a.scope.G)?`<div class="Box-row caption">AI가 본 범위: 인물 ${a.scope.c}/${a.scope.C}명, 단체 ${a.scope.g}/${a.scope.G}개 (사건 글에 이름이 나온 인물·단체와 그 소속, 관계로 이어진 인물). 빠진 인물이 있으면 사건 글에 이름을 넣어 다시 분석해 주세요.</div>`:''}
     ${a.direct.length?'':'<div class="Box-body caption">사건에서 세계관 항목을 찾지 못했습니다. 아래에서 대상을 추가하세요.</div>'}
     ${a.direct.map((d,i)=>`<div class="direct-row">
       <div><b>${esc(nm(state,d.target))}</b><div class="caption">${d.target.startsWith('grp_')?KIND[ent(state,d.target).kind]:'인물'}</div></div>
@@ -1648,7 +1660,7 @@ function exportMs(kind){
 const ASK_BUDGET=36000;   // 원고 본문으로 보낼 글자 수
 const ASK_EXAMPLES=['주인공이 처음 흔들리는 장면은 어디야?','지금 서로 대립하는 세력을 정리해 줘','설정끼리 어긋나는 곳이 있어?','오래 안 나온 인물은 누구야?'];
 function askPayload(question, quote){
-  const world=worldForAi('');
+  const world=worldForAi('', state, 40);
   world.background=(state.background||[]).map(b=>({id:b.id, title:b.title, content:b.content}));
   const ents=[...state.characters,...state.groups,...state.background];
   const notes=ents.filter(e=>e.notes?.trim()).map(e=>({id:e.id, name:e.name||e.title, notes:e.notes.slice(0,600)}));

@@ -345,7 +345,7 @@ export function worldText(world: WorldInput): string {
     const aka = c.aliases?.filter(Boolean).length ? `(${c.aliases.filter(Boolean).map(one).join("/")})` : "";
     const ms = (c.memberships ?? []).map((m) => `${m.group}(${[one(m.role), m.bond ?? ""].filter((x) => x !== "").join(",")})`).join(", ") || "-";
     lines.push(`${c.id} ${one(c.name)}${aka}${inactive(c.situation) ? " [행동불가]" : ""} | ${ms} | ${sit(c.situation)} | ${traits(c.traits)}`);
-    if (c.knowledge?.length) lines.push(`  아는 것: ${c.knowledge.slice(-8).map((k) => `[${k.id}]${k.secret ? "(비밀)" : ""} ${one(k.text).slice(0, 80)}${k.how ? `(${k.how})` : ""}`).join(" / ")}`);
+    if (c.knowledge?.length) lines.push(`  아는 것: ${c.knowledge.slice(-40).map((k) => `[${k.id}]${k.secret ? "(비밀)" : ""} ${one(k.text).slice(0, 80)}${k.how ? `(${k.how})` : ""}`).join(" / ")}`);
   });
   lines.push("# 관계 (id 출발→도착 종류 강도 메모)");
   world.relations.forEach((r) => lines.push(`${r.id} ${r.from}→${r.to} ${r.type} ${r.intensity}${r.note ? ` ${one(r.note)}` : ""}`));
