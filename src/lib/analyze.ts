@@ -241,8 +241,11 @@ export function withAdmin<U extends object>(admin: boolean, usage: U): U | (U & 
 /** 관리자가 고른 모델이 목록에 있으면 그 모델로, 아니면 요금제대로 */
 /** 상태어로 보아 더는 행동할 수 없는 인물인지 */
 export const INACTIVE = /사망|전사|처형|소멸|봉인|활동\s*불가|행동\s*불가|혼수|의식\s*불명|석화/;
+/** 죽었지만 움직이는 상태(귀신·원혼 등). 행동할 수 있는 인물로 본다 */
+export const GHOST = /귀신|원혼|망령|유령|악령|혼령|언데드|좀비|강시/;
 export function inactive(x?: { status?: string }): boolean {
-  return INACTIVE.test(x?.status ?? "");
+  const st = x?.status ?? "";
+  return INACTIVE.test(st) && !GHOST.test(st);
 }
 
 /** 깊게 분석을 쓸 수 있는지: 유료 회원과 관리자만 */
@@ -344,8 +347,8 @@ export function worldText(world: WorldInput): string {
   world.characters.forEach((c) => {
     const aka = c.aliases?.filter(Boolean).length ? `(${c.aliases.filter(Boolean).map(one).join("/")})` : "";
     const ms = (c.memberships ?? []).map((m) => `${m.group}(${[one(m.role), m.bond ?? ""].filter((x) => x !== "").join(",")})`).join(", ") || "-";
-    lines.push(`${c.id} ${one(c.name)}${aka}${inactive(c.situation) ? " [행동불가]" : ""} | ${ms} | ${sit(c.situation)} | ${traits(c.traits)}`);
-    if (c.knowledge?.length) lines.push(`  아는 것: ${c.knowledge.slice(-8).map((k) => `[${k.id}]${k.secret ? "(비밀)" : ""} ${one(k.text).slice(0, 80)}${k.how ? `(${k.how})` : ""}`).join(" / ")}`);
+    lines.push(`${c.id} ${one(c.name)}${aka}${inactive(c.situation) ? " [행동불가]" : GHOST.test(c.situation?.status ?? "") ? " [죽었지만 영혼으로 행동함]" : ""} | ${ms} | ${sit(c.situation)} | ${traits(c.traits)}`);
+    if (c.knowledge?.length) lines.push(`  아는 것: ${c.knowledge.slice(-40).map((k) => `[${k.id}]${k.secret ? "(비밀)" : ""} ${one(k.text).slice(0, 80)}${k.how ? `(${k.how})` : ""}`).join(" / ")}`);
   });
   lines.push("# 관계 (id 출발→도착 종류 강도 메모)");
   world.relations.forEach((r) => lines.push(`${r.id} ${r.from}→${r.to} ${r.type} ${r.intensity}${r.note ? ` ${one(r.note)}` : ""}`));

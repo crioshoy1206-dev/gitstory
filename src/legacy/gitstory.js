@@ -98,6 +98,12 @@ function newId(p){ return `${p}_${Date.now().toString(36).slice(-5)}${Math.rando
 function newSha(){ return Array.from({length:7},()=>'0123456789abcdef'[Math.random()*16|0]).join(''); }
 function toast(t){ const el=$('#toast'); el.textContent=t; const lv=$('#live'); if(lv){ lv.textContent=''; setTimeout(()=>{ lv.textContent=t; }, 30); } el.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,2600); }
 /* 알림에 되돌리기 버튼을 붙인다 (지우기 직후 실수를 바로 무를 수 있게) */
+/* 알림에 버튼 하나(예: '원고에서도 바꾸기')를 붙인다 */
+function toastAct(t, label, fn, ms=10000){
+  const el=$('#toast'); el.innerHTML=`${esc(t)} <button type="button" class="toast-undo" id="toast-act">${esc(label)}</button>`; el.hidden=false;
+  clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true, ms);
+  $('#toast-act').onclick=()=>{ el.hidden=true; fn(); };
+}
 function toastUndo(t, undo){
   const el=$('#toast'); el.innerHTML=`${esc(t)} <button type="button" class="toast-undo" id="toast-undo">되돌리기</button>`; el.hidden=false;
   clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,7000);
@@ -274,11 +280,17 @@ function setManual(path, value){
 }
 
 /* 직접 고친 내용은 바로 기록한다. 방금(3분 안) 만든 '세계관 직접 수정' 기록이 맨 끝이고 그 뒤로 갈라진 전개가 없으면 거기에 이어 붙인다. */
+const MERGE_MAX=5;
 let manualFrom=null;   // 이번 직접 수정이 어디서 왔는지 (예: 원고 '3화'에서 반영). 있으면 따로 기록한다
 function flushPending(){
   if(!pending.length){ manualFrom=null; return; }
   const h=head(), now=new Date().toISOString(), from=manualFrom; manualFrom=null;
+  /* 한 기록에는 고친 대상이 MERGE_MAX개까지만 모인다. 같은 대상을 계속 고치면 이어 붙고, 새 대상이 넘치면 새 기록을 연다
+     (처음 세계관을 입력할 때 '직접 수정: A, B 외 179'처럼 하나로 뭉쳐 중간으로 되돌릴 수 없게 되지 않게) */
+  const who=ps=>new Set(ps.map(p=>{ const k=p.path.match(/^\/(?:groups|characters|background|relations)\/([^/]+)/)?.[1]; return k==='-'?p.after?.id:k; }).filter(Boolean));
+  const had=h.kind==='manual'?who(h.patches):new Set(), adds=[...who(pending)].filter(x=>!had.has(x));
   const merge = !from && !h.from && h.kind==='manual' && h.auto && Date.now()-new Date(h.updated_at||h.created_at) < 3*60e3
+    && (!adds.length || had.size+adds.length<=MERGE_MAX)
     && !allCommits.some(c=>c.parent===h.id) && !branches.some(b=>b.id!==branchId && b.head===h.id);
   const id = merge ? h.id : newSha();
   pending.forEach(p=>{ const m=p.path.match(/^\/(groups|characters)\/([^/]+)\//); if(!m) return;
@@ -469,7 +481,7 @@ function renderSide(){
   const pins=PINS.map(id=>ent(s,id)).filter(x=>x && hit(x));
   const pinSec=pins.length?`<section class="side-sec side-pins"><div class="side-sec-h"><span>★ 고정</span><span class="Counter">${pins.length}</span></div><ul class="tree">${pins.map(x=>item(x,`<span class="pin-star" aria-hidden="true">★</span>`, x.id.startsWith('chr_')?'인물':x.id.startsWith('grp_')?KIND[x.kind]:'배경')).join('')}</ul></section>`:'';
   $('#side-list').innerHTML = pinSec + (past && ui.graphVer!=='work' ? `<div class="flash side-past">${ui.graphVer==='preview'?'AI 제안 미리보기':`'${esc(cname(ui.graphVer))}'`} 시점 목록이에요</div>` : '') +
-    sec('chr','인물',chars.length, chars.map(c=>item(c, c.photo?`<img class="side-photo" src="${esc(c.photo)}" alt="" style="border-color:${nationColor(nationOf(s,c))}">`:`<span class="dot" style="background:${nationColor(nationOf(s,c))}${c.situation?.status==='사망'?';opacity:.4':''}"></span>`, c.situation?.status)).join('')) +
+    sec('chr','인물',chars.length, chars.map(c=>item(c, c.photo?`<img class="side-photo" src="${esc(c.photo)}" alt="" style="border-color:${nationColor(nationOf(s,c))}">`:`<span class="dot" style="background:${nationColor(nationOf(s,c))}${c.situation?.status==='사망'?';opacity:.4':''}"></span>`, chrMeta(s,c))).join('')) +
     sec('grp','단체',grps.length, grps.map(([g,d])=>item(g,`<span class="sq" style="background:${nationColor(nationOf(s,g))}"></span>`, KIND[g.kind], d)).join('')) +
     sec('bg','배경',bgs.length, bgs.map(b=>item(b,`<span class="sq" style="background:var(--border-strong)"></span>`, b.category)).join(''));
   $$('[data-side]').forEach(b=>b.onclick=()=>pick(b.dataset.side));
@@ -495,7 +507,11 @@ function pick(id){
   if(cur()!=='world') showTab('world'); else render('world');
   focusDetail();
 }
-function focusDetail(){ const d=$('#detail'); if(!d) return; d.setAttribute('tabindex','-1'); d.focus({preventScroll:true}); if(window.innerWidth<1200 && !isPhone()) d.scrollIntoView({behavior:'smooth', block:'start'}); }
+/* 목록에서 인물 옆에 붙이는 짧은 설명: 소속·역할과 상황. 같은 성씨·비슷한 이름을 구분하게 */
+function chrMeta(s,c){ const m=(c.memberships||[]).find(x=>x.active!==false); const g=m&&ent(s,m.group);
+  return [g?`${g.name}${m.role?' '+m.role:''}`:'', c.situation?.status||''].filter(Boolean).join(' · '); }
+function focusDetail(){ const d=$('#detail'); if(!d) return; d.setAttribute('tabindex','-1'); d.focus({preventScroll:true}); /* 상세가 화면 아래(관계도 밑)에 열렸으면 보이게 굴린다. 폭과 상관없이 보이는지로 판단 (노트북 1280에서도) */
+  if(!isPhone()){ const r=d.getBoundingClientRect(); if(r.top>innerHeight*0.7 || r.bottom<80) d.scrollIntoView({behavior:'smooth', block:'start'}); } }
 function sideOpen(open){
   const side=$('#side'), was=side.classList.contains('open'), inside=side.contains(document.activeElement);
   side.classList.toggle('open', open); $('#side-backdrop').hidden=!open; document.body.classList.toggle('side-lock', open);
@@ -573,6 +589,13 @@ function wireEntityEdit(e){
     const kd=$('#ed-kind'); if(kd) setManual(base+'/kind', kd.value);
     const pr=$('#ed-parent'); if(pr) setManual(base+'/parent', pr.value||null);
     ui.editing=null; done(pending.length!==before||pending.length?'저장했어요':'바뀐 내용이 없어요');
+    /* 이름을 바꿨고 원고에 옛 이름이 남아 있으면 모든 화에서 함께 바꿀지 알림으로 묻는다 */
+    const old=e.name; if(name!==old && old.length>=2){
+      const hits=CHAPTERS.map(c=>({c, n:chTextOf(c.id).split(old).length-1})).filter(x=>x.n), tot=hits.reduce((a,x)=>a+x.n,0);
+      if(tot) toastAct(`원고 ${hits.length}개 화에 옛 이름 '${old}'${jo(old,'가','이').slice(old.length)} ${tot}번 나와요`, '원고에서도 바꾸기', ()=>{
+        hits.forEach(({c})=>{ const b=loadChapter(c.id); snapChapter(c.id, true); b.text=b.text.split(old).join(name); saveChapter(c.id); });
+        APPEAR.sig=''; if(cur()==='manuscript') renderManuscript(); toast(`${hits.length}개 화에서 '${old}' → '${name}'${jo(name,'로','으로').slice(name.length)} 바꿨어요. 화마다 바꾸기 전 원고가 이전 버전에 남아요`); });
+    }
   };
   const ta=$('#tr-add'); if(ta) ta.onclick=()=>{
     const label=$('#tr-label').value.trim(); if(!label){ toast('성격 이름을 입력하세요'); return; }
@@ -711,12 +734,19 @@ const SAMPLE_ARCANE = {
 /* AI에 보낼 세계관 요약 (이력은 빼고 현재 상태만) */
 /* AI에 보낼 세계관 요약. 사건에 이름이 나온 단체·인물과 그 주변(소속·구성원·상하위 단체)만 보낸다.
    이름이 하나도 안 나오면 전체를 보낸다. 이력은 빼고 현재 상태만. 전파 계산은 브라우저가 전체 상태로 한다. */
-function worldForAi(text='', s=state){
+/* AI에 보낼 세계관. 글(text)이 있으면 거기 나온 인물·단체 둘레만 보낸다. 다만 세계관이 작으면 다 보내고,
+   이름에 꾸밈(이모지 등)이 붙었거나 이름만 쓴 경우('김유찬' → '유찬')도 찾으며, 나온 인물과 관계로 이어진 인물도 넣는다.
+   얼마나 보냈는지는 결과의 scope(보이지 않는 속성)로 알려 화면에 보여 준다. know: 인물마다 보낼 최근 '아는 것' 수(0이면 모두) */
+const AI_ALL=40;
+const nameCore=n=>String(n||'').replace(/[^\p{L}\p{N}]/gu,'');
+function worldForAi(text='', s=state, know=40){
   const tr=e=>(e.traits||[]).map(t=>({key:t.key,label:t.label,value:t.value,target:t.target}));
   const sit=e=>({current:e.situation?.current, status:e.situation?.status});
-  const hit=e=>text.includes(e.name) || (e.aliases||[]).some(a=>a && text.includes(a));
+  const T=nameCore(text);
+  const names=e=>{ const out=[e.name, ...(e.aliases||[])].filter(Boolean).flatMap(n=>{ const c=nameCore(n); return /^[가-힣]{3,4}$/.test(c) && e.id.startsWith('chr_') ? [c, c.slice(1)] : [c]; }); return out.filter(n=>n.length>=2); };
+  const hit=e=>text.includes(e.name) || names(e).some(n=>T.includes(n));
   let gs=s.groups, cs=s.characters;
-  const seeds=[...s.groups,...s.characters].filter(hit).map(e=>e.id);
+  const seeds=s.groups.length+s.characters.length<=AI_ALL ? [] : [...s.groups,...s.characters].filter(hit).map(e=>e.id);
   if(seeds.length){
     const ids=new Set(seeds);
     s.characters.filter(c=>ids.has(c.id)).forEach(c=>(c.memberships||[]).forEach(m=>ids.add(m.group)));
@@ -724,19 +754,22 @@ function worldForAi(text='', s=state){
     const grp=new Set([...ids].filter(id=>id.startsWith('grp_')));
     s.groups.forEach(g=>{ if(g.parent && grp.has(g.parent)) ids.add(g.id); });
     s.characters.forEach(c=>{ if((c.memberships||[]).some(m=>grp.has(m.group))) ids.add(c.id); });
+    const seed=new Set(seeds); s.relations.forEach(r=>{ if(seed.has(r.from)) ids.add(r.to); if(seed.has(r.to)) ids.add(r.from); });
     gs=s.groups.filter(g=>ids.has(g.id)); cs=s.characters.filter(c=>ids.has(c.id));
   }
   const ids=new Set([...gs,...cs].map(e=>e.id));
   const keys=new Set(); [...gs,...cs].forEach(e=>(e.traits||[]).forEach(t=>{ if(!RELEVANCE[t.key]) keys.add(t.key); }));
-  return {
+  const out={
     title:DATA.meta.title,
     background:(s.background||[]).map(b=>({title:b.title, content:b.content})),
     groups:gs.map(g=>({id:g.id, name:g.name, parent:g.parent, traits:tr(g), situation:sit(g)})),
     characters:cs.map(c=>({id:c.id, name:c.name, aliases:c.aliases, memberships:(c.memberships||[]).map(m=>({group:m.group, role:m.role, bond:m.bond})), traits:tr(c), situation:sit(c),
-      ...(c.knowledge?.length?{knowledge:c.knowledge.slice(-8).map(k=>({id:k.id, text:String(k.text||'').slice(0,120), how:k.how, ...(k.secret?{secret:true}:{}), ...(k.since?{since:k.since}:{})}))}:{})})),
+      ...(c.knowledge?.length?{knowledge:(know?c.knowledge.slice(-know):c.knowledge).map(k=>({id:k.id, text:String(k.text||'').slice(0,120), how:k.how, ...(k.secret?{secret:true}:{}), ...(k.since?{since:k.since}:{})}))}:{})})),
     relations:s.relations.filter(r=>ids.has(r.from)&&ids.has(r.to)).map(r=>({id:r.id, from:r.from, to:r.to, type:r.type, intensity:r.intensity, note:r.note})),
     unscored_traits:[...keys]
   };
+  Object.defineProperty(out, 'scope', {value:{c:cs.length, C:s.characters.length, g:gs.length, G:s.groups.length}});
+  return out;
 }
 function guessAnalysis(title, text){
   const s=state; const found=[...s.groups, ...s.characters].filter(e=>text.includes(e.name) || (e.aliases||[]).some(a=>text.includes(a)));
@@ -785,9 +818,11 @@ function buildPatches(a, cid, s=state){
    센 대립인데 최근 사건에 같이 안 나온 쌍, 회수 안 한 복선 메모, 원고에 오래 안 나온 인물.
    누르면 사건 제목만 채운다 (내용은 작가가 쓴다). */
 const INACTIVE_RE=/사망|전사|처형|소멸|봉인|활동\s*불가|행동\s*불가|혼수|의식\s*불명|석화/;
+/* 죽었지만 움직이는 상태(귀신·원혼 등): 관계도에서는 죽은 인물로 흐리게, 행동은 할 수 있는 인물로 본다 */
+const GHOST_RE=/귀신|원혼|망령|유령|악령|혼령|언데드|좀비|강시/;
 const cut=(t,n)=>{ t=String(t||'').replace(/\s+/g,' ').trim(); return t.length>n?t.slice(0,n-1)+'…':t; };
 function nextIdeas(){
-  const alive=c=>c && !INACTIVE_RE.test(c.situation?.status||'');
+  const alive=c=>c && (!INACTIVE_RE.test(c.situation?.status||'') || GHOST_RE.test(c.situation?.status||''));
   const evs=commits.filter(c=>c.kind==='event' && c.event);
   const inv=c=>new Set([...(c.event.involved||[]), ...(c.event.reactions||[]).filter(r=>r.involvement==='연루').map(r=>r.id)]);
   // 1) 못 다 한 행동: 인물마다 가장 최근 반응의 '앞으로', 그 뒤 사건에 연루되지 않았을 때만
@@ -828,7 +863,10 @@ function wireIdeas(){
   const g=nextIdeas();
   $$('[data-idea]').forEach(b=>b.onclick=async ()=>{ const [k,i]=b.dataset.idea.split('|'), x=g[k]?.[+i]; if(!x) return;
     if(analysis && !(await sure('아직 기록하지 않은 분석 결과가 있어요. 버리고 새 사건을 쓸까요?', '버리고 쓰기', true))) return;
-    analysis=null; ui.evFrom=null; ui.evFromCh=null; ui.evDraft={title:x.title.slice(0,60), description:'', story_time:ui.evDraft?.story_time||''};
+    /* 쓰던 제목·내용이 있으면 지우지 않고 묻는다 */
+    const d=ui.evDraft||{}, wrote=(d.title||'').trim() || (d.description||'').trim();
+    if(!analysis && wrote && !(await sure(`쓰던 사건 '${(d.title||d.description||'').trim().slice(0,30)}'이(가) 있어요. 지우고 이 거리로 새로 쓸까요?`, '지우고 새로 쓰기', true))) return;
+    analysis=null; ui.evFrom=null; ui.evFromCh=null; ui.evDraft={title:x.title.slice(0,60), description:'', story_time:d.story_time||''};
     renderEvent(); const t=$('#ev-text'); if(t){ t.focus(); t.scrollIntoView({behavior:'smooth', block:'center'}); } toast('제목을 채웠어요. 무슨 일이 일어나는지 적어 주세요'); });
 }
 function evPosition(){
@@ -883,13 +921,14 @@ function renderEvent(){
     // 이전 결과는 버린다: 기다리는 동안 예전 결과가 기록되지 않게
     const prev=deep&&analysis&&!analysis.guess&&!analysis.done?analysis:null;
     analysis=null; evBusy=true; ui.evDraft={title:$('#ev-title').value, description:text, story_time:time};
-    const req=++evSeq, wk=worldKey, from=ui.evFrom, fromCh=ui.evFromCh;
+    const req=++evSeq, wk=worldKey, bk=branchId, from=ui.evFrom, fromCh=ui.evFromCh;
     if(innerWidth<900) requestAnimationFrame(()=>$('#ev-result')?.scrollIntoView({behavior:'smooth', block:'nearest'}));
     $('#ev-result').innerHTML=`<div class="Box"><div class="Box-body" style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span class="muted">${deep?'AI가 사건을 깊게 다시 분석하고 있어요. 30~60초쯤 걸려요':'AI가 사건이 단체·인물에 주는 직접 영향을 판단하고 있습니다'} <span id="ev-wait"></span></span></div></div>`;
     const t0=Date.now(), tick=setInterval(()=>{ const w=$('#ev-wait'), s=Math.round((Date.now()-t0)/1000); if(w) w.textContent=`· ${s}초`+(s>=(deep?70:25)?' (AI 서버가 붐벼 다시 시도하는 중이에요)':''); },1000);
-    let a, note='';
+    let a, note='', scope=null;
     try{
-      const r=await analyzeEvent({title, description:text, story_time:time}, worldForAi(title+' '+text), deep);
+      const W=worldForAi(title+' '+text); scope=W.scope;
+      const r=await analyzeEvent({title, description:text, story_time:time}, W, deep);
       a=r.analysis; if(r.deep) a.deep=true; (a.knows||[]).forEach(k=>{ k.fid=k.fact_id||newId('fact'); k.on=true; }); a.canDeep=r.usage?.admin||r.usage?.plan==='pro'; Object.entries(a.relevance||{}).forEach(([k,v])=>{ RELEVANCE[k]={...(RELEVANCE[k]||{}), ...v}; });
       showUsage(r.usage); toast(`AI 분석 완료 (${aiName(r)}) · 토큰 ${r.tokens.toLocaleString()} 사용`);
       if(!a.direct.length) note='AI가 직접 영향을 받는 대상을 찾지 못했습니다. 사건에 단체나 인물 이름을 넣어 보세요.';
@@ -905,12 +944,16 @@ function renderEvent(){
     if(req!==evSeq) return;              // 더 새 분석이 시작됨
     evBusy=false;
     if(wk!==worldKey){ toast('다른 세계관으로 옮겨서 분석 결과를 버렸어요'); return; }
-    // 기다리는 동안 지워진 대상은 뺀다
+    /* 다른 전개는 인물 상태가 달라(이미 죽은 인물 등) 그 결과를 그대로 기록하면 안 된다 */
+    if(bk!==branchId){ const bn=branches.find(b=>b.id===bk)?.name||'다른'; toast(`'${bn}' 전개에서 시작한 분석이라 버렸어요. 그 전개로 돌아가 다시 분석해 주세요`); return; }
+    // 기다리는 동안 지워진 대상은 뺀다. 새로 생길 관계는 양쪽 인물·단체가 남아 있으면 둔다
     const has=id=>!!ent(state,id);
-    a.direct=(a.direct||[]).filter(d=>has(d.target)); a.relations=(a.relations||[]).filter(r=>{ const m=r.path?.match(/^\/relations\/([^/]+)/); return !m || state.relations.some(x=>x.id===m[1]); });
+    a.direct=(a.direct||[]).filter(d=>has(d.target)); a.relations=(a.relations||[]).filter(r=>{ const m=r.path?.match(/^\/relations\/([^/]+)/); if(!m) return true;
+      if(r.op==='add' && r.path===m[0]) return !state.relations.some(x=>x.id===m[1]) && has(r.after?.from) && has(r.after?.to);
+      return state.relations.some(x=>x.id===m[1]); });
     if(a.rewrite) Object.keys(a.rewrite).forEach(k=>{ if(!has(k)) delete a.rewrite[k]; });
     a.knows=(a.knows||[]).map(k=>({...k, knowers:k.knowers.filter(w=>has(w.id))})).filter(k=>k.knowers.length);
-    analysis=a; analysis.story_time=time; analysis.from=from; analysis.fromCh=fromCh; analysis.note=note;
+    analysis=a; if(scope && !a.guess) analysis.scope=scope; analysis.story_time=time; analysis.from=from; analysis.fromCh=fromCh; analysis.note=note;
     if(cur()!=='event'){ toast('사건 분석이 끝났어요. 사건 입력 탭에서 확인하세요'); return; }
     btn.disabled=false; drawAnalysis();
     if(innerWidth<900) $('#ev-result')?.scrollIntoView({behavior:'smooth', block:'start'});
@@ -939,6 +982,7 @@ function drawAnalysis(){
   <div class="Box">
     ${a.note?`<div class="flash flash-warn" role="alert" style="margin:12px">${icon('alert')}<div>${esc(a.note)}</div></div>`:''}
     <div class="Box-header"><span class="step-badge">1</span><h3>직접 영향</h3>${a.guess?'<span class="Label Label--attention">간단 추정 (AI 아님)</span>':`<span class="ai-badge">${icon('spark')}AI 판단</span>`}<span class="caption right">영향 크기와 태그는 고칠 수 있어요</span></div>
+    ${a.scope && (a.scope.c<a.scope.C || a.scope.g<a.scope.G)?`<div class="Box-row caption">AI가 본 범위: 인물 ${a.scope.c}/${a.scope.C}명, 단체 ${a.scope.g}/${a.scope.G}개 (사건 글에 이름이 나온 인물·단체와 그 소속, 관계로 이어진 인물). 빠진 인물이 있으면 사건 글에 이름을 넣어 다시 분석해 주세요.</div>`:''}
     ${a.direct.length?'':'<div class="Box-body caption">사건에서 세계관 항목을 찾지 못했습니다. 아래에서 대상을 추가하세요.</div>'}
     ${a.direct.map((d,i)=>`<div class="direct-row">
       <div><b>${esc(nm(state,d.target))}</b><div class="caption">${d.target.startsWith('grp_')?KIND[ent(state,d.target).kind]:'인물'}</div></div>
@@ -967,7 +1011,9 @@ function drawAnalysis(){
   $$('[data-del]').forEach(b=>b.onclick=()=>{ a.direct.splice(+b.dataset.del,1); drawAnalysis(); });
   $$('[data-rel]').forEach(c=>c.onchange=()=>{ a.relations[c.dataset.rel].on=c.checked; drawProp(); });
   $$('[data-know]').forEach(c=>c.onchange=()=>{ a.knows[c.dataset.know].on=c.checked; drawProp(); });
-  const dp=$('#ev-deep'); if(dp) dp.onclick=()=>{ const run=$('#ev-run'); if(run && !run.disabled) run.onclick(null, true); };
+  const dp=$('#ev-deep'); if(dp) dp.onclick=async ()=>{ const run=$('#ev-run'); if(!run || run.disabled) return;
+    if(!(await sure('깊게 분석하면 지금 결과가 새 결과로 바뀌어요. 직접 고친 영향 크기·요약도 새 값으로 덮여요. 계속할까요?', '깊게 분석하기'))) return;
+    run.onclick(null, true); };
   const ad=$('#add-direct'); if(ad) ad.onclick=()=>{ const id=$('#add-target').value; if(!id) return; a.direct.push({target:id, M:-0.5, tags:['위협'], summary:'사건의 직접 영향'}); drawAnalysis(); };
   drawProp();
 }
@@ -1336,10 +1382,15 @@ function wireConflicts(r){
 function applyMs(){
   const r=msResult;
   if(!r || r.note || r.cid!==ui.ch) return;
+  const h0=head().id, had=chCommit(r.cid);
   const n=applyCands(r);
-  toast(`${n}개를 반영했어요`); render();
-  // 반영한 기록에 이 화를 잇는다 (이 화 시점의 세계관 = 이 기록)
-  const cm=chMeta(r.cid); if(n && cm){ cm.commit=head().id; saveWorld(); if(cur()==='manuscript') renderManuscript(); }
+  render();
+  /* 반영한 기록에 이 화를 잇는다 (이 화 시점의 세계관 = 이 기록). 다만 작가가 이 화를 더 앞 시점에 이어 두었으면
+     그 시점을 그대로 둔다. 1화를 반영할 때마다 맨 끝 시점으로 끌려가 '죽은 인물이 말한다' 같은 틀린 지적이 생기지 않게 */
+  const cm=chMeta(r.cid);
+  if(n && cm && (!had || had===h0)){ cm.commit=head().id; toast(`${n}개를 반영했어요`); }
+  else toast(n && had ? `${n}개를 반영했어요. 이 화 시점은 '${cname(had)}' 그대로 두었어요` : `${n}개를 반영했어요`);
+  if(n && cm){ saveWorld(); if(cur()==='manuscript') renderManuscript(); }
 }
 /* ---------- 연재분 한꺼번에 가져오기 ----------
    TXT·Markdown 여러 파일이나, 화 제목(예: '3화', '제3화', 'Chapter 3', '# 3화')·구분선(---)으로 나뉜 긴 글 하나를 화로 나눠 저장한다.
@@ -1471,7 +1522,9 @@ function applyCands(r){
     addManual(`/characters/${id}`, {id, name:c.name, aliases:c.aliases, memberships:m, traits:[], situation:{current:c.summary||'', status:'', history:[]}}); });
   r.updates.filter(u=>u.on).forEach(u=>{ const e=ent(state,u.id); if(!e?.situation) return; n++;
     const base=`/${coll(u.id)}/${u.id}/situation`; setManual(base+'/status', u.status); setManual(base+'/current', u.text); });
-  r.relations.filter(x=>x.on).forEach(x=>{ const from=idOf(x.from), to=idOf(x.to); if(!from||!to) return; n++;
+  r.relations.filter(x=>x.on).forEach(x=>{ const from=idOf(x.from), to=idOf(x.to); if(!from||!to||from===to) return;
+    /* 같은 두 사람 사이에 같은 종류 관계가 이미 있으면 새로 만들지 않는다 (여러 화를 차례로 읽을 때 겹쳐 쌓이지 않게) */
+    if(state.relations.some(o=>o.type===x.type && ((o.from===from&&o.to===to)||(o.from===to&&o.to===from)))) return; n++;
     const id=newId('rel'), rel={id, from, to, type:x.type, intensity:x.intensity}; if(x.note) rel.note=x.note; addManual(`/relations/${id}`, rel); });
   ['characters','groups','updates','relations'].forEach(k=>{ r[k]=r[k].filter(x=>!x.on); });
   if(n){ const t=chMeta(r.cid)?.title||'원고'; manualFrom=`원고 '${t}'에서 반영`; }
@@ -1483,7 +1536,22 @@ function applyCands(r){
    두 글자 이상인 이름만 센다 (한 글자 이름은 다른 낱말에 섞여 잘못 잡히기 쉬워서). */
 const GAP_MIN=3;   // 이만큼 이어서 안 나오면 '오래 안 나옴'
 function nameKeys(e){ return [...new Set([e.name, ...(e.aliases||[])].map(x=>String(x||'').trim()).filter(x=>x.length>=2))]; }
-function countIn(text, keys){ let n=0; keys.forEach(k=>{ let i=0; while((i=text.indexOf(k,i))>-1){ n++; i+=k.length; } }); return n; }
+/* 성을 뺀 이름('김유찬' → '유찬'). 다른 인물과 겹치지 않을 때만. 대사(유찬: …)나 조사가 붙은 경우만 센다 */
+function givenName(e){
+  if(!e?.id?.startsWith('chr_')) return null;
+  const c=String(e.name||'').trim(); if(!/^[가-힣]{3,4}$/.test(c)) return null;
+  const g=c.slice(1), taken=state.characters.some(x=>x.id!==e.id && [x.name, ...(x.aliases||[])].some(n=>String(n||'').includes(g)));
+  return taken || (e.aliases||[]).includes(g) ? null : g;
+}
+const GIVEN_NEXT=/^[:：이가은는을를의와과도아야께에랑한하,.!?…"'」』)\]]/;
+/* 이름이 몇 번 나오는지. 긴 이름부터 세고 센 자리는 지워서 '김유찬'을 '유찬'으로 한 번 더 세지 않는다 */
+function countIn(text, keys, given){
+  let t=text, n=0;
+  [...keys].sort((a,b)=>b.length-a.length).forEach(k=>{ let i=0; while((i=t.indexOf(k,i))>-1){ n++; t=t.slice(0,i)+' '.repeat(k.length)+t.slice(i+k.length); i+=k.length; } });
+  if(given){ let i=0; while((i=t.indexOf(given,i))>-1){ const prev=t[i-1]||' ', next=t.slice(i+given.length);
+    if(!/[가-힣A-Za-z0-9]/.test(prev) && GIVEN_NEXT.test(next)) n++; i+=given.length; } }
+  return n;
+}
 function chTextOf(id){ return chMeta(id)||chBody[id] ? (loadChapter(id).text||'') : ''; }
 let APPEAR={sig:'', map:null};
 function appearMap(){
@@ -1491,12 +1559,12 @@ function appearMap(){
   const sig=worldKey+'|'+CHAPTERS.map(c=>c.id+':'+(c.updatedAt||0)).join(',')+'|'+ents.map(e=>e.id+'='+nameKeys(e).join('/')).join(',');
   if(APPEAR.sig===sig && APPEAR.map) return APPEAR.map;
   const texts=CHAPTERS.map(c=>chTextOf(c.id));
-  const map={}; ents.forEach(e=>{ const k=nameKeys(e); map[e.id]=texts.map(t=>k.length?countIn(t,k):0); });
+  const map={}; ents.forEach(e=>{ const k=nameKeys(e); const g=givenName(e); map[e.id]=texts.map(t=>k.length?countIn(t,k,g):0); });
   APPEAR={sig, map}; return map;
 }
 /* 한 화에 나온 항목: [{e, n}] 많이 나온 순 */
 function appearIn(text){
-  return [...state.characters, ...state.groups].map(e=>({e, n:countIn(text, nameKeys(e))})).filter(x=>x.n>0).sort((a,b)=>b.n-a.n);
+  return [...state.characters, ...state.groups].map(e=>({e, n:countIn(text, nameKeys(e), givenName(e))})).filter(x=>x.n>0).sort((a,b)=>b.n-a.n);
 }
 /* 관계도 화 범위: 고른 화들에 한 번이라도 나온 항목 id. 범위를 안 골랐으면 null */
 function rangeSet(){
@@ -1591,7 +1659,7 @@ function msAside(id, b){
 /* ---------- 찾아 바꾸기 ---------- */
 function findBar(){
   return `<div class="find-bar" id="find-bar" role="search" aria-label="찾아 바꾸기"><input class="form-control" id="find-q" placeholder="찾을 말" aria-label="찾을 말" value="${esc(ui.findQ||'')}"><input class="form-control" id="find-r" placeholder="바꿀 말" aria-label="바꿀 말" value="${esc(ui.findR||'')}">
-    <span class="caption" id="find-n" aria-live="polite"></span><button class="btn btn-sm" type="button" id="find-next">다음</button><button class="btn btn-sm" type="button" id="find-one">바꾸기</button><button class="btn btn-sm" type="button" id="find-all">모두 바꾸기</button><button class="btn btn-sm" type="button" id="find-close" aria-label="찾아 바꾸기 닫기">닫기</button></div>`;
+    <span class="caption" id="find-n" aria-live="polite"></span><button class="btn btn-sm" type="button" id="find-next">다음</button><button class="btn btn-sm" type="button" id="find-one">바꾸기</button><button class="btn btn-sm" type="button" id="find-all">모두 바꾸기</button>${CHAPTERS.length>1?'<button class="btn btn-sm" type="button" id="find-every" title="모든 화에서 바꾸기">모든 화에서</button>':''}<button class="btn btn-sm" type="button" id="find-close" aria-label="찾아 바꾸기 닫기">닫기</button></div>`;
 }
 /* 고른 위치가 보이게 편집기를 굴린다 */
 function scrollToSel(ta, i){
@@ -1610,6 +1678,14 @@ function wireFind(ta, onChange){
     const a=ta.selectionStart; ta.setRangeText(r.value, a, a+k.length, 'end'); onChange(); count(); next(); };
   $('#find-all').onclick=()=>{ const k=q.value; if(!k) return; const c=ta.value.split(k).length-1; if(!c){ toast('바꿀 곳이 없어요'); return; }
     onChange(true); ta.value=ta.value.split(k).join(r.value); onChange(); count(); toast(`${c}곳을 바꿨어요. 이전 버전에 바꾸기 전 원고가 남아 있어요`); };
+  const ev_=$('#find-every'); if(ev_) ev_.onclick=async ()=>{ const k=q.value; if(!k) return;
+    const hits=CHAPTERS.map(c=>({c, n:(c.id===ui.ch?ta.value:chTextOf(c.id)).split(k).length-1})).filter(x=>x.n);
+    if(!hits.length){ toast('바꿀 곳이 없어요'); return; }
+    const tot=hits.reduce((a,x)=>a+x.n,0);
+    if(!(await sure(`${hits.length}개 화에서 '${k}' ${tot}곳을 '${r.value}'${jo(r.value||'빈칸','로','으로').slice((r.value||'빈칸').length)} 바꿀까요? 화마다 바꾸기 전 원고가 이전 버전에 남아요.`, '모든 화에서 바꾸기'))) return;
+    hits.forEach(({c})=>{ if(c.id===ui.ch) return; const b=loadChapter(c.id); snapChapter(c.id, true); b.text=b.text.split(k).join(r.value); saveChapter(c.id); });
+    if(hits.some(x=>x.c.id===ui.ch)){ onChange(true); ta.value=ta.value.split(k).join(r.value); onChange(); }
+    count(); APPEAR.sig=''; toast(`${hits.length}개 화에서 ${tot}곳을 바꿨어요`); };
   $('#find-close').onclick=()=>{ ui.find=false; $('#find-bar')?.remove(); $('#ms-find')?.setAttribute('aria-pressed','false'); ta.focus(); };
   count();
 }
@@ -1642,7 +1718,7 @@ function exportMs(kind){
 const ASK_BUDGET=36000;   // 원고 본문으로 보낼 글자 수
 const ASK_EXAMPLES=['주인공이 처음 흔들리는 장면은 어디야?','지금 서로 대립하는 세력을 정리해 줘','설정끼리 어긋나는 곳이 있어?','오래 안 나온 인물은 누구야?'];
 function askPayload(question, quote){
-  const world=worldForAi('');
+  const world=worldForAi('', state, 40);
   world.background=(state.background||[]).map(b=>({id:b.id, title:b.title, content:b.content}));
   const ents=[...state.characters,...state.groups,...state.background];
   const notes=ents.filter(e=>e.notes?.trim()).map(e=>({id:e.id, name:e.name||e.title, notes:e.notes.slice(0,600)}));
@@ -1773,6 +1849,7 @@ function renderWorld(){
   const PH=isPhone(), VERT=PH && isPortrait(); ui.vert=VERT;
   const raw=id=>LAYOUT[id]||POS[id]||auto[id]||[430,300];
   const pos=id=>{ const p=raw(id); return VERT?[p[1],p[0]]:p; };
+  ui.fitPts=[...s.groups,...s.characters].map(x=>pos(x.id));
   const V=ui.view||(ui.view=PH?{x:0,y:0,w:VERT?540:1100,h:VERT?1100:540,fresh:true}:fitView());
   const linked=new Set(sel?[sel]:[]); s.relations.forEach(r=>{ if(r.from===sel) linked.add(r.to); if(r.to===sel) linked.add(r.from); });
   const isNode=id=>id.startsWith('grp_')||id.startsWith('chr_');
@@ -1817,7 +1894,7 @@ function renderWorld(){
   ].map(m=>{ const [x1,y1]=pos(m.a),[x2,y2]=pos(m.b); const dim=sel && !(m.a===sel||m.b===sel); const [cx,cy]=bend(m.a,m.b,x1,y1,x2,y2,0);
     return `<path d="M${x1},${y1} Q${cx},${cy} ${x2},${y2}" style="fill:none;stroke:var(--border-strong);stroke-width:${0.6+m.bond*1.6};stroke-dasharray:2 4" opacity="${m.active?(dim?.35:.9):.2}"><title>${esc(nm(s,m.a))} → ${esc(nm(s,m.b))} 소속 · 소속감 ${lvOf(m.bond)}</title></path>`; }).join('') : '';
   const node=e=>{
-    const [x,y]=pos(e.id); const col=nationColor(nationOf(s,e)); const isSel=e.id===sel; const dead=e.situation?.status==='사망';
+    const [x,y]=pos(e.id); const col=nationColor(nationOf(s,e)); const isSel=e.id===sel; const st_=e.situation?.status||'', ghost=GHOST_RE.test(st_), dead=ghost || INACTIVE_RE.test(st_);
     const dim = sel && !linked.has(e.id) && !(ui.showMembers && memberOf(s,e.id,sel));
     const w=ov[e.id]; let halo='';
     if(w!==undefined && Math.abs(w)>=0.25){ const hc=w<0?'var(--danger)':'var(--success)';
@@ -1847,7 +1924,7 @@ function renderWorld(){
         <circle cx="${x}" cy="${y}" r="${R}" style="fill:var(--bg-subtle)"/>
         <circle cx="${x}" cy="${y}" r="${R}" style="fill:${col};opacity:.16"/>
         ${face}<circle class="nshape" cx="${x}" cy="${y}" r="${R}" style="fill:none;stroke:${col};stroke-width:${isSel?2:1.25};stroke-opacity:${isSel?1:.7}"/>
-        <text x="${x}" y="${y+R+17}" text-anchor="middle" font-size="13.5" font-weight="${isSel?700:500}" letter-spacing="-.2" style="fill:var(--fg);paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round">${esc(e.name)}${dead?' (사망)':''}</text>`;
+        <text x="${x}" y="${y+R+17}" text-anchor="middle" font-size="13.5" font-weight="${isSel?700:500}" letter-spacing="-.2" style="fill:var(--fg);paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round">${esc(e.name)}${ghost?' (귀신)':dead?' (사망)':''}</text>`;
     }
     const out=RNG && !RNG.has(e.id);
     const tlRing=TLC?.has(e.id) ? (e.id.startsWith('grp_') ? (()=>{ const nat=e.kind==='nation', fs=nat?15:13.5, h=nat?36:30, wd=Math.round(e.name.length*fs*1.02+(nat?46:40)); return `<rect class="tl-hit" x="${x-wd/2-7}" y="${y-h/2-7}" width="${wd+14}" height="${h+14}" rx="${h/2+7}" style="fill:none;stroke:var(--attention);stroke-width:3"/>`; })()
@@ -1875,12 +1952,13 @@ function renderWorld(){
         ${W.zones.map(z=>`<span><span class="sq" style="background:var(${z.c})"></span>${esc(nm(state,z.id))}</span>`).join('')}
         <span><span class="dot" style="background:var(--danger);opacity:.6"></span>피해</span><span><span class="dot" style="background:var(--success);opacity:.6"></span>이득</span>
       `;
-  const panel = pe ? `<aside class="detail" id="detail" aria-label="${esc(pe.name||pe.title)} 자세히">
+  const panel = pe ? `<aside class="detail" id="detail" data-for="${pe.id}" aria-label="${esc(pe.name||pe.title)} 자세히">
       <div class="detail-bar"><span class="caption">${editable?'여기서 바로 고칠 수 있어요':'지난 시점이라 보기만 할 수 있어요'}</span><button class="btn btn-sm" id="detail-close">닫기</button></div>
       ${editable ? (pe.id.startsWith('bg_')?bgDetail(pe):entityDetail(pe)) : pastDetail(s,pe,ov,ovSrc)}</aside>` : overview(s);
   function secretPick(){ return SECRETS.length?`<select class="form-control g-fact" id="g-fact" aria-label="이 비밀을 아는 사람만 보기"><option value="">비밀: 모두 보기</option>${SECRETS.map(f=>`<option value="${f.id}" ${ui.fact===f.id?'selected':''}>아는 사람만: ${esc(f.text.length>24?f.text.slice(0,23)+'…':f.text)} (${f.who.length}명)</option>`).join('')}</select>`:''; }
   const SHEET = !PH ? null : (ui.sheet==='full' || pe?.id.startsWith('bg_')) ? 'full' : 'peek';
-  const graph = first ? (PH?phoneBox():graphBox()) : `<div class="Box"><div class="Box-body caption" style="text-align:center;padding:48px 16px">아직 인물이나 단체가 없어요.<br>왼쪽 도구창의 <b>+ 인물 추가</b>, <b>+ 단체 추가</b>로 시작하면 여기에 관계도가 그려져요.</div></div>`;
+  const graph = first ? (PH?phoneBox():graphBox()) : ui.tl ? `<div class="Box"><div class="Box-body caption" style="text-align:center;padding:48px 16px">이 기록 시점에는 아직 인물이나 단체가 없어요.</div>${tlBar()}</div>`
+    : `<div class="Box"><div class="Box-body caption" style="text-align:center;padding:48px 16px">아직 인물이나 단체가 없어요.<br>${PH?'<b>☰ 목록</b>':'왼쪽 도구창'}의 <b>+ 인물 추가</b>, <b>+ 단체 추가</b>로 시작하면 여기에 관계도가 그려져요.</div></div>`;
   function graphBox(){ return `<div class="Box">
       <div class="Box-header" style="gap:12px">
         <div class="seg" role="group" aria-label="관계 필터">${FILTERS.map(([k,l])=>`<button aria-pressed="${ui.relFilter===k}" data-f="${k}">${l}</button>`).join('')}</div>
@@ -1924,6 +2002,8 @@ function renderWorld(){
       ${SECRETS.length?`<div class="g-legend-h">비밀</div><div class="caption" style="margin-bottom:6px">고른 비밀을 아는 인물만 또렷하게 보여요</div>${secretPick()}`:''}
       ${CHAPTERS.length?`<div class="g-legend-h">화 범위</div><div class="caption" style="margin-bottom:6px">고른 화에 나온 인물·단체만 또렷하게 보여요</div>${rangePick()}`:''}
       <div class="g-legend-h">범례</div><div class="legend">${legendHTML}</div></div>`; }
+  /* 다시 그려도 같은 항목의 상세(휴대폰 시트 포함)는 보던 자리를 지킨다 (성격·관계를 하나씩 더할 때 맨 위로 튀지 않게) */
+  const od=$('#detail'), keepTop=od && od.dataset.for===(pe?.id||'') ? od.scrollTop : null;
   $('#tab-world').innerHTML = pendingBanner() + `<div class="Subhead"><h2>세계관</h2><span class="muted">${esc(verLabel)}</span>${ui.graphVer==='preview'?'<span class="Label Label--done">아직 기록 안 됨</span>':''}
     <div class="actions">
       <select class="form-control" id="g-ver" style="width:auto;padding:3px 8px;font-size:12px" aria-label="버전">
@@ -1944,16 +2024,24 @@ function renderWorld(){
   const svg=$('#g-svg');
   if(svg) wireGraph(svg, body);
   $$('[data-pick],[data-go]').forEach(b=>b.onclick=()=>pick(b.dataset.pick||b.dataset.go));
-  const dc=$('#detail-close'); if(dc) dc.onclick=()=>{ ui.sel=null; ui.editing=null; render('world'); };
+  const dc=$('#detail-close'); if(dc) dc.onclick=()=>{ deselect(); render('world'); };
   const oe=$('#ov-event'); if(oe) oe.onclick=()=>showTab('event');
   const oh=$('#ov-hist'); if(oh) oh.onclick=()=>showTab('history');
   const oi=$('#ov-ideas'); if(oi) oi.onclick=()=>{ showTab('event'); requestAnimationFrame(()=>$('.ideas')?.scrollIntoView({behavior:'smooth', block:'start'})); };
   const gn=$('#g-now'); if(gn) gn.onclick=()=>{ ui.graphVer='work'; render('world'); };
   if(pe && editable && (!PH || SHEET==='full')) wireDetail(pe);
   if(PH) wirePhone(pe, pos);
+  const nd=$('#detail'); if(nd && keepTop) nd.scrollTop=keepTop;
   wirePending();
 }
-const fitView=()=>({x:0,y:0,w:1100,h:540});
+/* 전체 맞춤: 기본 틀(1100x540)과 모든 노드를 함께 담는 범위. 노드가 틀 밖에 있어도 다 보이게 */
+function fitView(){
+  const pts=ui.fitPts||[]; let x0=0, y0=0, x1=1100, y1=540;
+  pts.forEach(([x,y])=>{ x0=Math.min(x0,x-90); y0=Math.min(y0,y-50); x1=Math.max(x1,x+90); y1=Math.max(y1,y+60); });
+  let w=x1-x0, h=y1-y0; const k=1100/540;
+  if(w/h<k){ const d=h*k-w; x0-=d/2; w=h*k; } else { const d=w/k-h; y0-=d/2; h=w/k; }
+  return {x:x0, y:y0, w, h, fitW:w};
+}
 /* ---------- 관계도 타임랩스: 본편 줄기의 기록을 차례로 넘기며 관계도가 어떻게 바뀌는지 보여 준다 ----------
    위치는 layout 그대로라 노드가 흔들리지 않는다. 그 기록에서 바뀐 노드·관계는 노랗게, 끊긴 관계는 빨간 점선으로 잠깐 보인다. */
 const ICON_PLAY='<svg class="oct" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>';
@@ -1973,8 +2061,13 @@ function tlGo(i){
   renderWorld();
 }
 function tlStart(){
+  /* 지금 보는 시점이 지난 기록이면 거기서, 아니면 처음부터. 새 프로젝트의 빈 '프로젝트 시작' 같은 빈 기록은 건너뛴다 */
   const at=commits.findIndex(c=>c.id===ui.graphVer);
-  ui.tl={i: at>-1 ? at : 0, play:null}; tlGo(ui.tl.i); tlPlay(true);
+  ui.tl={i: at>-1 ? at : tlFirst(), play:null}; tlGo(ui.tl.i); tlPlay(true);
+}
+function tlFirst(){
+  for(let i=0;i<commits.length;i++){ const s=stateAt(i); if(s.groups.length || s.characters.length) return i; }
+  return 0;
 }
 function tlStop(close){
   if(!ui.tl) return; clearInterval(ui.tl.play); ui.tl.play=null;
@@ -1983,7 +2076,7 @@ function tlStop(close){
 function tlPlay(on){
   if(!ui.tl) return; clearInterval(ui.tl.play); ui.tl.play=null;
   if(!on){ renderWorld(); return; }
-  if(ui.tl.i>=commits.length-1) tlGo(0);
+  if(ui.tl.i>=commits.length-1) tlGo(tlFirst());
   ui.tl.play=setInterval(()=>{ if(!ui.tl || cur()!=='world'){ tlStop(); return; }
     if(ui.tl.i>=commits.length-1){ tlPlay(false); return; } tlGo(ui.tl.i+1); }, TL_MS);
   renderWorld();
@@ -2000,12 +2093,15 @@ function tlBar(){
 function wireTl(){
   const o=$('#tl-open'); if(o) o.onclick=()=>{ if(ui.tl){ tlStop(true); ui.graphVer='work'; renderWorld(); } else tlStart(); };
   if(!ui.tl) return;
-  $('#tl-play').onclick=()=>tlPlay(!ui.tl.play);
-  $('#tl-range').oninput=ev=>{ tlStop(); tlGo(+ev.target.value); };
-  $('#tl-close').onclick=()=>{ tlStop(true); ui.graphVer='work'; renderWorld(); };
+  const pl=$('#tl-play'), rg=$('#tl-range'), cl=$('#tl-close');
+  if(pl) pl.onclick=()=>tlPlay(!ui.tl.play);
+  if(rg) rg.oninput=ev=>{ tlStop(); tlGo(+ev.target.value); };
+  if(cl) cl.onclick=()=>{ tlStop(true); ui.graphVer='work'; renderWorld(); };
 }
 /* ---------- 휴대폰 관계도 ---------- */
 /* 폭이 좁거나, 눕힌 휴대폰처럼 높이가 낮은 터치 화면 */
+/* 고른 항목을 닫는다. 휴대폰에서 자세히 시트로 보고 있었으면 '세계관 한눈에' 큰 시트가 대신 열리지 않게 접는다 */
+function deselect(){ ui.sel=null; ui.editing=null; if(ui.sheet==='full') ui.sheet='peek'; }
 const isPhone=()=>innerWidth<600 || (innerHeight<500 && matchMedia('(pointer:coarse)').matches);
 const isPortrait=()=>{ const t=screen.orientation?.type; return t ? t.startsWith('portrait') : innerHeight>=innerWidth; };
 const ICON_LAYERS='<svg class="oct" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 15 4.6 8 8.2 1 4.6Zm-5.3 6.3L8 10l5.3-2.7L15 8.2 8 11.8 1 8.2Zm0 3.6L8 13.6l5.3-2.7 1.7.9L8 15.4 1 11.8Z"/></svg>';
@@ -2029,7 +2125,7 @@ function fitPhone(V){
   svg.setAttribute('viewBox', `${V.x} ${V.y} ${V.w} ${V.h}`);
 }
 /* 확대·축소 한계: 휴대폰에서는 '전체 맞춤'보다 조금 더 작게까지만 줄어든다 */
-function zoomRange(V){ return isPhone() ? [150, Math.max(400, (V.fitW||2200)*1.15)] : [280, 2200]; }
+function zoomRange(V){ return isPhone() ? [150, Math.max(400, (V.fitW||2200)*1.15)] : [280, Math.max(2200, (V.fitW||0)*1.15)]; }
 /* 영역 크기가 바뀌었는데(주소창이 사라지는 등) 아직 손대지 않았으면 다시 맞춘다 */
 function refitPhone(){ const V=ui.view, svg=$('#g-svg'); if(!V||!svg) return;
   if(V.fresh || (!V.touched && V.fitSize!==`${svg.clientWidth}x${svg.clientHeight}`)) fitPhone(V); }
@@ -2082,7 +2178,7 @@ function wirePhone(pe, pos){
   const open=to=>{ if(to==='peek' && pe?.id.startsWith('bg_')){ ui.sel=null; ui.editing=null; }
     ui.sheet=to; render('world'); if(to==='full') focusDetail(); else $('#g-view')?.focus({preventScroll:true}); };
   $$('[data-sheet]').forEach(b=>b.onclick=()=>open(b.dataset.sheet));
-  const close=()=>{ ui.sel=null; ui.editing=null; render('world'); };
+  const close=()=>{ deselect(); render('world'); };
   /* 새로 나타난 시트만 아래에서 올라오게 (다시 그릴 때마다 움직이지 않게) */
   const full=$('.detail.g-full'), peekEl=$('#g-peek');
   const key=full?`full:${pe?.id||''}`:peekEl?`peek:${selId||''}`:'';
@@ -2145,7 +2241,7 @@ function wireGraph(svg, body){
     else { const k=V.w/svg.clientWidth, x=d.vx-(ev.clientX-d.sx)*k, y=d.vy-(ev.clientY-d.sy)*k, r=d.r;
       V.x=r?soft(x,r.x0,r.x1):x; V.y=r?soft(y,r.y0,r.y1):y; V.touched=true; setVB(); } };
   const lift=ev=>{ pts.delete(ev.pointerId); if(pinch){ if(pts.size<2){ pinch=null; settle(); } return true; } return false; };
-  svg.onpointerup=ev=>{ if(lift(ev)) return; const x=d; d=null; if(!x) return; if(!x.moved){ if(x.id){ ui.sheet='peek'; pick(x.id); } else if(isPhone() && ui.sel){ ui.sel=null; ui.editing=null; render('world'); } return; } if(x.id && !x.ro) saveWorld(); else settle(); };
+  svg.onpointerup=ev=>{ if(lift(ev)) return; const x=d; d=null; if(!x) return; if(!x.moved){ if(x.id){ ui.sheet='peek'; pick(x.id); } else if(isPhone() && ui.sel){ deselect(); render('world'); } return; } if(x.id && !x.ro) saveWorld(); else settle(); };
   svg.onpointercancel=ev=>{ if(lift(ev)) return; const x=d; d=null; if(x && !x.id) settle(); };
   svg.onwheel=ev=>{ if(!ev.ctrlKey && !ev.metaKey) return; ev.preventDefault(); zoom(ev.deltaY<0?0.88:1/0.88, pt(ev)); clearTimeout(svg.st); svg.st=setTimeout(settle,250); };
   $$('[data-zoom]').forEach(b=>b.onclick=()=>{ const z=b.dataset.zoom; if(z==='fit'){ if(isPhone()) fitPhone(V); else { Object.assign(V, fitView()); setVB(); } } else { zoom(z==='in'?0.8:1.25); settle(); } });
@@ -2159,7 +2255,7 @@ function overview(s){
     <div class="Box"><div class="Box-header"><h3>세계관 한눈에</h3></div>
       <div class="Box-body stack" style="gap:12px">
         <div class="ov-stats">${[['인물',s.characters.length],['단체',s.groups.length],['배경',s.background.length],['관계',s.relations.length]].map(([l,n])=>`<div><b>${n}</b><span>${l}</span></div>`).join('')}</div>
-        <div class="caption">관계도나 왼쪽 목록에서 인물, 단체를 누르면 여기서 상황과 관계를 보고 바로 고칠 수 있어요.</div>
+        <div class="caption">관계도나 ${isPhone()?"☰ 목록":"왼쪽 목록"}에서 인물, 단체를 누르면 여기서 상황과 관계를 보고 바로 고칠 수 있어요.</div>
       </div></div>
     <div class="Box"><div class="Box-header"><h3>${line===commits?'최근 사건':'이 시점까지의 사건'}</h3><span class="Counter">${line.length}</span></div>
       ${recent.map(c=>`<div class="Box-row" style="align-items:flex-start"><span class="ov-n">${cnum(c.id).replace('. ','')}</span><div style="min-width:0"><div>${esc(cname(c.id))}</div>${c.event?.story_time?`<div class="caption">${esc(c.event.story_time)}</div>`:''}</div></div>`).join('')}
@@ -2219,7 +2315,7 @@ function wireDetail(e){
     const subs=e.id.startsWith('grp_')?state.groups.filter(g=>g.parent===e.id).length:0;
     if(!(await sure(`${jq(name,'를','을')} 지울까요?${more?` ${more}도 함께 지워져요.`:''}${subs?` 하위 단체 ${subs}개는 최상위 단체가 돼요.`:''} 지운 뒤에도 알림의 되돌리기로 되살릴 수 있어요.`, '지우기', true))) return;
     if(!ent(state,e.id)) return;
-    ui.sel=null; ui.editing=null; undoable(`${jq(name,'를','을')} 지웠어요`, removeEntity(e.id)); };
+    deselect(); undoable(`${jq(name,'를','을')} 지웠어요`, removeEntity(e.id)); };
   $$('[data-rmt]').forEach(b=>b.onclick=()=>{ const t=e.traits.find(x=>x.key===b.dataset.rmt); const p=removeManual(`${base}/traits/${b.dataset.rmt}`); undoable(`성격 ${jq(t?.label,'를','을')} 지웠어요`, p?[p]:[]); });
   $$('[data-rmm]').forEach(b=>b.onclick=()=>{ const g=b.dataset.rmm; const p=removeManual(`${base}/memberships/${g}`); undoable(`'${nm(state,g)}' 소속을 지웠어요`, p?[p]:[]); });
   $$('[data-rmr]').forEach(b=>b.onclick=()=>{ const r=state.relations.find(x=>x.id===b.dataset.rmr); const o=r&&(r.from===e.id?r.to:r.from); const p=removeManual(`/relations/${b.dataset.rmr}`); undoable(`${jo(nm(state,o),'와','과')}의 관계를 지웠어요`, p?[p]:[]); });
@@ -2251,8 +2347,7 @@ function memberOf(s,a,b){
 function rawBefore(i){ const st=clone(state); for(let k=commits.length-1;k>=i;k--) commits[k].patches.slice().reverse().forEach(p=>applyPatch(st,p,true)); return st; }
 function reviseBlocked(id){
   if(pending.length) flushPending();
-  const other=branches.find(b=>b.id!==branchId && lineOf(b.head).some(c=>c.id===id));
-  return other ? `'${other.name}' 전개가 이 기록 뒤에서 갈라져 있어 고칠 수 없어요. 그 전개를 지우거나, 여기서 '만약에' 전개를 새로 만들어 다시 분석해 주세요.` : '';
+  return '';
 }
 function reviseOpen(id){
   const c=byId(id); const why=reviseBlocked(id); if(why){ toast(why); return; }
@@ -2284,28 +2379,48 @@ function reviseCompute(){
     .filter(x=>Math.abs(x.a-x.b)>=0.05).sort((x,y)=>Math.abs(y.b-y.a)-Math.abs(x.b-x.a));
   const moved=new Set(changed.filter(x=>level(x.a)[0]!==level(x.b)[0] || Math.sign(x.a)!==Math.sign(x.b)).map(x=>x.t));
   // 이후 기록을 차례로 다시 얹는다
-  const later=[], flags=[];
-  commits.slice(i+1).forEach(k=>{ const ps=[], f=[];
+  const later=[], flags=[], onLine=new Set(commits.map(x=>x.id)), forks=new Set(allCommits.filter(x=>!onLine.has(x.id)).map(x=>x.parent));
+  const snap=forks.has(c.id)?{[c.id]:clone(S)}:{};
+  const rebase=(S,k)=>{ const ps=[], f=[];
+    /* 한 기록 안의 변경은 앞의 것이 뒤의 것의 대상을 만들 수 있다(빈 '아는 것' 목록 만들기 → 거기에 더하기).
+       그래서 하나씩 검사하고 바로 얹는다 */
     k.patches.forEach(p=>{
-      const cur=getv(S,p.path), w=walk(S,p.path);
+      const cur=getv(S,p.path), w=walk(S,p.path); let np;
       if(p.op==='replace'){
         if(!w || (w.obj===undefined && !(w.arr && w.idx>-1))){ f.push(['drop', p]); return; }
         if(JSON.stringify(cur)!==JSON.stringify(p.before)) f.push(['over', p, cur]);
-        ps.push({...p, before:clone(cur)});
+        np={...p, before:clone(cur)};
       } else if(p.op==='add'){
         if(!w){ f.push(['drop', p]); return; }
-        ps.push(p);
+        np=p;
+      } else if(w?.append){
+        /* '…/-' 지우기는 목록의 마지막 것을 뺀다 (되돌리기 기록의 상황 이력 등) */
+        if(!w.arr.length){ f.push(['drop', p]); return; }
+        np={...p, before:clone(w.arr[w.arr.length-1])};
       } else {
         if(cur===undefined){ f.push(['drop', p]); return; }
-        ps.push({...p, before:clone(cur)});
+        np={...p, before:clone(cur)};
       }
+      ps.push(np); applyPatch(S,np);
     });
-    ps.forEach(p=>applyPatch(S,p));
-    const touch=k.kind==='event' ? [...new Set([...(k.event?.involved||[]), ...(k.event?.reactions||[]).map(r=>r.id)])].filter(t=>moved.has(t)) : [];
+    return {ps, f};
+  };
+  const touchOf=k=>k.kind==='event' ? [...new Set([...(k.event?.involved||[]), ...(k.event?.reactions||[]).map(r=>r.id)])].filter(t=>moved.has(t)) : [];
+  commits.slice(i+1).forEach(k=>{
+    const {ps, f}=rebase(S,k), touch=touchOf(k);
     if(f.length || touch.length) flags.push({k, f, touch});
-    later.push({k, ps});
+    later.push({k, ps}); if(forks.has(k.id)) snap[k.id]=clone(S);
   });
-  return {i, c, newP, impacts, changed, later, flags, S, involved:live.map(d=>d.target)};
+  // 이 기록 뒤에서 갈라진 다른 전개도 같은 방법으로 다시 얹는다 (공통 앞부분을 고치면 모든 전개에 반영)
+  const others=[];
+  allCommits.forEach(k=>{
+    if(onLine.has(k.id) || !snap[k.parent]) return;
+    const S2=clone(snap[k.parent]), {ps, f}=rebase(S2,k), touch=touchOf(k);
+    const br=branches.find(b=>lineOf(b.head).some(x=>x.id===k.id));
+    if(f.length || touch.length) flags.push({k, f, touch, branch:br?.name});
+    others.push({k, ps}); snap[k.id]=S2;
+  });
+  return {i, c, newP, impacts, changed, later, others, flags, S, involved:live.map(d=>d.target)};
 }
 function reviseHtml(c){
   const R=ui.revise, a=R.a; let r; try{ r=reviseCompute(); }catch(err){ console.warn(err); return `<div class="flash flash-warn">${icon('alert')}<div>다시 계산하지 못했어요. 이 기록은 고칠 수 없어요.</div></div>`; }
@@ -2324,7 +2439,8 @@ function reviseHtml(c){
       <div><b>이 기록의 영향 변화</b> ${r.changed.length?'':'<span class="caption">바뀌는 영향이 없어요</span>'}</div>
       ${r.changed.slice(0,8).map(x=>`<div class="rev-chg"><span>${esc(nm(s,x.t))}</span><span class="num ${x.a<0?'neg':'pos'}">${sf2(x.a)}</span>→<span class="num ${x.b<0?'neg':'pos'}"><b>${sf2(x.b)}</b></span><span class="caption">${level(x.a)[0]} → ${level(x.b)[0]}</span></div>`).join('')}
       <div><b>이후 기록 ${r.later.length}개</b> ${r.flags.length?`<span class="Label Label--attention">확인 필요 ${r.flags.length}</span>`:`<span class="caption">${r.later.length?'모두 그대로 이어져요':'이 기록이 마지막이에요'}</span>`}</div>
-      ${r.flags.map(({k,f,touch})=>`<div class="rev-flag"><div><b>${esc(cnum(k.id)+cname(k.id))}</b></div><ul>${why(f)}${touch.length?`<li>영향이 크게 바뀐 ${touch.map(t=>esc(nm(s,t))).join(', ')}${touch.length>1?'을(를)':jo(nm(s,touch[0]),'를','을').slice(nm(s,touch[0]).length)} 다룬 사건이에요. 이어지는지 확인해 주세요</li>`:''}</ul></div>`).join('')}
+      ${r.others.length?`<div class="caption">이 기록 뒤에서 갈라진 다른 전개의 기록 ${r.others.length}개도 함께 다시 계산해요</div>`:''}
+      ${r.flags.map(({k,f,touch,branch})=>`<div class="rev-flag"><div><b>${esc(cnum(k.id)+cname(k.id))}</b>${branch?` <span class="Label">${esc(branch)}</span>`:''}</div><ul>${why(f)}${touch.length?`<li>영향이 크게 바뀐 ${touch.map(t=>esc(nm(s,t))).join(', ')}${touch.length>1?'을(를)':jo(nm(s,touch[0]),'를','을').slice(nm(s,touch[0]).length)} 다룬 사건이에요. 이어지는지 확인해 주세요</li>`:''}</ul></div>`).join('')}
     </div>
     <div class="Box-row" style="flex-wrap:wrap;gap:8px"><span class="caption" style="flex:1 1 220px">적용하면 이 기록과 이후 기록이 바뀌어요. 적용 뒤 알림에서 되돌릴 수 있어요.</span><button class="btn btn-sm" data-rvcancel>취소</button><button class="btn btn-sm btn-primary" data-rvapply ${a.direct.length?'':'disabled'}>고치고 다시 계산</button></div></div>`;
 }
@@ -2338,13 +2454,13 @@ function wireRevise(){
   $$('[data-rvcancel]').forEach(b=>b.onclick=()=>{ ui.revise=null; redraw(); });
   $$('[data-rvapply]').forEach(b=>b.onclick=()=>{
     const why=reviseBlocked(R.id); if(why){ toast(why); return; }
-    const r=reviseCompute(), keep={state:clone(state), commits:commits.slice(r.i).map(k=>({k, patches:k.patches, impacts:k.impacts, involved:k.event?.involved, revised:k.revised}))};
+    const r=reviseCompute(), keep={state:clone(state), commits:[...commits.slice(r.i), ...r.others.map(x=>x.k)].map(k=>({k, patches:k.patches, impacts:k.impacts, involved:k.event?.involved, revised:k.revised}))};
     r.c.patches=r.newP; r.c.impacts=r.impacts; if(r.c.event) r.c.event.involved=r.involved;
     r.c.revised=[...(r.c.revised||[]), {at:new Date().toISOString(), flags:r.flags.length}];
-    r.later.forEach(({k,ps})=>{ k.patches=ps; });
+    r.later.forEach(({k,ps})=>{ k.patches=ps; }); r.others.forEach(({k,ps})=>{ k.patches=ps; });
     state=r.S; ui.revise=null; analysis=null; ui.graphVer='work';
     render();
-    toastUndo(`'${cname(r.c.id)}'를 고치고 이후 기록 ${r.later.length}개를 다시 계산했어요`, ()=>{
+    toastUndo(`${jq(cname(r.c.id),'를','을')} 고치고 이후 기록 ${r.later.length+r.others.length}개를 다시 계산했어요`, ()=>{
       keep.commits.forEach(x=>{ x.k.patches=x.patches; x.k.impacts=x.impacts; if(x.k.event) x.k.event.involved=x.involved; x.k.revised=x.revised; if(!x.revised) delete x.k.revised; });
       state=keep.state; render(); toast('고치기 전으로 되돌렸어요'); });
   });
@@ -2384,15 +2500,61 @@ async function pickEvent(id){
 /* ---------- 스포일러 없는 공개 설정집 ----------
    고른 기록 시점의 세계관을 누구나 볼 수 있는 읽기 전용 링크로 만든다.
    이름·소속·상황·관계·배경만 보낸다. 메모·'아는 것'(비밀)·상황 이력·성격 수치는 보내지 않는다 (서버에서도 한 번 더 거른다). */
-function pubWorld(id){
-  const s=stateOf(id), pos={};
-  [...s.groups,...s.characters].forEach(x=>{ const p=LAYOUT[x.id]||POS[x.id]; if(p) pos[x.id]=p; });
-  const sit=e=>({status:e.situation?.status||'', current:e.situation?.current||''});
+/* 작가가 비밀이라고 표시한 글: [비밀] (비밀) [GM] [스포] 또는 '비밀:'로 시작. 이런 칸은 공개하지 않는다 */
+const SECRET_MARK=/[[(（【]\s*(비밀|GM|스포|스포일러|숨김)\s*[\])）】]|^\s*(비밀|GM|스포)\s*[:：]/i;
+const pubText=t=>SECRET_MARK.test(String(t||''))?'':String(t||'');
+const SHARE_OPTS={relNote:false, aliases:true, current:true, background:true};
+function pubWorld(id, o={...SHARE_OPTS, hide:[]}){
+  const s=stateOf(id), pos={}, hide=new Set(o.hide||[]);
+  const gs=s.groups.filter(g=>!hide.has(g.id)), cs=s.characters.filter(c=>!hide.has(c.id)), keep=new Set([...gs,...cs].map(x=>x.id));
+  [...gs,...cs].forEach(x=>{ const p=LAYOUT[x.id]||POS[x.id]; if(p) pos[x.id]=p; });
+  const sit=e=>({status:pubText(e.situation?.status), current:o.current?pubText(e.situation?.current):''});
   return {
-    groups:s.groups.map(g=>({id:g.id, name:g.name, kind:g.kind, parent:g.parent||null, situation:sit(g)})),
-    characters:s.characters.map(c=>({id:c.id, name:c.name, aliases:c.aliases||[], memberships:(c.memberships||[]).map(m=>({group:m.group, role:m.role||'', active:m.active!==false})), situation:sit(c), ...(c.photo?{photo:c.photo}:{})})),
-    relations:s.relations.map(r=>({from:r.from, to:r.to, type:r.type, intensity:r.intensity, note:r.note||'', directed:!!r.directed})),
-    background:s.background.map(b=>({title:b.title, category:b.category||'', content:b.content||''})), pos};
+    groups:gs.map(g=>({id:g.id, name:g.name, kind:g.kind, parent:keep.has(g.parent)?g.parent:null, situation:sit(g)})),
+    characters:cs.map(c=>({id:c.id, name:c.name, aliases:o.aliases?(c.aliases||[]).map(pubText).filter(Boolean):[],
+      memberships:(c.memberships||[]).filter(m=>keep.has(m.group) && m.active!==false && !SECRET_MARK.test(m.role||'')).map(m=>({group:m.group, role:m.role||'', active:true})), situation:sit(c), ...(c.photo?{photo:c.photo}:{})})),
+    relations:s.relations.filter(r=>keep.has(r.from)&&keep.has(r.to)&&!SECRET_MARK.test(r.note||'')).map(r=>({from:r.from, to:r.to, type:r.type, intensity:r.intensity, note:o.relNote?r.note||'':'', directed:!!r.directed})),
+    background:o.background?s.background.filter(b=>!hide.has(b.id) && !SECRET_MARK.test(b.title||'') && !SECRET_MARK.test(b.content||'') && !SECRET_MARK.test(b.category||'')).map(b=>({title:b.title, category:b.category||'', content:b.content||''})):[], pos};
+}
+/* 공개될 내용을 그대로 보여 준다 */
+function sharePreview(w){
+  const nm_=id=>[...w.groups,...w.characters].find(x=>x.id===id)?.name||id;
+  const line=(h,t)=>`<li><b>${esc(h)}</b>${t?` · ${esc(t)}`:''}</li>`;
+  return `<div class="caption">인물 ${w.characters.length} · 단체 ${w.groups.length} · 관계 ${w.relations.length} · 배경 ${w.background.length}</div>
+    <ul class="share-prev">${w.characters.map(c=>line(c.name+(c.aliases.length?` (${c.aliases.join(', ')})`:''), [c.memberships.map(m=>nm_(m.group)+(m.role?' '+m.role:'')).join(', '), c.situation.status, c.situation.current].filter(Boolean).join(' · '))).join('')}
+    ${w.groups.map(g=>line(g.name, [g.situation.status, g.situation.current].filter(Boolean).join(' · '))).join('')}
+    ${w.relations.map(r=>line(`${nm_(r.from)} ↔ ${nm_(r.to)}`, [REL[r.type]?.l||r.type, r.note].filter(Boolean).join(' · '))).join('')}
+    ${w.background.map(b=>line(b.title, b.content.slice(0,80)+(b.content.length>80?'…':''))).join('')}</ul>`;
+}
+/* 만들기 전에 공개할 칸·숨길 항목을 고르고 공개될 내용을 미리 본다 */
+function shareDialog(id, label){
+  return new Promise(res=>{
+    const s=stateOf(id), o={...SHARE_OPTS, hide:[]}, back=document.activeElement; $('#ask')?.remove();
+    const ents=[...s.characters,...s.groups,...s.background];
+    const marked=ents.filter(e=>[e.situation?.current, e.situation?.status, e.content, e.title, ...(e.aliases||[]), ...(e.memberships||[]).map(m=>m.role)].some(t=>SECRET_MARK.test(t||''))).length + s.relations.filter(r=>SECRET_MARK.test(r.note||'')).length;
+    document.body.insertAdjacentHTML('beforeend', `<div class="ask-back" id="ask"><form class="ask Box share-dlg" role="dialog" aria-modal="true" aria-labelledby="ask-h">
+      <div class="Box-header"><h3 id="ask-h">공개 설정집 만들기</h3></div><div class="Box-body stack">
+      <div class="form-group"><label for="ask-0">제목</label><input class="form-control" id="ask-0" maxlength="80" value="${esc(DATA.meta.title)}" autocomplete="off"></div>
+      <div class="form-group"><label for="ask-1">어느 시점인지 (독자에게 보이는 말, 예: 3권 끝)</label><input class="form-control" id="ask-1" maxlength="60" value="${esc(label)}" autocomplete="off"></div>
+      <fieldset class="share-opts"><legend class="caption">공개할 칸</legend>
+        <label class="check"><input type="checkbox" data-so="current" checked>상황 문장</label>
+        <label class="check"><input type="checkbox" data-so="aliases" checked>다른 이름</label>
+        <label class="check"><input type="checkbox" data-so="relNote">관계 메모</label>
+        <label class="check"><input type="checkbox" data-so="background" checked>배경 설정</label></fieldset>
+      <div class="caption">메모, 인물별 '아는 것', 성격 수치, 상황 이력, 끝난 소속은 늘 빠져요. [비밀] (비밀) [GM] [스포] 표시가 붙은 글도 빠져요${marked?` (지금 ${marked}곳)`:''}.</div>
+      <details class="share-hide"><summary>숨길 인물·단체·배경 고르기</summary><div class="share-hide-list">${ents.map(e=>`<label class="check"><input type="checkbox" data-sh="${e.id}">${esc(e.name||e.title)}</label>`).join('')}</div></details>
+      <details class="share-pv" open><summary>공개될 내용 미리 보기</summary><div id="share-pv"></div></details>
+      <div class="row-end" style="gap:8px"><button class="btn" type="button" id="ask-no">취소</button><button class="btn btn-primary" type="submit">링크 만들기</button></div></div></form></div>`);
+    const box=$('#ask'), done=v=>{ box.remove(); try{ back?.focus(); }catch(e){} res(v); };
+    const pv=()=>{ $('#share-pv').innerHTML=sharePreview(pubWorld(id,o)); };
+    $$('[data-so]').forEach(x=>x.onchange=()=>{ o[x.dataset.so]=x.checked; pv(); });
+    $$('[data-sh]').forEach(x=>x.onchange=()=>{ o.hide=$$('[data-sh]').filter(y=>y.checked).map(y=>y.dataset.sh); pv(); });
+    pv(); $('#ask-0').focus(); $('#ask-0').select();
+    $('#ask-no').onclick=()=>done(null);
+    box.onclick=ev=>{ if(ev.target===box) done(null); };
+    box.onkeydown=ev=>{ if(ev.key==='Escape'){ ev.stopPropagation(); done(null); } };
+    box.querySelector('form').onsubmit=ev=>{ ev.preventDefault(); const t=$('#ask-0').value.trim(); if(!t){ toast('제목을 입력하세요'); return; } done({title:t, label:$('#ask-1').value.trim(), world:pubWorld(id,o)}); };
+  });
 }
 const shareUrl=id=>`${location.origin}/s/${id}`;
 async function copyLink(url){ try{ await navigator.clipboard.writeText(url); toast('링크를 복사했어요'); }catch(e){ await ask('링크 복사', [{label:'아래 주소를 복사해 주세요', value:url, max:200}], '닫기'); } }
@@ -2409,7 +2571,7 @@ function sharesHtml(){
     ${ui.shares?.err?`<div class="Box-row caption">목록을 불러오지 못했어요. ${esc(ui.shares.err)}</div>`:''}
     ${mine.map(x=>`<div class="Box-row" style="flex-wrap:wrap;gap:6px"><div style="flex:1;min-width:0"><b>${esc(x.title)}</b><div class="caption">${x.label?esc(x.label)+' 시점 · ':''}${fmtDate(x.createdAt)}</div></div>
       <button class="btn btn-sm" data-shcopy="${esc(x.id)}">링크 복사</button><a class="btn btn-sm" href="/s/${esc(x.id)}" target="_blank" rel="noopener">열기</a><button class="btn btn-sm btn-danger" data-shdel="${esc(x.id)}">지우기</button></div>`).join('')}
-    <div class="Box-row caption">고른 기록 시점까지의 이름·소속·상황·관계·배경만 담긴 읽기 전용 링크예요. 메모와 인물만 아는 비밀, 이후 전개는 빠져요. 독자나 팬에게 스포일러 걱정 없이 보여줄 수 있어요.</div></div>`;
+    <div class="Box-row caption">고른 기록 시점까지의 이름·소속·상황·관계·배경만 담긴 읽기 전용 링크예요. 메모와 인물만 아는 비밀, 이후 전개는 빠지고, 만들기 전에 공개될 내용을 미리 보고 칸이나 항목을 뺄 수 있어요.</div></div>`;
 }
 function wireShares(){
   $$('[data-shcopy]').forEach(b=>b.onclick=()=>copyLink(shareUrl(b.dataset.shcopy)));
@@ -2421,11 +2583,13 @@ function wireShares(){
     renderHistory(); });
 }
 async function shareOpen(id){
-  const at=commits.some(c=>c.id===id) ? `${cnum(id)}${cname(id)}` : cname(id);
-  const v=await ask('공개 설정집 만들기', [{label:'제목', value:DATA.meta.title, max:80, required:true}, {label:'어느 시점인지 (독자에게 보이는 말, 예: 3권 끝)', value:at.slice(0,60), max:60}], '링크 만들기'); if(!v) return;
+  /* 기본 '어느 시점'은 내부 기록 이름 대신 작중 시점 → 이어 둔 화 → 사건 제목 순으로 */
+  const c=byId(id), ch=chOf(id).at(-1);
+  const at=c?.event?.story_time || ch?.title || c?.event?.title || cname(id);
+  const v=await shareDialog(id, String(at).slice(0,60)); if(!v) return;
   const btn=$('#t-share'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spinner sm"></span> 만드는 중'; }
   try{
-    const {share}=await createShare({title:v[0], label:v[1], project:worldKey, world:pubWorld(id)});
+    const {share}=await createShare({title:v.title, label:v.label, project:worldKey, world:v.world});
     (ui.shares=ui.shares&&!ui.shares.loading?ui.shares:{list:[]}).list.unshift(share);
     renderHistory(); await copyLink(shareUrl(share.id));
   }catch(err){ console.warn('공개 설정집 실패', err); toast(err?.body?.error || `링크를 만들지 못했어요. ${friendlyErr(err)}`); renderHistory(); }
@@ -2929,7 +3093,8 @@ av.setAttribute('role','button'); av.tabIndex=0; av.setAttribute('aria-haspopup'
 function userMenu(open){
   const old=$('#user-menu'); if(old) old.outerHTML=''; av.setAttribute('aria-expanded', !!open); if(!open) return;
   $('.app-header').insertAdjacentHTML('beforeend', `<div class="user-menu" id="user-menu" role="menu" aria-label="${esc(USER.name)} 메뉴"><div class="caption">${esc(USER.name)}</div>
-    <button type="button" role="menuitem" data-um="theme-btn">테마</button><button type="button" role="menuitem" data-um="help-btn">도움말</button><button type="button" role="menuitem" data-um="sign-out">로그아웃</button></div>`);
+    <button type="button" role="menuitem" data-um="theme-btn">테마</button><button type="button" role="menuitem" data-um="help-btn">도움말</button>${isPhone()&&$('#ai-runs')?'<button type="button" role="menuitem" data-um="ai-runs">AI 기록 복사</button>':''}${isPhone()&&$('#ai-model')?`<label>AI 모델 (관리자)<select class="form-control" id="um-model">${$('#ai-model').innerHTML}</select></label>`:''}<button type="button" role="menuitem" data-um="sign-out">로그아웃</button></div>`);
+  const um=$('#um-model'); if(um){ um.value=$('#ai-model').value; um.onclick=ev=>ev.stopPropagation(); um.onchange=()=>{ const m=$('#ai-model'); m.value=um.value; m.dispatchEvent(new Event('change')); }; }
   $$('[data-um]').forEach(b=>b.onclick=ev=>{ ev.stopPropagation(); userMenu(false); $('#'+b.dataset.um).click(); });
   $('#user-menu').onkeydown=ev=>{ if(ev.key==='Escape'){ userMenu(false); av.focus(); } };
   $('#user-menu button').focus();
@@ -2982,7 +3147,7 @@ $('#ask-btn').onclick=()=>askOpen(!$('#ask-panel'));
     else if($('#side').classList.contains('open')) sideOpen(false);
     else if(cur()==='world' && ui.viewSheet){ ui.viewSheet=false; renderWorld(); }
     else if(cur()==='world' && isPhone() && ui.sheet==='full' && !ui.sel?.startsWith('bg_')){ ui.sheet='peek'; render('world'); }
-    else if(cur()==='world' && ui.sel){ ui.sel=null; ui.editing=null; render('world'); }
+    else if(cur()==='world' && ui.sel){ deselect(); render('world'); }
     else if(cur()!=='world') showTab('world');
     else { backAt=Date.now(); toast('뒤로가기를 한 번 더 누르면 나가요'); }
     guard();

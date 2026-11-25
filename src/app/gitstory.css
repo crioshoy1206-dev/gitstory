@@ -934,3 +934,52 @@ body:has(.detail.g-full){overflow:hidden}
 .pub-bg p{white-space:pre-wrap;line-height:1.7;margin:6px 0 0}
 .share-row{display:flex;gap:8px;align-items:center}
 .share-row input{flex:1;min-width:0}
+
+/* ---------- 휴대폰: 가로 넘침 막기 ----------
+   한 요소라도 화면보다 넓으면 휴대폰 브라우저가 고정 요소(아래 시트, 안내 카드)를 넓어진 폭으로 그려
+   오른쪽이 잘린다. 머리줄의 관리자 도구가 그 원인이었고, 다른 요소가 넘쳐도 화면이 옆으로 밀리지 않게 막는다. */
+html,body{max-width:100%;overflow-x:clip}
+.app-header{min-width:0}
+.header-right{min-width:0}
+@media (max-width:599.98px){
+  #ai-runs,#ai-model{display:none}
+  .main-tabs{gap:2px}
+  .main-tabs > button,:root:not([data-skin]) .main-tabs > button{flex:1 1 auto;justify-content:center;min-width:0;padding:7px 6px;gap:4px;font-size:13px}
+  .main-tabs .side-toggle{flex:1 1 auto;justify-content:center;padding-inline:6px}
+}
+@media (max-width:379.98px){
+  .main-tabs > button[role="tab"] .oct{display:none}
+}
+.user-menu label{display:flex;flex-direction:column;gap:4px;padding:8px 10px;font-size:12px;color:var(--fg-muted)}
+.user-menu select{font-size:14px}
+/* 대화창이 화면보다 길면 바깥이 굴러가게 (휴대폰에서 아래 버튼이 밖으로 밀리지 않게) */
+.ask-back{overflow-y:auto;overscroll-behavior:contain;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+.ask-back{place-items:start center}.ask-back > *{margin-block:auto}
+@media (max-height:760px){.bulk-prev{max-height:30vh}}
+/* 공개 설정집 만들기: 공개할 칸 · 숨길 항목 · 미리 보기 */
+.share-dlg{width:min(560px,100%)}
+.share-opts{border:0;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px 14px}
+.share-opts legend{padding:0;margin-bottom:4px}
+.share-hide summary,.share-pv summary{cursor:pointer;font-size:13px;font-weight:600}
+.share-hide-list{display:flex;flex-wrap:wrap;gap:6px 12px;max-height:160px;overflow:auto;padding:8px 0}
+#share-pv{max-height:240px;overflow:auto;padding:8px 10px;margin-top:6px;background:var(--bg);border:1px solid var(--border-muted);border-radius:var(--r)}
+.share-prev{margin:6px 0 0;padding-left:18px;font-size:12px;line-height:1.6}
+/* 알림: 시트·서랍 위에 뜨고, 버튼 말고는 아래를 누를 수 있게 (휴대폰에서 탭 줄을 가리지 않게) */
+.toast{z-index:45;pointer-events:none}
+.toast button,.toast a{pointer-events:auto}
+/* 선택칸이 긴 이름 때문에 상자 밖으로 넓어지지 않게 */
+select.form-control{max-width:100%}
+.Box{min-width:0}
+/* 휴대폰: 전파 표는 대상·경로·최종 영향·판정만 */
+@media (max-width:599.98px){
+  #prop-box .tbl th:nth-child(n+3):nth-child(-n+6),#prop-box .tbl td:nth-child(n+3):nth-child(-n+6),
+  #prop-box .tbl th:nth-child(8),#prop-box .tbl td:nth-child(8){display:none}
+  #prop-box .tbl td:nth-child(2){white-space:nowrap;max-width:9em;overflow:hidden;text-overflow:ellipsis}
+}
+/* 페이지 확대·축소 막기: 손가락으로는 위아래·옆으로 굴리기만 (두 손가락 확대·두 번 눌러 확대 없음).
+   관계도(#g-svg)는 touch-action:none으로 자체 확대·이동을 그대로 쓴다 */
+html,body{touch-action:pan-x pan-y;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+/* iOS는 16px보다 작은 입력칸을 누르면 화면을 확대한다 */
+@media (max-width:599.98px),(pointer:coarse){
+  input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea,.form-control{font-size:16px!important}
+}

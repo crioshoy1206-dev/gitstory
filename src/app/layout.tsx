@@ -8,7 +8,11 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: "GitStory", statusBarStyle: "black-translucent" },
 };
 
-export const viewport = { themeColor: "#f5f5f7" };
+// 휴대폰에서 페이지 전체가 확대·축소되지 않게 한다 (관계도는 자체 확대·이동이 있다)
+export const viewport = { themeColor: "#f5f5f7", width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false };
+
+// iOS 사파리는 user-scalable을 무시하므로 두 손가락 확대 제스처를 막는다
+const NO_ZOOM = `document.addEventListener("gesturestart",function(e){e.preventDefault()},{passive:false});document.addEventListener("dblclick",function(e){if(e.target&&e.target.closest&&!e.target.closest("#g-svg"))e.preventDefault()},{passive:false});`;
 
 // 저장해 둔 테마(원고지·밤의 서고·작업 노트, 밝게·어둡게)를 화면이 그려지기 전에 적용한다
 // 2026-11 새 기본 디자인(스튜디오): 예전 기본값 '원고지'를 쓰던 사람은 한 번 스튜디오로 옮긴다
@@ -21,6 +25,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="ko" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+        <script dangerouslySetInnerHTML={{ __html: NO_ZOOM }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link rel="stylesheet" href={FONTS} />
