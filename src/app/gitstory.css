@@ -934,3 +934,30 @@ body:has(.detail.g-full){overflow:hidden}
 .pub-bg p{white-space:pre-wrap;line-height:1.7;margin:6px 0 0}
 .share-row{display:flex;gap:8px;align-items:center}
 .share-row input{flex:1;min-width:0}
+
+/* ---------- 요금제 ---------- */
+button.plan-chip{font:inherit;font-size:12px;cursor:pointer;background:none}
+:root:not([data-skin]) .app-header button.plan-chip{background:var(--bg-muted)}
+button.plan-chip:hover{border-color:var(--border-strong);color:var(--fg)}
+.plan-chip.is-pro{color:var(--accent)}
+:root:not([data-skin]) .app-header .plan-chip.is-pro{background:var(--accent-subtle)}
+.plan-dlg{width:min(560px,100%);max-height:calc(100dvh - 32px);overflow-y:auto}
+.plan-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.plan-card{border:1px solid var(--border);border-radius:var(--r);padding:14px;background:var(--bg);display:flex;flex-direction:column;gap:6px}
+.plan-card.pro{border-color:var(--accent-muted);background:linear-gradient(160deg,var(--accent-subtle),var(--bg) 70%)}
+.plan-card.is-cur{box-shadow:0 0 0 2px var(--accent)}
+.plan-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.plan-top b{font-size:15px}
+.plan-card.pro .plan-top b{color:var(--accent)}
+.plan-now{font-size:11px;font-weight:600;color:var(--on-primary);background:var(--btn-primary);border-radius:999px;padding:1px 8px}
+.plan-price{font-size:20px;font-weight:700;letter-spacing:-.3px}
+.plan-price .caption{font-size:12px;font-weight:400;letter-spacing:0}
+.plan-card ul{margin:2px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:5px;font-size:13px;line-height:1.45;color:var(--fg-muted)}
+.plan-card li{padding-left:18px;position:relative}
+.plan-card li::before{content:"";position:absolute;left:2px;top:.35em;width:8px;height:4px;border-left:2px solid var(--accent);border-bottom:2px solid var(--accent);transform:rotate(-45deg)}
+.plan-card li b{color:var(--fg)}
+.plan-act{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--border-muted);padding-top:12px;align-items:flex-start}
+.plan-key-row{display:flex;gap:8px;width:100%}
+.plan-key-row input{flex:1;min-width:0}
+.plan-err{margin:0;min-height:1.2em;font-size:13px;color:var(--danger)}
+@media (max-width:520px){.plan-cards{grid-template-columns:1fr}.plan-key-row{flex-direction:column}.plan-key-row .btn{width:100%}}

@@ -5,7 +5,7 @@
 ## 지금 상태 (샘플)
 - 예시 세계관 3개(아케인, 해리 포터, 짱구는 못말려)로 세계관 편집, 사건 입력, 관계도, 버전 기록(비교, 되돌리기)이 동작한다.
 - 변경 내용은 브라우저(localStorage)에 저장된다. "처음 상태로" 버튼으로 예시 초기 상태로 되돌린다.
-- 사건 분석은 `/api/analyze`에서 AI가 판단한다(직접 영향·반응도·상황 문장·관계 변화). 숫자 전파는 브라우저가 계산. 요금제별 모델: 무료 = Gemini(`GEMINI_API_KEY`, 기본 gemini-3.8-flash), 유료 = Claude(`ANTHROPIC_API_KEY`, 기본 claude-sonnet-5-5). `AI_MODEL_FREE`/`AI_MODEL_PRO`("제공사:모델")와 `AI_EFFORT`(기본 low)로 조정. 한쪽 키만 있으면 그쪽으로 대신하고, 둘 다 없거나 실패하면 키워드 추정. 요금제는 Firestore `users/{uid}.plan`("pro"면 유료, 결제 연결 전까지 콘솔에서 지정).
+- 사건 분석은 `/api/analyze`에서 AI가 판단한다(직접 영향·반응도·상황 문장·관계 변화). 숫자 전파는 브라우저가 계산. 요금제별 모델: 무료 = Gemini(`GEMINI_API_KEY`, 기본 gemini-3.8-flash), 유료 = Claude(`ANTHROPIC_API_KEY`, 기본 claude-sonnet-5-5). `AI_MODEL_FREE`/`AI_MODEL_PRO`("제공사:모델")와 `AI_EFFORT`(기본 low)로 조정. 한쪽 키만 있으면 그쪽으로 대신하고, 둘 다 없거나 실패하면 키워드 추정. 요금제는 Firestore `users/{uid}.plan`("pro"면 유료). 결제 연결 전까지는 앱의 요금제 창에서 관리자 키(`PLAN_ADMIN_KEY`)를 넣으면 `/api/plan`이 Pro로 바꾼다(틀린 키는 하루 5번까지). 하루 토큰 한도는 무료 `DAILY_TOKEN_LIMIT`(기본 20000), Pro `PRO_DAILY_TOKEN_LIMIT`(기본 200000).
 - 버전 기록은 커밋 트리로 보이고, 과거 커밋에서 '만약에' 갈래(branch)를 만들 수 있다. 저장 형식은 `{state, commits(모든 갈래), branches, branch, pending, layout}`이고, 갈래 정보가 없는 예전 저장본은 main(화면 이름 '본편') 하나로 읽는다. 합치기는 아직 없다.
 - 화면에서는 커밋을 '기록', 갈래를 '전개'라고 부른다. 세계관을 직접 고치면 render 때 `flushPending`이 바로 '세계관 직접 수정' 기록으로 남기고, 30분 안이면 맨 끝 자동 기록에 이어 붙인다(그 뒤로 갈라진 전개가 없을 때만).
 - 성격·소속감·관계 세기는 약함/보통/강함/아주 강함(0.25/0.5/0.75/1)으로 고른다. 인물·단체에는 `notes`(메모)와 `photo`(160px JPEG data URL)가 있다.

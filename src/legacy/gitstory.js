@@ -3,7 +3,7 @@
 import DATA_ARCANE from "@/data/arcane.json";
 import DATA_HP from "@/data/harry-potter.json";
 import DATA_JG from "@/data/janggu.json";
-import { loadCloud, saveCloud, signOutUser, fetchUsage, analyzeEvent, extractManuscript, listProjects, askWorld, getAiModel, setAiModel, fetchAiRuns, createShare, listShares, deleteShare } from "@/legacy/cloud";
+import { loadCloud, saveCloud, signOutUser, fetchUsage, analyzeEvent, extractManuscript, listProjects, askWorld, getAiModel, setAiModel, fetchAiRuns, changePlan, createShare, listShares, deleteShare } from "@/legacy/cloud";
 
 let started = false;
 let USER;
@@ -2768,10 +2768,66 @@ function showUsage(u){
   lastUsage=u;
   const el=$('#token-meter'); const left=Math.max(0,u.limit-u.used)+u.credits;
   el.textContent=u.admin?`관리자 · 오늘 ${u.used.toLocaleString()} 토큰 사용`:`${u.plan==='pro'?'Pro · ':''}오늘 남은 토큰 ${left.toLocaleString()}`;
-  el.className='Label '+(u.admin||left>0?'':'Label--danger');
-  el.title=`하루 ${u.limit.toLocaleString()} 중 ${u.used.toLocaleString()} 사용 · 충전 잔액 ${u.credits.toLocaleString()} · 매일 한국 시간 자정 초기화`;
+  el.className='Label plan-chip'+(u.plan==='pro'?' is-pro':'')+(u.admin||left>0?'':' Label--danger');
+  el.title=`하루 ${u.limit.toLocaleString()} 중 ${u.used.toLocaleString()} 사용 · 충전 잔액 ${u.credits.toLocaleString()} · 매일 한국 시간 자정 초기화 · 눌러서 요금제 보기`;
+  if($('#plan-dlg')) planOpen(true);
   showModelPicker(u);
 }
+/* ---------- 요금제 ----------
+   실제 결제는 아직 없다. Pro는 관리자에게 받은 키를 넣으면 바뀐다 (서버 /api/plan이 키를 확인). */
+function planOpen(refresh=false){
+  const u=lastUsage, cur=u?.plan||'free', L=u?.limits||{free:u?.limit||20000, pro:200000};
+  const back=refresh?null:document.activeElement;
+  const card=(id,name,price,sub,lines)=>`<section class="plan-card${id==='pro'?' pro':''}${cur===id?' is-cur':''}" aria-label="${name} 요금제">
+      <div class="plan-top"><b>${name}</b>${cur===id?'<span class="plan-now">지금 쓰는 중</span>':''}</div>
+      <div class="plan-price">${price}<span class="caption">${sub}</span></div>
+      <ul>${lines.map(l=>`<li>${l}</li>`).join('')}</ul></section>`;
+  const html=`<div class="ask Box plan-dlg" id="plan-dlg" role="dialog" aria-modal="true" aria-labelledby="plan-h">
+    <div class="Box-header"><h3 id="plan-h">요금제</h3><p class="caption" style="margin:4px 0 0">세계관 정리·관계도·버전 기록은 두 요금제 모두 그대로 쓸 수 있어요. 차이는 AI예요.</p></div>
+    <div class="Box-body stack">
+      <div class="plan-cards">
+        ${card('free','무료','0원','',['AI 분석·원고 읽기·물어보기 (Gemini)',`하루 AI 토큰 <b>${L.free.toLocaleString()}</b>`,'매일 한국 시간 자정에 다시 채워져요'])}
+        ${card('pro','Pro','결제 준비 중',' · 지금은 관리자 키로',['더 꼼꼼한 AI 분석 (Claude Sonnet)','사건을 <b>깊게 분석</b> (Claude Opus)',`하루 AI 토큰 <b>${L.pro.toLocaleString()}</b>`])}
+      </div>
+      ${u?.admin?`<p class="caption" style="margin:0">관리자 계정은 요금제와 상관없이 모든 모델을 쓸 수 있어요.</p>`:''}
+      ${cur==='pro'
+        ? `<div class="plan-act"><p class="caption" style="margin:0">Pro를 쓰고 있어요. 무료로 돌아가면 다시 Pro로 바꿀 때 관리자 키가 필요해요.</p><button class="btn btn-sm" type="button" id="plan-down">무료로 돌아가기</button></div>`
+        : `<form class="plan-act" id="plan-form" autocomplete="off"><label for="plan-key"><b>관리자 키로 Pro 켜기</b></label>
+            <p class="caption" style="margin:0">아직 결제는 받지 않아요. 관리자에게 받은 키를 넣으면 바로 Pro로 바뀌어요.</p>
+            <div class="plan-key-row"><input class="form-control" id="plan-key" type="password" placeholder="관리자 키" aria-describedby="plan-err" autocomplete="off"><button class="btn btn-primary" type="submit" id="plan-go">Pro로 바꾸기</button></div>
+            <p class="plan-err" id="plan-err" role="alert"></p></form>`}
+      <div class="row-end"><button class="btn" type="button" id="ask-no">닫기</button></div>
+    </div></div>`;
+  if(refresh){ const old=$('#plan-dlg'); if(!old) return; old.outerHTML=html; }
+  else { $('#ask')?.remove(); document.body.insertAdjacentHTML('beforeend', `<div class="ask-back" id="ask">${html}</div>`); }
+  const box=$('#ask');
+  const done=()=>{ box.remove(); try{ (box._back?.isConnected?box._back:$('#token-meter'))?.focus(); }catch(e){} };
+  if(!refresh) box._back=back;
+  $('#ask-no').onclick=done;
+  box.onclick=ev=>{ if(ev.target===box) done(); };
+  box.onkeydown=ev=>{ if(ev.key==='Escape'){ ev.stopPropagation(); done(); }
+    if(ev.key==='Tab'){ const f=[...box.querySelectorAll('input,button')].filter(x=>!x.disabled), a=f[0], z=f[f.length-1];
+      if(ev.shiftKey && document.activeElement===a){ ev.preventDefault(); z.focus(); } else if(!ev.shiftKey && document.activeElement===z){ ev.preventDefault(); a.focus(); } } };
+  const form=$('#plan-form');
+  if(form){
+    form.onsubmit=async ev=>{ ev.preventDefault(); const key=$('#plan-key').value.trim(), err=$('#plan-err'), go=$('#plan-go');
+      if(!key){ err.textContent='관리자 키를 넣어 주세요'; $('#plan-key').focus(); return; }
+      go.disabled=true; go.textContent='확인 중'; err.textContent='';
+      try{ const nu=await changePlan('pro', key); showUsage(nu); toast('Pro 요금제로 바뀌었어요'); $('#plan-down')?.focus(); }
+      catch(e){ err.textContent=e.body?.error||friendlyErr(e); go.disabled=false; go.textContent='Pro로 바꾸기'; $('#plan-key').select(); }
+    };
+    if(!refresh) $('#plan-key').focus();
+  }
+  const down=$('#plan-down');
+  if(down) down.onclick=async()=>{
+    if(!down.dataset.sure){ down.dataset.sure='1'; down.textContent='한 번 더 누르면 무료로 바뀌어요'; down.classList.add('btn-danger'); return; }
+    down.disabled=true;
+    try{ const nu=await changePlan('free'); showUsage(nu); toast('무료 요금제로 바뀌었어요'); $('#plan-key')?.focus(); }
+    catch(e){ down.disabled=false; toast(`요금제를 바꾸지 못했어요. ${e.body?.error||friendlyErr(e)}`); }
+  };
+  if(!refresh && !form) $('#ask-no').focus();
+}
+$('#token-meter').onclick=()=>{ if(!lastUsage){ toast('요금제 정보를 불러오는 중이에요'); refreshUsage(); return; } planOpen(); };
 /* 관리자만: 어떤 AI 모델로 부를지 고르는 메뉴. 고른 값은 이 브라우저에 기억하고 요청마다 서버에 알린다 */
 function showModelPicker(u){
   let sel=$('#ai-model');
@@ -2805,7 +2861,7 @@ async function copyAiRuns(){
 /* 결과 알림에 쓸 AI 이름. 관리자에게는 실제 모델 이름까지 보여준다 */
 const aiName=r=>r.usage?.admin?r.model:(r.provider==='claude'?'Claude':'Gemini');
 function refreshUsage(){
-  fetchUsage().then(showUsage).catch(err=>{ console.warn('토큰 사용량 확인 실패', err); const el=$('#token-meter'); el.textContent='남은 토큰을 확인하지 못했어요'; el.className='Label Label--danger'; el.title=friendlyErr(err); });
+  fetchUsage().then(showUsage).catch(err=>{ console.warn('토큰 사용량 확인 실패', err); const el=$('#token-meter'); el.textContent='남은 토큰을 확인하지 못했어요'; el.className='Label plan-chip Label--danger'; el.title=friendlyErr(err); });
 }
 /* 다른 기기에서 저장한 게 더 최신이면 불러옴 */
 function syncFromCloud(k){
@@ -2929,7 +2985,7 @@ av.setAttribute('role','button'); av.tabIndex=0; av.setAttribute('aria-haspopup'
 function userMenu(open){
   const old=$('#user-menu'); if(old) old.outerHTML=''; av.setAttribute('aria-expanded', !!open); if(!open) return;
   $('.app-header').insertAdjacentHTML('beforeend', `<div class="user-menu" id="user-menu" role="menu" aria-label="${esc(USER.name)} 메뉴"><div class="caption">${esc(USER.name)}</div>
-    <button type="button" role="menuitem" data-um="theme-btn">테마</button><button type="button" role="menuitem" data-um="help-btn">도움말</button><button type="button" role="menuitem" data-um="sign-out">로그아웃</button></div>`);
+    <button type="button" role="menuitem" data-um="token-meter">요금제${lastUsage?` · ${lastUsage.plan==='pro'?'Pro':'무료'}`:''}</button><button type="button" role="menuitem" data-um="theme-btn">테마</button><button type="button" role="menuitem" data-um="help-btn">도움말</button><button type="button" role="menuitem" data-um="sign-out">로그아웃</button></div>`);
   $$('[data-um]').forEach(b=>b.onclick=ev=>{ ev.stopPropagation(); userMenu(false); $('#'+b.dataset.um).click(); });
   $('#user-menu').onkeydown=ev=>{ if(ev.key==='Escape'){ userMenu(false); av.focus(); } };
   $('#user-menu button').focus();
