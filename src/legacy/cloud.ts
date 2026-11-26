@@ -101,12 +101,19 @@ export async function callApi<T>(path: string, init: RequestInit = {}): Promise<
 
 export type Usage = {
   date: string; used: number; limit: number; credits: number; plan: "free" | "pro";
+  /** 요금제별 하루 한도 */
+  limits?: { free: number; pro: number };
   /** 관리자에게만 온다 */
   admin?: boolean; models?: { id: string; label: string }[];
 };
 
 export function fetchUsage() {
   return callApi<Usage>("/api/usage");
+}
+
+/** 요금제를 바꾼다. Pro는 관리자 키가 있어야 한다 (실제 결제 대신). */
+export function changePlan(plan: "free" | "pro", key?: string) {
+  return callApi<Usage>("/api/plan", { method: "POST", body: JSON.stringify({ plan, ...(key ? { key } : {}) }) });
 }
 
 export type AnalyzeResult = { analysis: Record<string, unknown>; tokens: number; model: string; provider: "claude" | "gemini"; usage: Usage; deep?: boolean };
